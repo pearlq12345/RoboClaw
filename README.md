@@ -106,10 +106,9 @@ RoboClaw is still in an early stage, and the immediate focus is on making the co
 
 If you care about embodied intelligence, robot execution systems, simulation platforms, capability abstraction, or evaluation, you are welcome to join through issues, discussions, or PRs.
 
+If you want to be an active contributor, please contact us by emailing bozhaonanjing [[@]] gmail [[DOT]] com
+
 ## 🙏 Acknowledgments
 
 RoboClaw references and inherits part of its initial thinking from [nanobot](https://github.com/HKUDS/nanobot). We appreciate its lightweight practice along the OpenClaw line, which helped us build the first prototype faster and continue evolving toward embodied intelligence.
 
-## WeChat
-
-<img src="wechat/wechat_qr.png" alt="RoboClaw WeChat QR Code" width="240" />
