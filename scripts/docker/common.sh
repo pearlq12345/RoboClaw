@@ -35,10 +35,10 @@ docker_profile_base_image() {
   profile="$(docker_profile "${1:-}")"
   case "${profile}" in
     ubuntu2204|ubuntu2204-ros2)
-      printf '%s\n' "python:3.11-jammy"
+      printf '%s\n' "ubuntu:22.04"
       ;;
     ubuntu2404|ubuntu2404-ros2)
-      printf '%s\n' "python:3.11-noble"
+      printf '%s\n' "ubuntu:24.04"
       ;;
   esac
 }

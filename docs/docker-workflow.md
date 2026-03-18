@@ -64,10 +64,10 @@ Start long-lived dev containers for all matrix profiles:
 
 ## Profiles
 
-- `ubuntu2204`: `python:3.11-jammy`
-- `ubuntu2204-ros2`: `python:3.11-jammy` + ROS2 Humble
-- `ubuntu2404`: `python:3.11-noble`
-- `ubuntu2404-ros2`: `python:3.11-noble` + ROS2 Jazzy
+- `ubuntu2204`: `ubuntu:22.04` + Python 3.11
+- `ubuntu2204-ros2`: `ubuntu:22.04` + Python 3.11 + ROS2 Humble
+- `ubuntu2404`: `ubuntu:24.04` + Python 3.11
+- `ubuntu2404-ros2`: `ubuntu:24.04` + Python 3.11 + ROS2 Jazzy
 
 ## Networking and proxies
 

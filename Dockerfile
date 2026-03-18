@@ -1,20 +1,40 @@
-ARG BASE_IMAGE=python:3.11-noble
+ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ROBOCLAW_DOCKER_PROFILE=ubuntu2404
 ARG ROBOCLAW_INSTALL_ROS2=0
 ARG ROBOCLAW_ROS2_DISTRO=none
+ARG ROBOCLAW_PYTHON_VERSION=3.11
 ENV ROBOCLAW_ROS2_DISTRO=${ROBOCLAW_ROS2_DISTRO}
 
-# Install Node.js 20 for the WhatsApp bridge
+# Install Python 3.11 on both Ubuntu profiles and Node.js 20 for the WhatsApp bridge.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg git locales lsb-release && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      dirmngr \
+      git \
+      gnupg \
+      locales \
+      lsb-release \
+      software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      "python${ROBOCLAW_PYTHON_VERSION}" \
+      "python${ROBOCLAW_PYTHON_VERSION}-venv" && \
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+    "python${ROBOCLAW_PYTHON_VERSION}" /tmp/get-pip.py && \
+    ln -sf "/usr/bin/python${ROBOCLAW_PYTHON_VERSION}" /usr/local/bin/python && \
+    ln -sf "/usr/bin/python${ROBOCLAW_PYTHON_VERSION}" /usr/local/bin/python3 && \
+    ln -sf /usr/local/bin/pip /usr/local/bin/pip3 && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
+    rm -f /tmp/get-pip.py && \
     rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir --upgrade pip uv
