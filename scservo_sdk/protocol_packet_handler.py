@@ -6,6 +6,7 @@ from .scservo_def import (
     BROADCAST_ID,
     COMM_NOT_AVAILABLE,
     COMM_PORT_BUSY,
+    COMM_RX_FAIL,
     COMM_RX_CORRUPT,
     COMM_RX_TIMEOUT,
     COMM_RX_WAITING,
