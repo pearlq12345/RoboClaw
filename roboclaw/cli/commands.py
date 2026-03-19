@@ -267,6 +267,7 @@ def _make_provider(config: Config):
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
     from roboclaw.config.loader import load_config, set_config_path
+    from roboclaw.config.paths import set_workspace_path
 
     config_path = None
     if config:
@@ -279,7 +280,10 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
 
     loaded = load_config(config_path)
     if workspace:
+        set_workspace_path(Path(workspace).expanduser())
         loaded.agents.defaults.workspace = workspace
+    else:
+        set_workspace_path(None)
     return loaded
 
 

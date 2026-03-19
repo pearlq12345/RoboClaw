@@ -12,9 +12,9 @@ from roboclaw.embodied.definition.systems.assemblies import AssemblyRegistry
 from roboclaw.embodied.definition.systems.deployments import DeploymentRegistry
 from roboclaw.embodied.definition.systems.simulators import SimulatorRegistry
 from roboclaw.embodied.execution.integration.adapters import AdapterRegistry
-from roboclaw.embodied.execution.integration.bridges import (
-    BridgeRegistry,
-    DEFAULT_DOMAIN_BRIDGES,
+from roboclaw.embodied.execution.integration.control_surfaces import (
+    ControlSurfaceProfileRegistry,
+    DEFAULT_CONTROL_SURFACE_PROFILES,
 )
 from roboclaw.embodied.execution.orchestration.procedures import (
     DEFAULT_PROCEDURES,
@@ -32,7 +32,7 @@ class EmbodiedCatalog:
     robots: RobotRegistry
     sensors: SensorRegistry
     assemblies: AssemblyRegistry
-    bridges: BridgeRegistry
+    control_surface_profiles: ControlSurfaceProfileRegistry
     adapters: AdapterRegistry
     procedures: ProcedureRegistry
     deployments: DeploymentRegistry
@@ -55,9 +55,9 @@ def build_default_catalog() -> EmbodiedCatalog:
 
     assemblies = AssemblyRegistry()
 
-    bridges = BridgeRegistry()
-    for bridge in DEFAULT_DOMAIN_BRIDGES:
-        bridges.register(bridge)
+    control_surface_profiles = ControlSurfaceProfileRegistry()
+    for profile in DEFAULT_CONTROL_SURFACE_PROFILES:
+        control_surface_profiles.register(profile)
 
     adapters = AdapterRegistry()
 
@@ -73,7 +73,7 @@ def build_default_catalog() -> EmbodiedCatalog:
         robots=robots,
         sensors=sensors,
         assemblies=assemblies,
-        bridges=bridges,
+        control_surface_profiles=control_surface_profiles,
         adapters=adapters,
         procedures=procedures,
         deployments=deployments,

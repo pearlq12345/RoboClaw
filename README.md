@@ -27,23 +27,19 @@ Right now, we are concentrated on the first plane.
 ```text
 Overall Data Flow
 
-User natural language
+RoboClaw Agent
   ↓
-RoboClaw Agent (understand intent, discover devices, guide configuration)
-  ↓
-Workspace (~/.roboclaw/workspace/embodied/) ← Agent generates setup files
-  ↓
-Catalog (merge built-in framework definitions + workspace user assets)
-  ↓
-Runtime Session (session management)
+Workspace / Catalog / Setup Resolution
   ↓
 Procedure (connect / calibrate / move / debug / reset step graph)
   ↓
-Adapter / Bridge (adapter binding + domain bridge)
+Runtime Adapter (active execution layer)
   ↓
-ROS2 (topics / services / actions)
+Control Surface (interface profile + runtime server)
   ↓
-Real embodiment / simulated embodiment
+Embodiment Runtime (hardware/sim-specific runtime)
+  ↓
+Real/Sim Embodiment
 ```
 
 Current embodiment coverage is tracked like this:
@@ -57,13 +53,20 @@ Current embodiment coverage is tracked like this:
 
 ## 📦 Installation
 
-If you like using AI, you can simply ask your coding assistant:
+### For Users
+
+- `AI-assisted setup`: ask your coding assistant:
 
 ```text
 Help me install RoboClaw from https://github.com/MINT-SJTU/RoboClaw
 ```
 
-If you prefer a manual step-by-step setup, follow the [installation guide](./INSTALLATION.md).
+- [Non-Docker Installation](./INSTALLATION.md)
+- [Docker Installation](./DOCKERINSTALLATION.md)
+
+### For Developers
+
+- [Docker Workflow](./DOCKER_WORKFLOW.md)
 
 ## 📢 Community Co-Creation
 

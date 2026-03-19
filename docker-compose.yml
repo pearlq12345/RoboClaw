@@ -1,31 +1,39 @@
 x-common-config: &common-config
-  build:
-    context: .
-    dockerfile: Dockerfile
+  image: ${ROBOCLAW_IMAGE:?set ROBOCLAW_IMAGE}
+  network_mode: host
+  user: ${ROBOCLAW_UID:?set ROBOCLAW_UID}:${ROBOCLAW_GID:?set ROBOCLAW_GID}
+  environment: &common-environment
+    HOME: /roboclaw-instance/home
+    ROBOCLAW_CONFIG_PATH: /roboclaw-instance/config.json
+    ROBOCLAW_WORKSPACE_PATH: /roboclaw-instance/workspace
+    HTTP_PROXY: ${HTTP_PROXY:-}
+    HTTPS_PROXY: ${HTTPS_PROXY:-}
+    ALL_PROXY: ${ALL_PROXY:-}
+    http_proxy: ${http_proxy:-}
+    https_proxy: ${https_proxy:-}
+    all_proxy: ${all_proxy:-}
   volumes:
-    - ~/.roboclaw:/root/.roboclaw
+    - ${ROBOCLAW_INSTANCE_DIR:?set ROBOCLAW_INSTANCE_DIR}:/roboclaw-instance
 
 services:
+  roboclaw-dev:
+    image: ${ROBOCLAW_IMAGE:?set ROBOCLAW_IMAGE}
+    network_mode: host
+    user: ${ROBOCLAW_UID:?set ROBOCLAW_UID}:${ROBOCLAW_GID:?set ROBOCLAW_GID}
+    environment:
+      <<: *common-environment
+      PYTHONPATH: /roboclaw-source:/usr/local/lib/python3.11/dist-packages:/app
+      ROBOCLAW_ROS2_CONTROL_PYTHONPATH: /roboclaw-source:/usr/local/lib/python3.11/dist-packages:/app
+    volumes:
+      - ${ROBOCLAW_INSTANCE_DIR:?set ROBOCLAW_INSTANCE_DIR}:/roboclaw-instance
+      - ${ROBOCLAW_SOURCE_DIR:?set ROBOCLAW_SOURCE_DIR}:/roboclaw-source
+    entrypoint: ["sleep"]
+    command: ["infinity"]
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
   roboclaw-gateway:
-    container_name: roboclaw-gateway
     <<: *common-config
     command: ["gateway"]
     restart: unless-stopped
-    ports:
-      - 18790:18790
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-  
-  roboclaw-cli:
-    <<: *common-config
-    profiles:
-      - cli
-    command: ["status"]
-    stdin_open: true
-    tty: true

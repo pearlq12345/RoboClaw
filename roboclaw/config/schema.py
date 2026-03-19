@@ -341,7 +341,9 @@ class Config(BaseSettings):
     @property
     def workspace_path(self) -> Path:
         """Get expanded workspace path."""
-        return Path(self.agents.defaults.workspace).expanduser()
+        from roboclaw.config.paths import get_workspace_path
+
+        return get_workspace_path(self.agents.defaults.workspace)
 
     def _match_provider(
         self, model: str | None = None

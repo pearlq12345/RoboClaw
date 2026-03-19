@@ -1,4 +1,4 @@
-"""Standard ROS2 adapter implementation for stage-1 embodied execution."""
+"""Standard ROS2 runtime adapter for control-surface embodied execution."""
 
 from __future__ import annotations
 
@@ -248,17 +248,17 @@ class Ros2ActionServiceAdapter:
                 satisfied = constraint.target == "ros2"
                 if not satisfied:
                     message = f"Expected ROS2 transport, got '{constraint.target}'."
-            elif constraint.component == CompatibilityComponent.BRIDGE:
-                if self.binding.bridge_id is None:
+            elif constraint.component == CompatibilityComponent.CONTROL_SURFACE_PROFILE:
+                if self.binding.control_surface_profile_id is None:
                     satisfied = not constraint.required
                     if not satisfied:
-                        message = "Adapter binding does not declare a bridge id."
+                        message = "Adapter binding does not declare a control-surface profile id."
                 else:
-                    satisfied = constraint.target == self.binding.bridge_id
+                    satisfied = constraint.target == self.binding.control_surface_profile_id
                     if not satisfied:
                         message = (
-                            f"Constraint expects bridge '{constraint.target}', "
-                            f"binding uses '{self.binding.bridge_id}'."
+                            f"Constraint expects control-surface profile '{constraint.target}', "
+                            f"binding uses '{self.binding.control_surface_profile_id}'."
                         )
             if constraint.required and not satisfied:
                 blocking_failures.append(f"{constraint.component.value}:{constraint.target}")
@@ -269,7 +269,7 @@ class Ros2ActionServiceAdapter:
                     requirement=constraint.requirement,
                     satisfied=satisfied,
                     required=constraint.required,
-                    detected_version="stage1",
+                    detected_version="control_surface_server",
                     message=message,
                 )
             )

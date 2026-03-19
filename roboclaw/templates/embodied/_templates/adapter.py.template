@@ -41,9 +41,9 @@ WORKSPACE_ASSET = WorkspaceAssetContract(
 LIFECYCLE = AdapterLifecycleContract(
     dependencies=(
         DependencySpec(
-            id="ros2_bridge",
+            id="ros2_control_surface_server",
             kind=DependencyKind.ROS2_NODE,
-            description="ROS2 bridge node that serves this adapter.",
+            description="ROS2 control surface server that serves this adapter.",
             checker="<dependency_checker>",
         ),
     ),
@@ -111,8 +111,8 @@ COMPATIBILITY = AdapterCompatibilitySpec(
             requirement=">=1.0,<2.0",
         ),
         VersionConstraint(
-            component=CompatibilityComponent.BRIDGE,
-            target="<bridge_id>",
+            component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,
+            target="<control_surface_profile_id>",
             requirement=">=1.0,<2.0",
             required=False,
         ),
@@ -130,7 +130,7 @@ ADAPTER = AdapterBinding(
     transport=TransportKind.ROS2,
     implementation="<workspace_module_or_entrypoint>",
     supported_targets=("real",),
-    bridge_id="<bridge_id>",
+    control_surface_profile_id="<control_surface_profile_id>",
     lifecycle=LIFECYCLE,
     degraded_modes=DEGRADED_MODES,
     compatibility=COMPATIBILITY,

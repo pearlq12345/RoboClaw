@@ -250,6 +250,17 @@ def test_agent_overrides_workspace_path(mock_agent_runtime):
     assert mock_agent_runtime["agent_loop_cls"].call_args.kwargs["workspace"] == workspace_path
 
 
+def test_agent_uses_environment_workspace_override(mock_agent_runtime, monkeypatch, tmp_path: Path):
+    workspace_path = tmp_path / "env-workspace"
+    monkeypatch.setenv("ROBOCLAW_WORKSPACE_PATH", str(workspace_path))
+
+    result = runner.invoke(app, ["agent", "-m", "hello"])
+
+    assert result.exit_code == 0
+    assert mock_agent_runtime["sync_templates"].call_args.args == (workspace_path,)
+    assert mock_agent_runtime["agent_loop_cls"].call_args.kwargs["workspace"] == workspace_path
+
+
 def test_agent_workspace_override_wins_over_config_workspace(mock_agent_runtime, tmp_path: Path):
     config_path = tmp_path / "agent-config.json"
     config_path.write_text("{}")

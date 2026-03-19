@@ -1,13 +1,20 @@
 """Configuration loading utilities."""
 
+from __future__ import annotations
+
 import json
+import os
 from pathlib import Path
 
-from roboclaw.config.schema import Config
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from roboclaw.config.schema import Config
 
 
 # Global variable to store current config path (for multi-instance support)
 _current_config_path: Path | None = None
+CONFIG_PATH_ENV = "ROBOCLAW_CONFIG_PATH"
 
 
 def set_config_path(path: Path) -> None:
@@ -20,6 +27,9 @@ def get_config_path() -> Path:
     """Get the configuration file path."""
     if _current_config_path:
         return _current_config_path
+    env_path = os.environ.get(CONFIG_PATH_ENV)
+    if env_path:
+        return Path(env_path).expanduser().resolve()
     return Path.home() / ".roboclaw" / "config.json"
 
 
@@ -33,6 +43,8 @@ def load_config(config_path: Path | None = None) -> Config:
     Returns:
         Loaded configuration object.
     """
+    from roboclaw.config.schema import Config
+
     path = config_path or get_config_path()
 
     if path.exists():

@@ -1,5 +1,9 @@
 # RoboClaw Installation Guide
 
+This guide is the native host installation path. If you want Docker-based workflows, use:
+
+- [Docker Installation](./DOCKERINSTALLATION.md)
+
 ## 1. Prerequisites
 
 Start from a clean clone:
@@ -26,6 +30,13 @@ roboclaw --help
 Expected result:
 
 - commands such as `onboard`, `status`, `agent`, and `provider` are listed
+
+For SO101 embodied control, make sure calibration data is available under
+`~/.roboclaw/calibration/so101/`. The RoboClaw install now includes the Python
+`scservo_sdk` dependency bundle directly, so native users should get the same
+driver module that Docker uses. If you still have an older compatible
+calibration cache on the host, the first real SO101 control run will import it
+into `~/.roboclaw/calibration/so101/`.
 
 ## 3. Step 2: Initialize RoboClaw
 
@@ -202,7 +213,28 @@ The ideal outcome is:
 - the user only describes the goal
 - RoboClaw keeps the framework/workspace boundary intact
 
-## 8. Step 7: Verify That Embodied Assets Are Organized Correctly
+## 8. Native Acceptance Helpers
+
+For a bounded native SO101 acceptance run on the host, use:
+
+```bash
+./tests/test_native_so101_acceptance.sh
+```
+
+If calibration is missing, RoboClaw now reports the canonical path expected by
+the active profile and blocks execution until that framework-managed calibration
+exists.
+
+That helper prepares canonical calibration under `~/.roboclaw/calibration/so101/`,
+checks `roboclaw agent -m "hello"`, and then runs the real-robot flow:
+
+- `I want to connect a real robot`
+- `SO101`
+- `connected`
+- `open the gripper`
+- `close the gripper`
+
+## 9. Step 7: Verify That Embodied Assets Are Organized Correctly
 
 You do not need every asset to be complete in one pass, but you should verify that the directory semantics are correct.
 
@@ -250,90 +282,3 @@ This is where the core first-plane goal starts to matter:
 - move
 - debug
 - reset
-
-### 9.1 Connect
-
-For example:
-
-```bash
-roboclaw agent -m "Connect my robot and tell me what information is still missing."
-```
-
-Check that:
-
-- RoboClaw can distinguish `real` from `sim`
-- RoboClaw can identify the embodiment type
-- if information is incomplete, it asks instead of guessing
-- failure reasons are readable
-
-### 9.2 Calibrate
-
-```bash
-roboclaw agent -m "Calibrate this robot if calibration is supported. If not, explain why."
-```
-
-Check that:
-
-- RoboClaw can distinguish between supported and unsupported calibration flows
-- when calibration is not supported, it does not invent a fake procedure
-
-### 9.3 Move
-
-```bash
-roboclaw agent -m "Do one minimal safe movement for verification."
-```
-
-Check that:
-
-- RoboClaw prefers the smallest safe motion first
-- the movement intent is explained clearly
-- on failure, it can say whether the issue is setup, ROS2, adapter, or safety related
-
-### 9.4 Debug
-
-```bash
-roboclaw agent -m "Debug the current setup and summarize the most likely blocking issue."
-```
-
-Check that:
-
-- RoboClaw produces readable debug output
-- the debug result points to a concrete layer, not generic filler
-
-### 9.5 Reset
-
-```bash
-roboclaw agent -m "Reset the robot to a known safe state."
-```
-
-Check that:
-
-- RoboClaw prioritizes a safe state
-- the reset result or failure point is clear
-
-## 10. What to Record During Validation
-
-For each validation run, it is helpful to record:
-
-- the command you ran
-- the embodiment type
-- whether the target is `real` or `sim`
-- the current provider and model state
-- which workspace files were generated
-- whether the failure point is installation, initialization, workspace, agent, ROS2, adapter, or the embodiment-specific flow
-
-## 11. Final Pass Criteria
-
-The core path is in acceptable shape only when all of the following are true:
-
-- [ ] `pip install -e ".[dev]"` succeeds
-- [ ] `roboclaw onboard` succeeds
-- [ ] `roboclaw status` succeeds
-- [ ] `roboclaw agent -m "hello"` succeeds
-- [ ] RoboClaw can write embodied setup assets into `~/.roboclaw/workspace/embodied/`
-- [ ] RoboClaw does not directly pollute framework source files
-- [ ] if a real robot or simulator is available, RoboClaw can at least enter the `connect` flow and return a reasonable result
-
-If the first four items pass but the later ones fail, the basic startup path works but the embodied entry path is still not strong enough.
-
-If the first four items are unstable, the PR is not yet ready as a first-run external demo path.

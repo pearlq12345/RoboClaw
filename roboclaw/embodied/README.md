@@ -24,7 +24,7 @@ embodied/
       carriers/
       transports/
       adapters/
-      bridges/
+      control_surfaces/
     orchestration/
       runtime/
       procedures/
@@ -36,7 +36,7 @@ embodied/
 
 - `definition/` describes embodied things statically.
 - `execution/` describes how those things are selected, driven, and observed.
-- `catalog.py` merges built-in framework definitions with workspace assets.
+- `catalog.py` merges built-in framework definitions, including control surface profiles, with workspace assets.
 - `workspace.py` validates and loads user-generated embodied assets.
 
 ## Runtime Shape
@@ -48,10 +48,13 @@ user request
   -> build_catalog(workspace)
   -> runtime session
   -> procedure
-  -> adapter / bridge
-  -> ROS2
-  -> real or simulated embodiment
+  -> runtime adapter
+  -> control surface
+  -> embodiment runtime
+  -> Real/Sim Embodiment
 ```
+
+In the current SO101 implementation, the control-surface layer talks to the embodiment runtime through ROS2 interfaces. ROS2 is the current transport path, not a separate fixed architecture layer.
 
 This package owns only the reusable side of that chain. Concrete lab setups,
 device paths, namespaces, and scenario files belong under

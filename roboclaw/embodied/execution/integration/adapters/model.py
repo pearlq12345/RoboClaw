@@ -67,7 +67,7 @@ class CompatibilityComponent(StrEnum):
     """Component family referenced by compatibility constraints."""
 
     TRANSPORT = "transport"
-    BRIDGE = "bridge"
+    CONTROL_SURFACE_PROFILE = "control_surface_profile"
     WORKSPACE_SCHEMA = "workspace_schema"
     ROBOT_SCHEMA = "robot_schema"
     SENSOR_SCHEMA = "sensor_schema"
@@ -305,7 +305,7 @@ class AdapterBinding:
     transport: TransportKind
     implementation: str
     supported_targets: tuple[str, ...]
-    bridge_id: str | None = None
+    control_surface_profile_id: str | None = None
     lifecycle: AdapterLifecycleContract = field(default_factory=lambda: DEFAULT_ADAPTER_LIFECYCLE)
     degraded_modes: tuple[DegradedModeSpec, ...] = field(default_factory=tuple)
     compatibility: AdapterCompatibilitySpec = field(
@@ -318,23 +318,23 @@ class AdapterBinding:
             raise ValueError(f"Adapter '{self.id}' must support at least one execution target.")
         if len(set(self.supported_targets)) != len(self.supported_targets):
             raise ValueError(f"Adapter '{self.id}' has duplicate supported targets.")
-        if self.bridge_id is not None and not self.bridge_id.strip():
-            raise ValueError(f"Adapter '{self.id}' bridge_id cannot be empty when specified.")
+        if self.control_surface_profile_id is not None and not self.control_surface_profile_id.strip():
+            raise ValueError(f"Adapter '{self.id}' control_surface_profile_id cannot be empty when specified.")
 
         transport_constraints = self.compatibility.for_component(CompatibilityComponent.TRANSPORT)
         if not transport_constraints:
             raise ValueError(
                 f"Adapter '{self.id}' compatibility must declare at least one transport constraint."
             )
-        if self.bridge_id is not None:
-            bridge_constraints = tuple(
+        if self.control_surface_profile_id is not None:
+            control_surface_profile_constraints = tuple(
                 item
-                for item in self.compatibility.for_component(CompatibilityComponent.BRIDGE)
-                if item.target == self.bridge_id
+                for item in self.compatibility.for_component(CompatibilityComponent.CONTROL_SURFACE_PROFILE)
+                if item.target == self.control_surface_profile_id
             )
-            if not bridge_constraints:
+            if not control_surface_profile_constraints:
                 raise ValueError(
-                    f"Adapter '{self.id}' bridge_id '{self.bridge_id}' is missing a matching bridge compatibility constraint."
+                    f"Adapter '{self.id}' control_surface_profile_id '{self.control_surface_profile_id}' is missing a matching control-surface profile compatibility constraint."
                 )
 
         known_error_codes = {item.code for item in self.lifecycle.error_codes}

@@ -1,21 +1,21 @@
-"""Built-in domain bridge contracts."""
+"""Built-in control-surface profiles."""
 
 from __future__ import annotations
 
 from roboclaw.embodied.definition.foundation.schema import CapabilityFamily, RobotType
-from roboclaw.embodied.execution.integration.bridges.model import (
-    BridgeDomain,
-    BridgeKind,
+from roboclaw.embodied.execution.integration.control_surfaces.model import (
+    EmbodimentDomain,
+    ControlSurfaceKind,
     ControlSurfaceSpec,
-    DomainBridgeContract,
+    ControlSurfaceProfile,
     ObservationSurfaceSpec,
 )
 
-ARM_HAND_BRIDGE = DomainBridgeContract(
-    id="bridge_arm_hand_v1",
-    domain=BridgeDomain.ARM_HAND,
-    kind=BridgeKind.ROS2_CONTROL,
-    description="Bridge profile for arm/hand manipulation systems.",
+ARM_HAND_CONTROL_SURFACE_PROFILE = ControlSurfaceProfile(
+    id="control_surface_profile_arm_hand_v1",
+    domain=EmbodimentDomain.ARM_HAND,
+    kind=ControlSurfaceKind.ROS2_CONTROL,
+    description="Control-surface profile for arm/hand manipulation systems.",
     supported_robot_types=(RobotType.ARM, RobotType.HAND, RobotType.DUAL_ARM),
     supported_capabilities=(
         CapabilityFamily.LIFECYCLE,
@@ -50,11 +50,11 @@ ARM_HAND_BRIDGE = DomainBridgeContract(
     ),
 )
 
-HUMANOID_WHOLE_BODY_BRIDGE = DomainBridgeContract(
-    id="bridge_humanoid_whole_body_v1",
-    domain=BridgeDomain.HUMANOID_WHOLE_BODY,
-    kind=BridgeKind.WHOLE_BODY_CONTROLLER,
-    description="Bridge profile for humanoid whole-body controllers.",
+HUMANOID_WHOLE_BODY_CONTROL_SURFACE_PROFILE = ControlSurfaceProfile(
+    id="control_surface_profile_humanoid_whole_body_v1",
+    domain=EmbodimentDomain.HUMANOID_WHOLE_BODY,
+    kind=ControlSurfaceKind.WHOLE_BODY_CONTROLLER,
+    description="Control-surface profile for humanoid whole-body controllers.",
     supported_robot_types=(RobotType.HUMANOID,),
     supported_capabilities=(
         CapabilityFamily.LIFECYCLE,
@@ -83,11 +83,11 @@ HUMANOID_WHOLE_BODY_BRIDGE = DomainBridgeContract(
     ),
 )
 
-MOBILE_BASE_FLEET_BRIDGE = DomainBridgeContract(
-    id="bridge_mobile_base_fleet_v1",
-    domain=BridgeDomain.MOBILE_BASE_FLEET,
-    kind=BridgeKind.NAV2_RMF,
-    description="Bridge profile for mobile base and fleet navigation stacks.",
+MOBILE_BASE_FLEET_CONTROL_SURFACE_PROFILE = ControlSurfaceProfile(
+    id="control_surface_profile_mobile_base_fleet_v1",
+    domain=EmbodimentDomain.MOBILE_BASE_FLEET,
+    kind=ControlSurfaceKind.NAV2_RMF,
+    description="Control-surface profile for mobile base and fleet navigation stacks.",
     supported_robot_types=(RobotType.MOBILE_BASE,),
     supported_capabilities=(
         CapabilityFamily.LIFECYCLE,
@@ -115,11 +115,11 @@ MOBILE_BASE_FLEET_BRIDGE = DomainBridgeContract(
     ),
 )
 
-DRONE_BRIDGE = DomainBridgeContract(
-    id="bridge_drone_v1",
-    domain=BridgeDomain.DRONE,
-    kind=BridgeKind.MAVSDK_MAVLINK,
-    description="Bridge profile for drone command and telemetry over MAVLink/MAVSDK.",
+DRONE_CONTROL_SURFACE_PROFILE = ControlSurfaceProfile(
+    id="control_surface_profile_drone_v1",
+    domain=EmbodimentDomain.DRONE,
+    kind=ControlSurfaceKind.MAVSDK_MAVLINK,
+    description="Control-surface profile for drone command and telemetry over MAVLink/MAVSDK.",
     supported_robot_types=(RobotType.DRONE,),
     supported_capabilities=(
         CapabilityFamily.LIFECYCLE,
@@ -147,11 +147,11 @@ DRONE_BRIDGE = DomainBridgeContract(
     ),
 )
 
-SIMULATOR_BRIDGE = DomainBridgeContract(
-    id="bridge_simulator_v1",
-    domain=BridgeDomain.SIMULATOR,
-    kind=BridgeKind.SIM_RUNTIME,
-    description="Bridge profile for simulator runtimes and world orchestration.",
+SIMULATOR_CONTROL_SURFACE_PROFILE = ControlSurfaceProfile(
+    id="control_surface_profile_simulator_v1",
+    domain=EmbodimentDomain.SIMULATOR,
+    kind=ControlSurfaceKind.SIM_RUNTIME,
+    description="Control-surface profile for simulator runtimes and world orchestration.",
     supported_robot_types=(
         RobotType.ARM,
         RobotType.HUMANOID,
@@ -186,11 +186,10 @@ SIMULATOR_BRIDGE = DomainBridgeContract(
     ),
 )
 
-DEFAULT_DOMAIN_BRIDGES = (
-    ARM_HAND_BRIDGE,
-    HUMANOID_WHOLE_BODY_BRIDGE,
-    MOBILE_BASE_FLEET_BRIDGE,
-    DRONE_BRIDGE,
-    SIMULATOR_BRIDGE,
+DEFAULT_CONTROL_SURFACE_PROFILES = (
+    ARM_HAND_CONTROL_SURFACE_PROFILE,
+    HUMANOID_WHOLE_BODY_CONTROL_SURFACE_PROFILE,
+    MOBILE_BASE_FLEET_CONTROL_SURFACE_PROFILE,
+    DRONE_CONTROL_SURFACE_PROFILE,
+    SIMULATOR_CONTROL_SURFACE_PROFILE,
 )
-

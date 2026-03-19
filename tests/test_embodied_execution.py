@@ -147,6 +147,7 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
         "        'ros_distro': 'jazzy',",
         "        'profile_id': 'so101_ros2_standard',",
         f"        'namespace': {namespace!r},",
+        "        'serial_device_by_id': '/dev/serial/by-id/usb-so101',",
     ]
     if launch_command is not None:
         connection_lines.append(f"        'launch_command': {launch_command!r},")
@@ -178,7 +179,7 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
                 *connection_lines,
                 "    },",
                 "    robots={",
-                "        'primary': {'serial_device': '/dev/ttyACM0'},",
+                "        'primary': {'serial_device_by_id': '/dev/serial/by-id/usb-so101'},",
                 "    },",
                 "    sensors={},",
                 "    safety_overrides={},",
@@ -200,7 +201,7 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
                 "    CompatibilityComponent,",
                 "    VersionConstraint,",
                 ")",
-                "from roboclaw.embodied.execution.integration.bridges import ARM_HAND_BRIDGE",
+                "from roboclaw.embodied.execution.integration.control_surfaces import ARM_HAND_CONTROL_SURFACE_PROFILE",
                 "from roboclaw.embodied.workspace import (",
                 "    WORKSPACE_SCHEMA_VERSION,",
                 "    WorkspaceAssetContract,",
@@ -222,8 +223,8 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
                 "            requirement='>=1.0,<2.0',",
                 "        ),",
                 "        VersionConstraint(",
-                "            component=CompatibilityComponent.BRIDGE,",
-                "            target=ARM_HAND_BRIDGE.id,",
+                "            component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,",
+                "            target=ARM_HAND_CONTROL_SURFACE_PROFILE.id,",
                 "            requirement='>=1.0,<2.0',",
                 "        ),",
                 "    ),",
@@ -236,7 +237,7 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
                 "    implementation=",
                 "        'roboclaw.embodied.execution.integration.adapters.ros2.standard:Ros2ActionServiceAdapter',",
                 "    supported_targets=('real',),",
-                "    bridge_id=ARM_HAND_BRIDGE.id,",
+                "    control_surface_profile_id=ARM_HAND_CONTROL_SURFACE_PROFILE.id,",
                 "    compatibility=COMPATIBILITY,",
                 ")",
                 "",
@@ -412,7 +413,7 @@ async def test_adapter_ignores_unrelated_ros_nodes_when_required_interfaces_are_
 
 
 @pytest.mark.asyncio
-async def test_stage1_profile_can_fallback_to_primitive_services_without_action(tmp_path: Path) -> None:
+async def test_control_surface_profile_can_fallback_to_primitive_services_without_action(tmp_path: Path) -> None:
     _prepare_workspace(tmp_path)
     _write_setup_assets(tmp_path, "so101_setup")
     namespace = canonical_ros2_namespace("so101_setup", "real")
@@ -457,7 +458,7 @@ async def test_stage1_profile_can_fallback_to_primitive_services_without_action(
 @pytest.mark.asyncio
 async def test_adapter_does_not_launch_duplicate_runtime_when_connect_service_exists(tmp_path: Path) -> None:
     _prepare_workspace(tmp_path)
-    _write_setup_assets(tmp_path, "so101_setup", launch_command="python -m fake_bridge")
+    _write_setup_assets(tmp_path, "so101_setup", launch_command="python -m fake_control_surface")
     responses = _standard_ros2_responses("so101_setup")
     loop, provider, fake_exec = _build_loop(tmp_path, responses)
     session = _seed_session(loop)

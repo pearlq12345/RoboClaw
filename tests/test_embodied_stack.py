@@ -1,5 +1,8 @@
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from roboclaw.embodied import RGB_CAMERA, SO101_ROBOT, build_default_catalog
 from roboclaw.embodied.definition.foundation.schema import (
@@ -53,16 +56,16 @@ from roboclaw.embodied.execution.integration.adapters import (
     TimeoutPolicy,
     VersionConstraint,
 )
-from roboclaw.embodied.execution.integration.bridges import (
-    ARM_HAND_BRIDGE,
-    DEFAULT_DOMAIN_BRIDGES,
-    DRONE_BRIDGE,
-    HUMANOID_WHOLE_BODY_BRIDGE,
-    MOBILE_BASE_FLEET_BRIDGE,
-    SIMULATOR_BRIDGE,
-    BridgeDomain,
-    BridgeKind,
-    DomainBridgeContract,
+from roboclaw.embodied.execution.integration.control_surfaces import (
+    ARM_HAND_CONTROL_SURFACE_PROFILE,
+    DEFAULT_CONTROL_SURFACE_PROFILES,
+    DRONE_CONTROL_SURFACE_PROFILE,
+    HUMANOID_WHOLE_BODY_CONTROL_SURFACE_PROFILE,
+    MOBILE_BASE_FLEET_CONTROL_SURFACE_PROFILE,
+    SIMULATOR_CONTROL_SURFACE_PROFILE,
+    EmbodimentDomain,
+    ControlSurfaceKind,
+    ControlSurfaceProfile,
 )
 from roboclaw.embodied.execution.integration.carriers.real import build_real_ros2_target
 from roboclaw.embodied.execution.integration.transports.ros2 import build_standard_ros2_contract
@@ -203,37 +206,37 @@ def test_embodied_catalog_contains_reusable_definitions_only() -> None:
     assert catalog.robots.get("so101").robot_type == RobotType.ARM
     assert catalog.sensors.get("rgb_camera").default_topic_name == "image_raw"
     assert catalog.assemblies.list() == ()
-    assert len(catalog.bridges.list()) == len(DEFAULT_DOMAIN_BRIDGES)
+    assert len(catalog.control_surface_profiles.list()) == len(DEFAULT_CONTROL_SURFACE_PROFILES)
     assert catalog.adapters.for_assembly("workspace_so101") == ()
     assert catalog.deployments.for_assembly("workspace_so101") == ()
     assert RGB_CAMERA.supports_intrinsics is True
 
 
-def test_domain_bridge_contract_is_machine_checkable() -> None:
+def test_control_surface_profile_contract_is_machine_checkable() -> None:
     catalog = build_default_catalog()
 
-    domains = {bridge.domain for bridge in catalog.bridges.list()}
-    assert BridgeDomain.ARM_HAND in domains
-    assert BridgeDomain.HUMANOID_WHOLE_BODY in domains
-    assert BridgeDomain.MOBILE_BASE_FLEET in domains
-    assert BridgeDomain.DRONE in domains
-    assert BridgeDomain.SIMULATOR in domains
+    domains = {profile.domain for profile in catalog.control_surface_profiles.list()}
+    assert EmbodimentDomain.ARM_HAND in domains
+    assert EmbodimentDomain.HUMANOID_WHOLE_BODY in domains
+    assert EmbodimentDomain.MOBILE_BASE_FLEET in domains
+    assert EmbodimentDomain.DRONE in domains
+    assert EmbodimentDomain.SIMULATOR in domains
 
-    arm_bridge = catalog.bridges.get(ARM_HAND_BRIDGE.id)
-    assert arm_bridge.kind == BridgeKind.ROS2_CONTROL
-    assert arm_bridge.control_surfaces[0].id == "joint_trajectory"
-    assert arm_bridge.supports_robot_type(RobotType.ARM)
+    arm_profile = catalog.control_surface_profiles.get(ARM_HAND_CONTROL_SURFACE_PROFILE.id)
+    assert arm_profile.kind == ControlSurfaceKind.ROS2_CONTROL
+    assert arm_profile.control_surfaces[0].id == "joint_trajectory"
+    assert arm_profile.supports_robot_type(RobotType.ARM)
 
-    drone_bridge = catalog.bridges.get(DRONE_BRIDGE.id)
-    assert drone_bridge.supports_robot_type(RobotType.DRONE)
+    drone_profile = catalog.control_surface_profiles.get(DRONE_CONTROL_SURFACE_PROFILE.id)
+    assert drone_profile.supports_robot_type(RobotType.DRONE)
 
     adapter = AdapterBinding(
-        id="workspace_ros2_adapter_with_bridge",
+        id="workspace_ros2_adapter_with_control_surface_profile",
         assembly_id="workspace_so101",
         transport=TransportKind.ROS2,
         implementation="workspace.adapters.ros2:Adapter",
         supported_targets=("real",),
-        bridge_id=ARM_HAND_BRIDGE.id,
+        control_surface_profile_id=ARM_HAND_CONTROL_SURFACE_PROFILE.id,
         compatibility=AdapterCompatibilitySpec(
             adapter_api_version="1.0",
             constraints=(
@@ -243,20 +246,28 @@ def test_domain_bridge_contract_is_machine_checkable() -> None:
                     requirement=">=1.0,<2.0",
                 ),
                 VersionConstraint(
-                    component=CompatibilityComponent.BRIDGE,
-                    target=ARM_HAND_BRIDGE.id,
+                    component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,
+                    target=ARM_HAND_CONTROL_SURFACE_PROFILE.id,
                     requirement=">=1.0,<2.0",
                 ),
             ),
         ),
     )
-    assert adapter.bridge_id == ARM_HAND_BRIDGE.id
-    assert len(catalog.bridges.for_domain(BridgeDomain.HUMANOID_WHOLE_BODY)) == 1
-    assert len(catalog.bridges.for_domain(BridgeDomain.MOBILE_BASE_FLEET)) == 1
-    assert len(catalog.bridges.for_domain(BridgeDomain.SIMULATOR)) == 1
-    assert isinstance(HUMANOID_WHOLE_BODY_BRIDGE, DomainBridgeContract)
-    assert isinstance(MOBILE_BASE_FLEET_BRIDGE, DomainBridgeContract)
-    assert isinstance(SIMULATOR_BRIDGE, DomainBridgeContract)
+    assert adapter.control_surface_profile_id == ARM_HAND_CONTROL_SURFACE_PROFILE.id
+    assert not hasattr(catalog, "bridges")
+    assert not hasattr(adapter, "bridge_id")
+    assert not hasattr(CompatibilityComponent, "BRIDGE")
+    assert len(catalog.control_surface_profiles.for_domain(EmbodimentDomain.HUMANOID_WHOLE_BODY)) == 1
+    assert len(catalog.control_surface_profiles.for_domain(EmbodimentDomain.MOBILE_BASE_FLEET)) == 1
+    assert len(catalog.control_surface_profiles.for_domain(EmbodimentDomain.SIMULATOR)) == 1
+    assert isinstance(HUMANOID_WHOLE_BODY_CONTROL_SURFACE_PROFILE, ControlSurfaceProfile)
+    assert isinstance(MOBILE_BASE_FLEET_CONTROL_SURFACE_PROFILE, ControlSurfaceProfile)
+    assert isinstance(SIMULATOR_CONTROL_SURFACE_PROFILE, ControlSurfaceProfile)
+
+
+def test_old_bridge_public_surface_is_gone() -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("roboclaw.embodied.execution.integration.bridges")
 
 
 def test_workspace_blueprint_can_be_composed_into_a_variant() -> None:
@@ -343,9 +354,9 @@ def test_adapter_lifecycle_contract_is_machine_checkable() -> None:
     lifecycle = AdapterLifecycleContract(
         dependencies=(
             DependencySpec(
-                id="ros2_bridge",
+                id="ros2_control_surface",
                 kind=DependencyKind.ROS2_NODE,
-                description="ROS2 bridge node must be available.",
+                description="ROS2 control surface node must be available.",
             ),
         ),
         timeout_policy=TimeoutPolicy(
@@ -397,8 +408,8 @@ def test_adapter_lifecycle_contract_is_machine_checkable() -> None:
                     requirement=">=1.0,<2.0",
                 ),
                 VersionConstraint(
-                    component=CompatibilityComponent.BRIDGE,
-                    target=ARM_HAND_BRIDGE.id,
+                    component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,
+                    target=ARM_HAND_CONTROL_SURFACE_PROFILE.id,
                     requirement=">=1.0,<2.0",
                     required=False,
                 ),
@@ -421,7 +432,7 @@ def test_adapter_result_models_are_machine_checkable() -> None:
         assembly_id="workspace_so101",
         transport=TransportKind.ROS2,
         available_targets=("real", "sim_gazebo"),
-        detected_dependencies=("ros2_bridge", "camera_node"),
+        detected_dependencies=("ros2_control_surface", "camera_node"),
         notes=("probe complete",),
         details={"latency_ms": 4},
     )
@@ -429,17 +440,17 @@ def test_adapter_result_models_are_machine_checkable() -> None:
     assert probe.available_targets == ("real", "sim_gazebo")
 
     dep_item = DependencyCheckItem(
-        dependency_id="ros2_bridge",
+        dependency_id="ros2_control_surface",
         kind=DependencyKind.ROS2_NODE,
         required=True,
         available=True,
-        message="bridge reachable",
+        message="control surface reachable",
     )
     dep_result = DependencyCheckResult(
         adapter_id="workspace_ros2_adapter",
         ok=True,
         items=(dep_item,),
-        checked_dependencies=("ros2_bridge",),
+        checked_dependencies=("ros2_control_surface",),
     )
     assert dep_result.ok is True
     assert dep_result.items[0].kind == DependencyKind.ROS2_NODE

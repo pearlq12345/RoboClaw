@@ -1,4 +1,4 @@
-"""Minimal SCServo bus helpers for stage-1 ROS2 bridges."""
+"""Minimal SCServo bus helpers for ROS2 control-surface servers."""
 
 from __future__ import annotations
 
@@ -6,6 +6,11 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from roboclaw.config.paths import resolve_active_serial_device_path
+
+DEFAULT_BAUDRATE = 1_000_000
 
 
 def _patch_set_packet_timeout(self, packet_length: int) -> None:  # noqa: N802
@@ -79,7 +84,7 @@ class ScsServoBus:
     I_COEFFICIENT_ADDR = 23
     OPERATING_MODE_ADDR = 33
 
-    def __init__(self, device: str, *, baudrate: int = 1_000_000, protocol_version: int = 0) -> None:
+    def __init__(self, device: str, *, baudrate: int = DEFAULT_BAUDRATE, protocol_version: int = 0) -> None:
         import scservo_sdk as scs
 
         self.device = device
@@ -94,11 +99,9 @@ class ScsServoBus:
     def connect(self) -> None:
         if self.connected:
             return
+        self.port_handler.baudrate = self.baudrate
         if not self.port_handler.openPort():
             raise RuntimeError(f"Failed to open servo device `{self.device}`.")
-        if not self.port_handler.setBaudRate(self.baudrate):
-            self.port_handler.closePort()
-            raise RuntimeError(f"Failed to set baudrate {self.baudrate} on `{self.device}`.")
         self.connected = True
 
     def disconnect(self) -> None:
@@ -180,8 +183,67 @@ class ScsServoBus:
             raise RuntimeError(f"{operation} failed: {self.packet_handler.getRxPacketError(error)}")
 
 
+def probe_servo_register(
+    device: str,
+    servo_id: int,
+    address: int,
+    *,
+    baudrate: int = DEFAULT_BAUDRATE,
+    protocol_version: int = 0,
+) -> dict[str, Any]:
+    import scservo_sdk as scs
+
+    candidate = Path(device).expanduser()
+    if str(candidate).startswith("/dev/serial/by-id/"):
+        try:
+            resolved_path = resolve_active_serial_device_path(str(candidate))
+        except FileNotFoundError:
+            resolved_path = candidate.resolve()
+    else:
+        resolved_path = candidate.resolve()
+    resolved = str(resolved_path)
+    port_handler = scs.PortHandler(resolved)
+    port_handler.baudrate = int(baudrate)
+    port_handler.setPacketTimeout = _patch_set_packet_timeout.__get__(port_handler, scs.PortHandler)
+    opened = port_handler.openPort()
+    if not opened:
+        return {
+            "resolved": resolved,
+            "open": False,
+            "ok": False,
+            "result": None,
+            "error": None,
+            "value": None,
+            "detail": "ROBOCLAW_SO101_SERIAL_OPEN_FAILED",
+        }
+
+    packet_handler = scs.PacketHandler(protocol_version)
+    try:
+        value, result, error = packet_handler.read2ByteTxRx(port_handler, servo_id, address)
+    finally:
+        port_handler.closePort()
+
+    ok = result == getattr(scs, "COMM_SUCCESS", 0) and error == 0
+    detail = ""
+    if result != getattr(scs, "COMM_SUCCESS", 0):
+        detail = packet_handler.getTxRxResult(result) or "ROBOCLAW_SO101_SERIAL_NO_STATUS"
+    elif error != 0:
+        detail = packet_handler.getRxPacketError(error) or f"ROBOCLAW_SO101_SERIAL_ERROR_{error}"
+    return {
+        "resolved": resolved,
+        "open": True,
+        "ok": ok,
+        "result": int(result),
+        "error": int(error),
+        "value": int(value),
+        "detail": detail,
+    }
+
+
 __all__ = [
+    "DEFAULT_BAUDRATE",
     "ScsServoBus",
     "ServoCalibration",
     "load_calibration_file",
+    "probe_servo_register",
 ]
