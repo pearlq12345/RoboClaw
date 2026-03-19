@@ -25,7 +25,7 @@ def test_sync_workspace_templates_skips_python_cache_files(monkeypatch, tmp_path
     assert not (workspace / "__pycache__").exists()
 
 
-def test_ensure_robot_calibration_file_imports_legacy_cache_once(monkeypatch, tmp_path: Path) -> None:
+def test_ensure_robot_calibration_file_does_not_import_legacy_cache(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(config_paths, "get_config_path", lambda: tmp_path / "config.json")
     monkeypatch.setattr(config_paths, "LEGACY_CALIBRATION_ROOT", tmp_path / "home" / ".cache" / "huggingface" / "lerobot" / "calibration" / "robots")
 
@@ -49,4 +49,4 @@ def test_ensure_robot_calibration_file_imports_legacy_cache_once(monkeypatch, tm
     canonical = config_paths.ensure_robot_calibration_file("so101", "so101_real")
 
     assert canonical == tmp_path / "calibration" / "so101" / "so101_real.json"
-    assert canonical.read_text(encoding="utf-8") == legacy.read_text(encoding="utf-8")
+    assert not canonical.exists()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 from roboclaw.config.loader import get_config_path
@@ -76,17 +75,8 @@ def find_legacy_calibration_file(robot_name: str, calibration_id: str) -> Path |
 
 
 def ensure_robot_calibration_file(robot_name: str, calibration_id: str) -> Path:
-    """Ensure the canonical calibration file exists, migrating from legacy cache if needed."""
+    """Return the canonical calibration file path for one robot family."""
     canonical = get_robot_calibration_file(robot_name, calibration_id)
-    if canonical.exists():
-        return canonical
-
-    legacy = find_legacy_calibration_file(robot_name, calibration_id)
-    if legacy is None:
-        return canonical
-
-    canonical.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(legacy, canonical)
     return canonical
 
 

@@ -355,6 +355,7 @@ async def test_onboarding_blocks_missing_profile_calibration_before_asset_genera
     assert state["detected_facts"]["calibration_missing"] is True
     assert "requires framework-managed calibration" in response.content
     assert str(calibration_file) in response.content
+    assert "Reply with `calibrate`" in response.content
     assert not (tmp_path / "embodied" / "assemblies" / "so101_setup.py").exists()
 
 

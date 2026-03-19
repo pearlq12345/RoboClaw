@@ -414,73 +414,11 @@ instance_calibration_dir() {
   printf '%s/calibration\n' "$(instance_dir "${instance}" "${profile}")"
 }
 
-host_native_calibration_dir() {
-  local path="${HOME}/.roboclaw/calibration"
-  if [ -d "${path}" ]; then
-    printf '%s\n' "${path}"
-  fi
-}
-
-host_legacy_calibration_dir() {
-  local path="${HOME}/.cache/huggingface/lerobot/calibration/robots"
-  if [ -d "${path}" ]; then
-    printf '%s\n' "${path}"
-  fi
-}
-
 prepare_instance_calibration() {
   local instance="${1}"
   local profile
   profile="$(docker_profile "${2:-}")"
-  local native_seed_dir legacy_seed_dir instance_calibration_dir host_python
-  native_seed_dir="$(host_native_calibration_dir || true)"
-  legacy_seed_dir="$(host_legacy_calibration_dir || true)"
-  instance_calibration_dir="$(instance_calibration_dir "${instance}" "${profile}")"
-  host_python="$(host_python_cmd)"
-
-  mkdir -p "${instance_calibration_dir}"
-
-  if [ -n "${native_seed_dir}" ] && [ -z "$(find "${instance_calibration_dir}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    "${host_python}" - "${native_seed_dir}" "${instance_calibration_dir}" <<'PY'
-from pathlib import Path
-import shutil
-import sys
-
-seed_dir = Path(sys.argv[1])
-target_dir = Path(sys.argv[2])
-if seed_dir.is_dir():
-    for child in seed_dir.iterdir():
-        destination = target_dir / child.name
-        if child.is_dir():
-            shutil.copytree(child, destination, dirs_exist_ok=True)
-        else:
-            shutil.copy2(child, destination)
-PY
-  fi
-
-  if [ -n "${legacy_seed_dir}" ] && [ -z "$(find "${instance_calibration_dir}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-    "${host_python}" - "${legacy_seed_dir}" "${instance_calibration_dir}" <<'PY'
-from pathlib import Path
-import shutil
-import sys
-
-legacy_root = Path(sys.argv[1])
-target_dir = Path(sys.argv[2])
-robot_aliases = {
-    "so_follower": "so101",
-    "so100_follower": "so101",
-}
-for source_name, target_name in robot_aliases.items():
-    source_dir = legacy_root / source_name
-    if not source_dir.is_dir():
-        continue
-    destination = target_dir / target_name
-    destination.mkdir(parents=True, exist_ok=True)
-    for child in source_dir.iterdir():
-        if child.is_file():
-            shutil.copy2(child, destination / child.name)
-PY
-  fi
+  mkdir -p "$(instance_calibration_dir "${instance}" "${profile}")"
 }
 
 instance_oauth_cli_kit_auth_dir() {

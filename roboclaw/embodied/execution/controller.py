@@ -12,6 +12,7 @@ from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
 from roboclaw.embodied.execution.orchestration.runtime.executor import (
     ExecutionContext,
+    ProcedureExecutionResult,
     ProcedureExecutor,
 )
 from roboclaw.embodied.execution.orchestration.runtime.manager import RuntimeManager
@@ -21,6 +22,7 @@ from roboclaw.session.manager import Session
 ProgressCallback = Callable[[str], Awaitable[None]]
 
 EMBODIED_RUNTIME_STATE_KEY = "embodied_runtime"
+EMBODIED_CALIBRATION_STATE_KEY = "embodied_calibration"
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,11 @@ class EmbodiedExecutionController:
     """Handle embodied commands after onboarding hands off a ready setup."""
 
     _CONNECT_TOKENS = ("connect", "连接", "接入", "开始连接")
-    _CALIBRATE_TOKENS = ("calibrate", "校准")
+    _CALIBRATE_TOKENS = (
+        "calibrate",
+        "校准",
+        "标定",
+    )
     _DEBUG_TOKENS = ("debug", "诊断", "检查机器人", "检查状态")
     _RESET_TOKENS = ("reset", "复位", "回零", "恢复默认", "回到初始")
 
@@ -58,6 +64,8 @@ class EmbodiedExecutionController:
         self.executor = ProcedureExecutor(tools, runtime_manager)
 
     def should_handle(self, session: Session, content: str) -> bool:
+        if self._load_calibration_state(session) is not None:
+            return True
         if self._parse_intent(content) is None:
             return False
         state = self._load_onboarding_state(session)
@@ -75,6 +83,15 @@ class EmbodiedExecutionController:
         session: Session,
         on_progress: ProgressCallback | None = None,
     ) -> OutboundMessage:
+        calibration_state = self._load_calibration_state(session)
+        if calibration_state is not None:
+            return await self._handle_pending_calibration(
+                msg,
+                session,
+                calibration_state=calibration_state,
+                on_progress=on_progress,
+            )
+
         intent = self._parse_intent(msg.content)
         if intent is None:
             content = (
@@ -126,24 +143,27 @@ class EmbodiedExecutionController:
             await on_progress(f"Embodied command routed to setup `{setup.setup_id}`.")
 
         if intent.kind == ProcedureKind.CONNECT:
-            result = await self.executor.execute_connect(context)
+            result = await self.executor.execute_connect(context, on_progress=on_progress)
         elif intent.kind == ProcedureKind.MOVE and intent.primitive_name is not None:
             result = await self.executor.execute_move(
                 context,
                 primitive_name=intent.primitive_name,
                 primitive_args=intent.primitive_args,
+                on_progress=on_progress,
             )
         elif intent.kind == ProcedureKind.DEBUG:
             result = await self.executor.execute_debug(context)
         elif intent.kind == ProcedureKind.RESET:
             result = await self.executor.execute_reset(context)
         elif intent.kind == ProcedureKind.CALIBRATE:
-            result = await self.executor.execute_calibrate(context)
+            result = await self.executor.execute_calibrate(context, on_progress=on_progress)
+            self._sync_calibration_state(session, setup_id=setup.setup_id, runtime_id=runtime.id, result=result)
         else:
             result = await self.executor.execute_move(
                 context,
                 primitive_name=intent.primitive_name or "unknown",
                 primitive_args=intent.primitive_args,
+                on_progress=on_progress,
             )
 
         session.metadata[EMBODIED_RUNTIME_STATE_KEY] = {
@@ -169,6 +189,124 @@ class EmbodiedExecutionController:
             return SetupOnboardingState.from_dict(raw)
         except Exception:
             return None
+
+    @staticmethod
+    def _load_calibration_state(session: Session) -> dict[str, Any] | None:
+        raw = session.metadata.get(EMBODIED_CALIBRATION_STATE_KEY)
+        if not isinstance(raw, dict):
+            return None
+        return dict(raw)
+
+    @staticmethod
+    def _sync_calibration_state(
+        session: Session,
+        *,
+        setup_id: str,
+        runtime_id: str,
+        result: ProcedureExecutionResult,
+    ) -> None:
+        phase = str(result.details.get("calibration_phase") or "").strip()
+        if phase in {"await_mid_pose_ack", "streaming"}:
+            session.metadata[EMBODIED_CALIBRATION_STATE_KEY] = {
+                "setup_id": setup_id,
+                "runtime_id": runtime_id,
+                "phase": phase,
+            }
+            return
+        session.metadata.pop(EMBODIED_CALIBRATION_STATE_KEY, None)
+
+    def _build_context(self, session: Session, setup: ResolvedSetup) -> ExecutionContext:
+        catalog = build_catalog(self.workspace)
+        assembly = catalog.assemblies.get(setup.assembly_id)
+        deployment = catalog.deployments.get(setup.deployment_id)
+        adapter_binding = catalog.adapters.get(setup.adapter_id)
+        target = assembly.execution_target(deployment.target_id)
+        robot_attachment = assembly.robots[0]
+        robot = catalog.robots.get(robot_attachment.robot_id)
+        profile = self._resolve_profile(robot.id)
+        runtime_id = f"{session.key}:{setup.setup_id}"
+        runtime = self.executor.runtime_for(
+            runtime_id=runtime_id,
+            setup_id=setup.setup_id,
+            assembly_id=setup.assembly_id,
+            deployment_id=setup.deployment_id,
+            target_id=deployment.target_id,
+            adapter_id=setup.adapter_id,
+        )
+        return ExecutionContext(
+            setup_id=setup.setup_id,
+            assembly=assembly,
+            deployment=deployment,
+            target=target,
+            robot=robot,
+            adapter_binding=adapter_binding,
+            profile=profile,
+            runtime=runtime,
+        )
+
+    async def _handle_pending_calibration(
+        self,
+        msg: InboundMessage,
+        session: Session,
+        *,
+        calibration_state: dict[str, Any],
+        on_progress: ProgressCallback | None,
+    ) -> OutboundMessage:
+        catalog = build_catalog(self.workspace)
+        setup, ambiguity = self._resolve_setup(session, catalog)
+        if setup is None:
+            session.metadata.pop(EMBODIED_CALIBRATION_STATE_KEY, None)
+            content = ambiguity or "The pending calibration interaction no longer has a resolvable setup. Reply with `calibrate` again."
+            session.add_message("user", msg.content)
+            session.add_message("assistant", content)
+            return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=msg.metadata or {})
+
+        context = self._build_context(session, setup)
+        content = msg.content.strip()
+        if not content:
+            result = await self.executor.advance_calibration(context, on_progress=on_progress)
+            self._sync_calibration_state(session, setup_id=setup.setup_id, runtime_id=context.runtime.id, result=result)
+        elif self._parse_intent(content) is not None and self._parse_intent(content).kind == ProcedureKind.CALIBRATE:
+            phase = self.executor.calibration_phase(context.runtime.id) or str(calibration_state.get("phase") or "")
+            calibration_path = context.profile.canonical_calibration_path()
+            result = self.executor._so101_calibration_phase_message(
+                context,
+                phase=phase,
+                calibration_path=calibration_path,
+            )
+        else:
+            phase = self.executor.calibration_phase(context.runtime.id) or str(calibration_state.get("phase") or "")
+            if phase == "await_mid_pose_ack":
+                message = (
+                    f"Calibration is pending for setup `{setup.setup_id}`."
+                    " Move the arm to a middle pose, then press Enter to start live calibration."
+                )
+            else:
+                message = (
+                    f"Calibration is already streaming for setup `{setup.setup_id}`."
+                    " Keep moving every joint through its full range of motion, then press Enter to stop and save."
+                )
+            result = ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=message,
+                details={"calibration_phase": phase},
+            )
+
+        session.metadata[EMBODIED_RUNTIME_STATE_KEY] = {
+            "runtime_id": context.runtime.id,
+            "setup_id": setup.setup_id,
+            "status": context.runtime.status.value,
+            "last_error": context.runtime.last_error,
+        }
+        session.add_message("user", msg.content)
+        session.add_message("assistant", result.message)
+        return OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content=result.message,
+            metadata=msg.metadata or {},
+        )
 
     def _resolve_setup(self, session: Session, catalog: Any) -> tuple[ResolvedSetup | None, str | None]:
         state = self._load_onboarding_state(session)

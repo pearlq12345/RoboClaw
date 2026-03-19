@@ -413,7 +413,8 @@ class OnboardingController:
                         "content": (
                             f"This `{primary_profile.robot_id}` profile requires framework-managed calibration before execution."
                             f"\nExpected canonical path: `{expected_path}`."
-                            "\nPlace the calibration file there or make a compatible legacy calibration available, then reply again."
+                            "\nNo calibration file is available in this container instance yet."
+                            "\nReply with `calibrate` and I will guide the calibration step next."
                         ),
                     }
             if (

@@ -6,11 +6,12 @@ import json
 import importlib.util
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from roboclaw.config.paths import ensure_robot_calibration_file, resolve_active_serial_device_path
-from roboclaw.embodied.execution.integration.control_surfaces.ros2.scservo import ServoCalibration
+from roboclaw.embodied.execution.integration.control_surfaces.ros2.scservo import ScsServoBus, ServoCalibration
 
 PROTOCOL_VERSION = 0
 DEFAULT_BAUDRATE = 1_000_000
@@ -38,6 +39,27 @@ ADDR_MAX_POSITION_LIMIT = 11
 ADDR_LOCK = 55
 ADDR_PRESENT_POSITION = 56
 POSITION_MODE = 0
+SERVO_RESOLUTION_MAX = 4095
+
+
+@dataclass(frozen=True)
+class So101CalibrationRow:
+    """One live calibration row rendered in the chat UI."""
+
+    joint_name: str
+    servo_id: int
+    range_min_raw: int | None
+    position_raw: int | None
+    range_max_raw: int | None
+
+
+@dataclass(frozen=True)
+class So101CalibrationSnapshot:
+    """Live SO101 calibration snapshot captured from the bus."""
+
+    device_by_id: str
+    resolved_device: str | None
+    rows: tuple[So101CalibrationRow, ...]
 
 
 def _patch_packet_timeout(port_handler: Any, scs: Any) -> None:
@@ -253,7 +275,7 @@ class So101FeetechRuntime:
             return canonical_path.resolve()
         raise FileNotFoundError(
             "Could not auto-discover an SO101 calibration file. "
-            f"Expected '{canonical_path}' or a legacy calibration import that could be migrated into it."
+            f"Expected '{canonical_path}'."
         )
 
     @staticmethod
@@ -299,4 +321,166 @@ def build_so101_runtime_from_env() -> So101FeetechRuntime:
     )
 
 
-__all__ = ["So101FeetechRuntime", "build_so101_runtime_from_env"]
+class So101CalibrationMonitor:
+    """Minimal raw SO101 monitor used before a calibration file exists."""
+
+    def __init__(self, *, device_by_id: str, baudrate: int = DEFAULT_BAUDRATE) -> None:
+        self.device_by_id = device_by_id
+        self.baudrate = baudrate
+        self._resolved_device_path: Path | None = None
+        self._bus: ScsServoBus | None = None
+        self._mid_pose_raw: dict[str, int] = {}
+        self._homing_offsets: dict[str, int] = {}
+        self._observed_mins: dict[str, int] = {}
+        self._observed_maxs: dict[str, int] = {}
+
+    def connect(self) -> None:
+        So101FeetechRuntime._ensure_scservo_sdk()
+        self._resolved_device_path = resolve_active_serial_device_path(self.device_by_id)
+        self._bus = ScsServoBus(str(self._resolved_device_path), baudrate=self.baudrate, protocol_version=PROTOCOL_VERSION)
+        self._bus.connect()
+
+    def disconnect(self) -> None:
+        if self._bus is not None:
+            self._bus.disconnect()
+        self._bus = None
+        self._resolved_device_path = None
+
+    def prepare_manual_calibration(self) -> None:
+        if self._bus is None:
+            raise RuntimeError("Calibration monitor is not connected.")
+        for servo_id in DEFAULT_SERVO_IDS.values():
+            try:
+                self._bus.write_byte(servo_id, ADDR_LOCK, 0)
+                self._bus.write_byte(servo_id, ADDR_TORQUE_ENABLE, 0)
+                self._bus.write_byte(servo_id, ADDR_OPERATING_MODE, POSITION_MODE)
+                self._bus.write_word(servo_id, ADDR_HOMING_OFFSET, 0)
+                self._bus.write_word(servo_id, ADDR_MIN_POSITION_LIMIT, 0)
+                self._bus.write_word(servo_id, ADDR_MAX_POSITION_LIMIT, SERVO_RESOLUTION_MAX)
+            except Exception:
+                continue
+        self._mid_pose_raw = {}
+        self._homing_offsets = {}
+        self._observed_mins = {}
+        self._observed_maxs = {}
+
+    def capture_mid_pose(self) -> dict[str, int]:
+        if self._bus is None:
+            raise RuntimeError("Calibration monitor is not connected.")
+
+        positions: dict[str, int] = {}
+        for joint_name, servo_id in DEFAULT_SERVO_IDS.items():
+            positions[joint_name] = self._bus.read_position(servo_id)
+        self._mid_pose_raw = dict(positions)
+        return positions
+
+    def apply_half_turn_homings(self, mid_pose_raw: dict[str, int] | None = None) -> dict[str, int]:
+        if self._bus is None:
+            raise RuntimeError("Calibration monitor is not connected.")
+        positions = dict(mid_pose_raw or self._mid_pose_raw)
+        if len(positions) != len(DEFAULT_SERVO_IDS):
+            raise RuntimeError("SO101 middle pose capture is incomplete. Move the arm back to middle pose and try again.")
+
+        offsets: dict[str, int] = {}
+        for joint_name, servo_id in DEFAULT_SERVO_IDS.items():
+            midpoint = int(positions[joint_name])
+            homing_offset = midpoint - (SERVO_RESOLUTION_MAX // 2)
+            self._bus.write_word(
+                servo_id,
+                ADDR_HOMING_OFFSET,
+                So101FeetechRuntime._encode_signed_16(homing_offset),
+            )
+            offsets[joint_name] = homing_offset
+        self._homing_offsets = dict(offsets)
+        return offsets
+
+    def start_observation(self) -> So101CalibrationSnapshot:
+        self._observed_mins = {}
+        self._observed_maxs = {}
+        return self.snapshot_observed()
+
+    def snapshot_observed(self) -> So101CalibrationSnapshot:
+        if self._bus is None:
+            raise RuntimeError("Calibration monitor is not connected.")
+
+        rows: list[So101CalibrationRow] = []
+        for joint_name, servo_id in DEFAULT_SERVO_IDS.items():
+            try:
+                position = self._bus.read_position(servo_id)
+            except Exception:
+                position = None
+            if position is not None:
+                self._observed_mins[joint_name] = min(self._observed_mins.get(joint_name, position), position)
+                self._observed_maxs[joint_name] = max(self._observed_maxs.get(joint_name, position), position)
+            rows.append(
+                So101CalibrationRow(
+                    joint_name=joint_name,
+                    servo_id=servo_id,
+                    range_min_raw=self._observed_mins.get(joint_name),
+                    position_raw=position,
+                    range_max_raw=self._observed_maxs.get(joint_name),
+                )
+            )
+        return So101CalibrationSnapshot(
+            device_by_id=self.device_by_id,
+            resolved_device=str(self._resolved_device_path) if self._resolved_device_path is not None else None,
+            rows=tuple(rows),
+        )
+
+    def export_calibration_payload(self) -> dict[str, dict[str, int]]:
+        missing = [
+            joint_name
+            for joint_name in DEFAULT_SERVO_IDS
+            if joint_name not in self._homing_offsets
+            or joint_name not in self._observed_mins
+            or joint_name not in self._observed_maxs
+        ]
+        if missing:
+            raise RuntimeError(f"SO101 calibration data is incomplete for: {', '.join(missing)}.")
+
+        payload: dict[str, dict[str, int]] = {}
+        for joint_name, servo_id in DEFAULT_SERVO_IDS.items():
+            payload[joint_name] = {
+                "id": servo_id,
+                "drive_mode": 0,
+                "homing_offset": int(self._homing_offsets[joint_name]),
+                "range_min": int(self._observed_mins[joint_name]),
+                "range_max": int(self._observed_maxs[joint_name]),
+            }
+        return payload
+
+    def snapshot(self) -> So101CalibrationSnapshot:
+        if self._observed_mins or self._observed_maxs:
+            return self.snapshot_observed()
+        if self._bus is None:
+            raise RuntimeError("Calibration monitor is not connected.")
+
+        rows: list[So101CalibrationRow] = []
+        for joint_name, servo_id in DEFAULT_SERVO_IDS.items():
+            try:
+                position = self._bus.read_position(servo_id)
+            except Exception:
+                position = None
+            rows.append(
+                So101CalibrationRow(
+                    joint_name=joint_name,
+                    servo_id=servo_id,
+                    range_min_raw=position,
+                    position_raw=position,
+                    range_max_raw=position,
+                )
+            )
+        return So101CalibrationSnapshot(
+            device_by_id=self.device_by_id,
+            resolved_device=str(self._resolved_device_path) if self._resolved_device_path is not None else None,
+            rows=tuple(rows),
+        )
+
+
+__all__ = [
+    "So101CalibrationMonitor",
+    "So101CalibrationRow",
+    "So101CalibrationSnapshot",
+    "So101FeetechRuntime",
+    "build_so101_runtime_from_env",
+]
