@@ -41,20 +41,17 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       "python${ROBOCLAW_PYTHON_VERSION}" \
       "python${ROBOCLAW_PYTHON_VERSION}-venv" && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-    "python${ROBOCLAW_PYTHON_VERSION}" /tmp/get-pip.py && \
+    "python${ROBOCLAW_PYTHON_VERSION}" -m ensurepip --upgrade && \
     ln -sf "/usr/bin/python${ROBOCLAW_PYTHON_VERSION}" /usr/local/bin/python && \
     ln -sf "/usr/bin/python${ROBOCLAW_PYTHON_VERSION}" /usr/local/bin/python3 && \
+    ln -sf "/usr/local/bin/pip${ROBOCLAW_PYTHON_VERSION}" /usr/local/bin/pip && \
     ln -sf /usr/local/bin/pip /usr/local/bin/pip3 && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
-    rm -f /tmp/get-pip.py && \
     rm -rf /var/lib/apt/lists/*
-
-RUN python -m pip install --no-cache-dir --upgrade pip
 
 RUN if [ "${ROBOCLAW_INSTALL_ROS2}" = "1" ]; then \
       locale-gen en_US en_US.UTF-8 && \

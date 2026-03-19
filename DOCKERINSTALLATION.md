@@ -21,7 +21,7 @@ cd RoboClaw
 The default Docker install path is the mutable dev container:
 
 ```bash
-./scripts/docker/start-dev.sh devbox --profile ubuntu2404-ros2
+./scripts/docker/start-dev.sh --profile ubuntu2404-ros2 devbox
 ```
 
 If the image does not exist yet, this command builds it first and then starts
@@ -32,7 +32,7 @@ the container.
 Open a shell inside the running container:
 
 ```bash
-./scripts/docker/exec-dev.sh devbox --profile ubuntu2404-ros2
+./scripts/docker/exec-dev.sh --profile ubuntu2404-ros2 devbox
 ```
 
 The RoboClaw source tree is mounted at `/roboclaw-source`, and the container is
@@ -53,20 +53,3 @@ roboclaw --help
 ```
 
 You should see commands such as `onboard`, `status`, `agent`, and `provider`.
-
-## 5. Verify the Bind-Mount Dev Path
-
-From the host repo, run:
-
-```bash
-./tests/test_docker_dev_bind_mount.sh
-```
-
-This verifies that the running dev container sees host source edits without a
-rebuild.
-
-## 6. Next Step
-
-Once Docker installation is working, continue with
-[DOCKER_WORKFLOW.md](./DOCKER_WORKFLOW.md) for the normal development,
-rebuild, and validation flow.
