@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.embodied.builtins import get_builtin_embodiment_for_robot, list_ros2_profiles
+from roboclaw.embodied.capabilities import resolve_available_skills
 from roboclaw.bus.events import InboundMessage, OutboundMessage
 from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.localization import choose_language, localize_text
@@ -71,7 +72,10 @@ class EmbodiedAgentSnapshot:
     profile_id: str | None = None
     capability_families: tuple[str, ...] = ()
     supported_primitives: tuple[str, ...] = ()
+    available_primitives: tuple[str, ...] = ()
+    available_skills: tuple[str, ...] = ()
     primitive_alias_examples: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    registered_policies: tuple[str, ...] = ()
     calibration_required: bool | None = None
     calibration_present: bool | None = None
 
@@ -92,9 +96,12 @@ class EmbodiedAgentSnapshot:
             "profile_id": self.profile_id,
             "capability_families": list(self.capability_families),
             "supported_primitives": list(self.supported_primitives),
+            "available_primitives": list(self.available_primitives),
+            "available_skills": list(self.available_skills),
             "primitive_alias_examples": {
                 key: list(values) for key, values in self.primitive_alias_examples.items()
             },
+            "registered_policies": list(self.registered_policies),
             "calibration_required": self.calibration_required,
             "calibration_present": self.calibration_present,
         }
@@ -325,7 +332,10 @@ class EmbodiedExecutionController:
             profile_id=selected.get("profile_id"),
             capability_families=tuple(selected.get("capability_families", ())),
             supported_primitives=tuple(selected.get("supported_primitives", ())),
+            available_primitives=tuple(selected.get("available_primitives", ())),
+            available_skills=tuple(selected.get("available_skills", ())),
             primitive_alias_examples=selected.get("primitive_alias_examples", {}),
+            registered_policies=tuple(selected.get("registered_policies", ())),
             calibration_required=selected.get("calibration_required"),
             calibration_present=selected.get("calibration_present"),
         )
@@ -716,6 +726,9 @@ class EmbodiedExecutionController:
         robot_attachment = assembly.robots[0] if assembly.robots else None
         robot = catalog.robots.get(robot_attachment.robot_id) if robot_attachment is not None else None
         profile = self._resolve_profile(robot.id) if robot is not None else None
+        capability_profile = robot.capability_profile() if robot is not None else None
+        builtin = get_builtin_embodiment_for_robot(robot.id) if robot is not None else None
+        available_skills = resolve_available_skills(capability_profile, builtin.skills) if capability_profile and builtin else ()
         runtime_state = self._runtime_state_for_setup(session, setup)
         calibration_path = profile.canonical_calibration_path() if profile is not None and getattr(profile, "requires_calibration", False) else None
 
@@ -736,7 +749,10 @@ class EmbodiedExecutionController:
             "profile_id": getattr(profile, "id", None),
             "capability_families": tuple(item.value for item in getattr(robot, "capability_families", ())),
             "supported_primitives": tuple(primitive.name for primitive in getattr(robot, "primitives", ())),
+            "available_primitives": tuple(primitive.name for primitive in getattr(robot, "primitives", ())),
+            "available_skills": tuple(skill.name for skill in available_skills),
             "primitive_alias_examples": primitive_alias_examples,
+            "registered_policies": (),
             "calibration_required": bool(getattr(profile, "requires_calibration", False)) if profile is not None else None,
             "calibration_present": calibration_path.exists() if calibration_path is not None else None,
         }

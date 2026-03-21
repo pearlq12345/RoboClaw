@@ -46,3 +46,11 @@ def infer_capabilities(manifest: RobotManifest) -> CapabilityProfile:
     all_caps = capabilities | from_primitives
     labels = frozenset(CAPABILITY_LABELS.get(capability, capability.value) for capability in all_caps)
     return CapabilityProfile(capabilities=all_caps, labels=labels)
+
+
+def resolve_available_skills(
+    profile: CapabilityProfile,
+    all_skills: tuple[SkillSpec, ...],
+) -> tuple[SkillSpec, ...]:
+    """Return skills whose required_capabilities are satisfied by this profile."""
+    return tuple(skill for skill in all_skills if profile.can_run_skill(skill))
