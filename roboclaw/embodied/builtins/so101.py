@@ -23,6 +23,7 @@ from roboclaw.embodied.execution.integration.control_surfaces.ros2.so101_feetech
     So101FeetechRuntime,
 )
 from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
+from roboclaw.embodied.execution.orchestration.skills import SkillSpec, SkillStep
 from roboclaw.embodied.execution.orchestration.runtime.calibration import CalibrationDriver
 from roboclaw.embodied.execution.orchestration.runtime.model import CalibrationPhase, RuntimeStatus
 from roboclaw.embodied.localization import localize_text
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
         ProcedureExecutionResult,
     )
 
-SO101_DOC_PATH = "docs/embodiments/so101.md"
+SO101_DOC_PATH = "roboclaw/vendor/scservo_sdk"
 SO101_SERIAL_PROBE_MODULE = "roboclaw.embodied.execution.integration.control_surfaces.ros2.scservo_probe"
 
 
@@ -663,6 +664,24 @@ SO101_BUILTIN = BuiltinEmbodiment(
     calibration_driver_id=So101CalibrationDriver.id,
     probe_provider_id=So101SerialProbeProvider.id,
     onboarding_aliases=("so101", "so 101", "so-101", "so_101"),
+    skills=(
+        SkillSpec(
+            name="pick_and_place",
+            description="Open, home, close, home, and release.",
+            steps=(
+                SkillStep("gripper_open"),
+                SkillStep("go_named_pose", {"name": "home"}),
+                SkillStep("gripper_close"),
+                SkillStep("go_named_pose", {"name": "home"}),
+                SkillStep("gripper_open"),
+            ),
+        ),
+        SkillSpec(
+            name="reset_arm",
+            description="Return to home and open the gripper.",
+            steps=(SkillStep("go_named_pose", {"name": "home"}), SkillStep("gripper_open")),
+        ),
+    ),
     control_surface_runtime_factory=build_so101_runtime,
 )
 

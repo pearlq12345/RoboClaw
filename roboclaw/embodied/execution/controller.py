@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from roboclaw.agent.tools.registry import ToolRegistry
-from roboclaw.embodied.builtins import list_ros2_profiles
+from roboclaw.embodied.builtins import get_builtin_embodiment_for_robot, list_ros2_profiles
 from roboclaw.bus.events import InboundMessage, OutboundMessage
 from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.localization import choose_language, localize_text
+from roboclaw.embodied.execution.orchestration.skills import execute_skill
 from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
 from roboclaw.embodied.execution.orchestration.runtime.executor import (
     ExecutionContext,
@@ -327,6 +328,8 @@ class EmbodiedExecutionController:
         setup_id: str | None = None,
         primitive_name: str | None = None,
         primitive_args: dict[str, Any] | None = None,
+        skill_name: str | None = None,
+        skill_args: dict[str, Any] | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> EmbodiedToolResult:
         """Execute one strong-constrained embodied action for the agent."""
@@ -401,6 +404,42 @@ class EmbodiedExecutionController:
                 context,
                 primitive_name=primitive_name,
                 primitive_args=primitive_args,
+                on_progress=on_progress,
+            )
+        elif action == "run_skill":
+            if not skill_name or not skill_name.strip():
+                return EmbodiedToolResult(
+                    ok=False,
+                    action=action,
+                    setup_id=setup.setup_id,
+                    runtime_status=context.runtime.status.value,
+                    message=localize_text(
+                        context.preferred_language,
+                        en="`skill_name` is required when action is `run_skill`.",
+                        zh="当 action 是 `run_skill` 时，必须提供 `skill_name`。",
+                    ),
+                    details={},
+                )
+            builtin = get_builtin_embodiment_for_robot(context.robot.id)
+            skill = next((item for item in getattr(builtin, "skills", ()) if item.name == skill_name), None)
+            if skill is None:
+                return EmbodiedToolResult(
+                    ok=False,
+                    action=action,
+                    setup_id=setup.setup_id,
+                    runtime_status=context.runtime.status.value,
+                    message=localize_text(
+                        context.preferred_language,
+                        en=f"Skill `{skill_name}` is not available for robot `{context.robot.id}`.",
+                        zh=f"机器人 `{context.robot.id}` 不支持 skill `{skill_name}`。",
+                    ),
+                    details={},
+                )
+            result = await execute_skill(
+                self.executor,
+                context,
+                skill,
+                skill_args=skill_args,
                 on_progress=on_progress,
             )
         else:

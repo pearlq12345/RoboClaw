@@ -74,7 +74,7 @@ class EmbodiedControlTool(Tool):
     def description(self) -> str:
         return (
             "Execute one embodied action through the strong procedure pipeline. "
-            "Supported actions: connect, calibrate, debug, reset, run_primitive."
+            "Supported actions: connect, calibrate, debug, reset, run_primitive, run_skill."
         )
 
     @property
@@ -84,7 +84,7 @@ class EmbodiedControlTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["connect", "calibrate", "debug", "reset", "run_primitive"],
+                    "enum": ["connect", "calibrate", "debug", "reset", "run_primitive", "run_skill"],
                     "description": "Embodied action to execute.",
                 },
                 "setup_id": {
@@ -99,6 +99,14 @@ class EmbodiedControlTool(Tool):
                     "type": "object",
                     "description": "Optional primitive arguments for run_primitive.",
                 },
+                "skill_name": {
+                    "type": "string",
+                    "description": "Required when action is run_skill.",
+                },
+                "skill_args": {
+                    "type": "object",
+                    "description": "Optional skill arguments for run_skill.",
+                },
             },
             "required": ["action"],
         }
@@ -109,6 +117,8 @@ class EmbodiedControlTool(Tool):
         setup_id: str | None = None,
         primitive_name: str | None = None,
         primitive_args: dict[str, Any] | None = None,
+        skill_name: str | None = None,
+        skill_args: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
         if self._session is None:
@@ -119,6 +129,8 @@ class EmbodiedControlTool(Tool):
             setup_id=setup_id,
             primitive_name=primitive_name,
             primitive_args=primitive_args,
+            skill_name=skill_name,
+            skill_args=skill_args,
             on_progress=self._on_progress,
         )
         return json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True)

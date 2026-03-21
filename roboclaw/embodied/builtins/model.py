@@ -10,6 +10,7 @@ from roboclaw.embodied.definition.components.robots.model import RobotManifest
 
 if TYPE_CHECKING:
     from roboclaw.embodied.execution.integration.adapters.ros2.profiles import Ros2EmbodimentProfile
+    from roboclaw.embodied.execution.orchestration.skills import SkillSpec
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class BuiltinEmbodiment:
     calibration_driver_id: str | None = None
     probe_provider_id: str | None = None
     onboarding_aliases: tuple[str, ...] = field(default_factory=tuple)
+    skills: tuple["SkillSpec", ...] = field(default_factory=tuple)
     control_surface_runtime_factory: Callable[..., Any] | None = None
 
 
