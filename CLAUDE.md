@@ -22,7 +22,7 @@
 
 ### 当前批次
 
-- [ ] 1. 摄像头组合：本体 + 摄像头在 assembly 中绑定，实时取图，数据可录入 episode
+- [x] 1. 摄像头组合：本体 + 摄像头在 assembly 中绑定，实时取图，数据可录入 episode ✅
 - [ ] 2. fork LeRobot dataset 模块到 `roboclaw/vendor/lerobot/`，将 data_collection 从 JSONL 切到 LeRobot dataset 格式（依赖 #1，episode 需带图像）
 - [ ] 3. fork LeRobot ACT policy，作为第一个内置训练 recipe（依赖 #2）
 - [x] 4. Layer 2 能力查询接口：从 primitive 的 CapabilityFamily 自动聚合本体能力，Agent 可查询 ✅
