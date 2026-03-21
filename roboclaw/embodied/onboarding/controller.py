@@ -17,6 +17,7 @@ from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.bus.events import InboundMessage, OutboundMessage
 from roboclaw.embodied.builtins import (
     get_builtin_probe_provider,
+    list_builtin_embodiments,
     list_builtin_robot_aliases,
     list_supported_robot_labels,
 )
@@ -61,6 +62,7 @@ class OnboardingController:
         "connect", "real robot", "setup", "onboard",
         "真实机器人", "真实的机器人", "机械臂", "机器人",
     )
+    _SIM_KEYWORDS = ("simulation", "sim", "no robot", "try it", "virtual", "仿真", "没有机器人", "试试", "虚拟")
     _SETUP_EDIT_KEYWORDS = (
         "camera", "sensor", "serial", "/dev/", "ros2", "deployment", "adapter", "installed", "replace",
     )
@@ -175,7 +177,11 @@ class OnboardingController:
         text = content.lower()
         if any(alias in text for aliases in list_builtin_robot_aliases().values() for alias in aliases):
             return True
-        return any(keyword in text for keyword in self._SETUP_START_KEYWORDS)
+        return self._looks_like_sim_request(content) or any(keyword in text for keyword in self._SETUP_START_KEYWORDS)
+
+    def _looks_like_sim_request(self, content: str) -> bool:
+        text = " ".join(content.lower().split())
+        return bool(re.search(r"\bsim\b", text)) or any(keyword in text for keyword in self._SIM_KEYWORDS if keyword != "sim")
 
     def _looks_like_setup_edit(self, content: str) -> bool:
         text = content.lower()
@@ -202,6 +208,7 @@ class OnboardingController:
         return any(
             (
                 intent.robot_ids,
+                intent.simulation_requested,
                 intent.sensor_changes,
                 intent.connected is not None,
                 intent.serial_path,
@@ -217,6 +224,7 @@ class OnboardingController:
         inferred_language = infer_language(content)
         return OnboardingIntent(
             robot_ids=tuple(self._extract_robot_ids(content)),
+            simulation_requested=self._looks_like_sim_request(content),
             sensor_changes=tuple(self._extract_sensor_changes(content)),
             connected=self._extract_connected_state(content),
             serial_path=self._extract_serial_path(content),
@@ -234,6 +242,7 @@ class OnboardingController:
             return primary
         return OnboardingIntent(
             robot_ids=secondary.robot_ids or primary.robot_ids,
+            simulation_requested=secondary.simulation_requested or primary.simulation_requested,
             sensor_changes=secondary.sensor_changes or primary.sensor_changes,
             connected=secondary.connected if secondary.connected is not None else primary.connected,
             serial_path=secondary.serial_path or primary.serial_path,
@@ -303,6 +312,7 @@ class OnboardingController:
         if intent.ros2_step_advance:
             facts["ros2_step_advance_requested"] = True
             changed = True
+        if intent.simulation_requested and facts.get("simulation_requested") is not True: facts["simulation_requested"] = True; changed = True
 
         next_status = state.status
         next_stage = state.stage
@@ -463,8 +473,40 @@ class OnboardingController:
         intent = intent or self._heuristic_intent(content)
         language = choose_language(preferred_language, infer_language(content))
         state = await self._write_intake(state, on_progress=on_progress)
-        primary_profile = self._primary_profile(state)
+        if state.detected_facts.get("simulation_requested") is True:
+            sim_builtins = tuple(item for item in list_builtin_embodiments() if item.sim_model_path)
+            selected = next((item for item in sim_builtins if any(robot["robot_id"] == item.robot.id for robot in state.robot_attachments)), None)
+            if selected is None and len(sim_builtins) == 1:
+                robots = [{"attachment_id": "primary", "robot_id": sim_builtins[0].robot.id, "role": "primary"}]
+                setup_id, intake_slug, assembly_id, _, _ = self._canonical_ids(current_setup_id=state.setup_id, robots=robots)
+                selected = sim_builtins[0]
+                state = replace(state, setup_id=setup_id, intake_slug=intake_slug, assembly_id=assembly_id, robot_attachments=robots)
+            if selected is None:
+                options = ", ".join(item.robot.name for item in sim_builtins) or "none"
+                return {"state": replace(state, stage=SetupStage.IDENTIFY_SETUP_SCOPE, missing_facts=["simulation_robot"]), "content": localize_text(language, en=f"I can set up simulation for: {options}.\nTell me which robot you want to try.", zh=f"我可以为这些机器人准备仿真：{options}。\n告诉我你想试哪个机器人。")}
+            state = replace(
+                state,
+                deployment_id=f"{state.assembly_id}_sim_local",
+                adapter_id=f"{state.assembly_id}_sim_direct",
+                execution_targets=[{"id": "sim", "carrier": "sim", "transport": "direct", "simulator": "mujoco"}],
+                detected_facts={
+                    **state.detected_facts,
+                    "simulation_requested": True,
+                    "sim_model_path": selected.sim_model_path,
+                    "sim_joint_mapping": selected.sim_joint_mapping or {},
+                },
+                stage=SetupStage.MATERIALIZE_ASSEMBLY,
+                missing_facts=[],
+            )
+            for writer in (self._write_assembly, self._write_deployment, self._write_adapter):
+                state = await writer(state, on_progress=on_progress)
+            validation = inspect_workspace_assets(self.workspace, options=WorkspaceInspectOptions(lint_profile=WorkspaceLintProfile.BASIC))
+            if validation.has_errors:
+                issues = "\n".join(f"- {issue.path}: {issue.message}" for issue in validation.issues[:5])
+                return {"state": replace(state, stage=SetupStage.VALIDATE_SETUP), "content": localize_text(language, en=f"The simulation setup files were written, but validation is still failing:\n{issues}", zh=f"仿真 setup 文件已经写出，但校验仍然失败：\n{issues}")}
+            return {"state": replace(state, stage=SetupStage.HANDOFF_READY, status=SetupStatus.READY), "content": localize_text(language, en="Your simulation environment is ready!\nTry saying `open gripper` or `go home`.", zh="你的仿真环境已经准备好了！\n你可以试试说：`open gripper` 或 `go home`。")}
 
+        primary_profile = self._primary_profile(state)
         if not state.robot_attachments:
             example_robot = next(iter(list_supported_robot_labels()), "a supported robot")
             next_state = replace(
@@ -1330,6 +1372,7 @@ class OnboardingController:
         )
 
     def _render_assembly(self, state: SetupOnboardingState) -> str:
+        is_sim = state.detected_facts.get("simulation_requested") is True
         robot_blocks = "\n".join(
             [
                 "\n".join(
@@ -1362,6 +1405,18 @@ class OnboardingController:
         )
         if not sensor_blocks:
             sensor_blocks = ""
+        target_imports = (
+            "from roboclaw.embodied.execution.integration.carriers.model import ExecutionTarget\nfrom roboclaw.embodied.definition.foundation.schema import CarrierKind, SimulatorKind, TransportKind"
+            if is_sim else
+            "from roboclaw.embodied.execution.integration.carriers.real import build_real_ros2_target\nfrom roboclaw.embodied.execution.integration.transports.ros2 import build_standard_ros2_contract"
+        )
+        target_block = (
+            f"SIM_TARGET = ExecutionTarget(\n    id='sim',\n    carrier=CarrierKind.SIM,\n    transport=TransportKind.DIRECT,\n    description={'Simulation target for ' + state.setup_id!r},\n    simulator=SimulatorKind.MUJOCO,\n)\n"
+            if is_sim else
+            f"REAL_TARGET = build_real_ros2_target(\n    target_id='real',\n    description={'Real target for ' + state.setup_id!r},\n    ros2=build_standard_ros2_contract({state.assembly_id!r}, 'real'),\n)\n"
+        )
+        target_name = "SIM_TARGET" if is_sim else "REAL_TARGET"
+        target_id = "sim" if is_sim else "real"
         return "\n".join(
             [
                 '"""Workspace-generated embodied assembly."""',
@@ -1374,8 +1429,7 @@ class OnboardingController:
                 "    SensorAttachment,",
                 "    Transform3D,",
                 ")",
-                "from roboclaw.embodied.execution.integration.carriers.real import build_real_ros2_target",
-                "from roboclaw.embodied.execution.integration.transports.ros2 import build_standard_ros2_contract",
+                *target_imports.splitlines(),
                 "from roboclaw.embodied.workspace import (",
                 "    WORKSPACE_SCHEMA_VERSION,",
                 "    WorkspaceAssetContract,",
@@ -1396,12 +1450,7 @@ class OnboardingController:
                 "    ),",
                 ")",
                 "",
-                "REAL_TARGET = build_real_ros2_target(",
-                "    target_id='real',",
-                f"    description={f'Real target for {state.setup_id}'!r},",
-                f"    ros2=build_standard_ros2_contract({state.assembly_id!r}, 'real'),",
-                ")",
-                "",
+                *target_block.splitlines(),
                 "ASSEMBLY = AssemblyBlueprint(",
                 f"    id={state.assembly_id!r},",
                 f"    name={f'{state.setup_id} assembly'!r},",
@@ -1412,8 +1461,8 @@ class OnboardingController:
                 "    sensors=(",
                 sensor_blocks,
                 "    ),",
-                "    execution_targets=(REAL_TARGET,),",
-                "    default_execution_target_id='real',",
+                f"    execution_targets=({target_name},),",
+                f"    default_execution_target_id={target_id!r},",
                 "    frame_transforms=(",
                 "        FrameTransform(parent_frame='world', child_frame='base_link', transform=Transform3D()),",
                 "        FrameTransform(parent_frame='base_link', child_frame='tool0', transform=Transform3D()),",
@@ -1432,6 +1481,7 @@ class OnboardingController:
 
     def _render_deployment(self, state: SetupOnboardingState) -> str:
         facts = state.detected_facts
+        is_sim = facts.get("simulation_requested") is True
         namespace = self._ros2_namespace(state)
         robot_entries = "\n".join(
             [
@@ -1446,6 +1496,7 @@ class OnboardingController:
                 for item in state.robot_attachments
             ]
         )
+        if is_sim: robot_entries = "\n".join(f"        {item['attachment_id']!r}: {{}}" for item in state.robot_attachments)
         sensor_entries = "\n".join(
             [
                 "\n".join(
@@ -1461,13 +1512,11 @@ class OnboardingController:
         )
         launch_command = self._launch_command(state)
         launch_line = f"        'launch_command': {launch_command!r}," if launch_command else None
-        connection_lines = [
-            "        'transport': 'ros2',",
-            f"        'ros_distro': {self._resolved_ros2_distro(state)!r},",
-            f"        'profile_id': {self._profile_id(state)!r},",
-            f"        'namespace': {namespace!r},",
-            f"        'serial_device_by_id': {facts.get('serial_device_by_id')!r},",
-        ]
+        connection_lines = (
+            ["        'transport': 'direct',", "        'simulator': 'mujoco',", f"        'model_path': {facts.get('sim_model_path')!r},", f"        'joint_mapping': {(facts.get('sim_joint_mapping') or {})!r},"]
+            if is_sim else
+            ["        'transport': 'ros2',", f"        'ros_distro': {self._resolved_ros2_distro(state)!r},", f"        'profile_id': {self._profile_id(state)!r},", f"        'namespace': {namespace!r},", f"        'serial_device_by_id': {facts.get('serial_device_by_id')!r},"]
+        )
         if launch_line is not None:
             connection_lines.append(launch_line)
         return "\n".join(
@@ -1498,7 +1547,7 @@ class OnboardingController:
                 "DEPLOYMENT = DeploymentProfile(",
                 f"    id={state.deployment_id!r},",
                 f"    assembly_id={state.assembly_id!r},",
-                "    target_id='real',",
+                f"    target_id={'sim' if is_sim else 'real'!r},",
                 "    connection={",
                 *connection_lines,
                 "    },",
@@ -1515,7 +1564,11 @@ class OnboardingController:
         )
 
     def _render_adapter(self, state: SetupOnboardingState) -> str:
-        implementation = "roboclaw.embodied.execution.integration.adapters.ros2.standard:Ros2ActionServiceAdapter"
+        is_sim = state.detected_facts.get("simulation_requested") is True
+        implementation = "roboclaw.embodied.execution.integration.adapters.sim:MujocoSimAdapter" if is_sim else "roboclaw.embodied.execution.integration.adapters.ros2.standard:Ros2ActionServiceAdapter"
+        compatibility_lines = ["        VersionConstraint(", "            component=CompatibilityComponent.TRANSPORT,", f"            target={'direct' if is_sim else 'ros2'!r},", "            requirement='>=1.0,<2.0',", "        ),"]
+        if not is_sim:
+            compatibility_lines.extend(["        VersionConstraint(", "            component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,", f"            target={ARM_HAND_CONTROL_SURFACE_PROFILE.id!r},", "            requirement='>=1.0,<2.0',", "        ),"])
         return "\n".join(
             [
                 '"""Workspace-generated adapter binding."""',
@@ -1549,26 +1602,17 @@ class OnboardingController:
                 "",
                 "COMPATIBILITY = AdapterCompatibilitySpec(",
                 "    constraints=(",
-                "        VersionConstraint(",
-                "            component=CompatibilityComponent.TRANSPORT,",
-                "            target='ros2',",
-                "            requirement='>=1.0,<2.0',",
-                "        ),",
-                "        VersionConstraint(",
-                "            component=CompatibilityComponent.CONTROL_SURFACE_PROFILE,",
-                f"            target={ARM_HAND_CONTROL_SURFACE_PROFILE.id!r},",
-                "            requirement='>=1.0,<2.0',",
-                "        ),",
+                *compatibility_lines,
                 "    ),",
                 ")",
                 "",
                 "ADAPTER = AdapterBinding(",
                 f"    id={state.adapter_id!r},",
                 f"    assembly_id={state.assembly_id!r},",
-                "    transport=TransportKind.ROS2,",
+                f"    transport=TransportKind.{ 'DIRECT' if is_sim else 'ROS2' },",
                 f"    implementation={implementation!r},",
-                "    supported_targets=('real',),",
-                f"    control_surface_profile_id={ARM_HAND_CONTROL_SURFACE_PROFILE.id!r},",
+                f"    supported_targets={('sim',) if is_sim else ('real',)!r},",
+                *( [] if is_sim else [f"    control_surface_profile_id={ARM_HAND_CONTROL_SURFACE_PROFILE.id!r},"] ),
                 "    compatibility=COMPATIBILITY,",
                 "    notes=('Generated by assembly-centered onboarding.',),",
                 ")",
