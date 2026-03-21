@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from roboclaw.agent.tools.registry import ToolRegistry
+from roboclaw.embodied.builtins import list_ros2_profiles
 from roboclaw.bus.events import InboundMessage, OutboundMessage
 from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.localization import choose_language, localize_text
@@ -203,9 +204,7 @@ class EmbodiedExecutionController:
             if any(primitive.name.lower() in normalized for primitive in robot.primitives):
                 return True
 
-        from roboclaw.embodied.execution.integration.adapters.ros2.profiles import DEFAULT_ROS2_PROFILES
-
-        for profile in DEFAULT_ROS2_PROFILES:
+        for profile in list_ros2_profiles():
             for alias_spec in profile.primitive_aliases:
                 if alias_spec.primitive_name.lower() in normalized:
                     return True
@@ -240,7 +239,7 @@ class EmbodiedExecutionController:
 
         context = self._build_context(session, setup, catalog=catalog)
         self._bind_active_setup(session, setup.setup_id)
-        runtime_phase = self.executor.calibration_phase(context.runtime.id)
+        runtime_phase = self.executor.calibration_phase(context)
         if calibration_state and runtime_phase is None:
             session.metadata.pop(EMBODIED_CALIBRATION_STATE_KEY, None)
             content = localize_text(
@@ -264,48 +263,12 @@ class EmbodiedExecutionController:
             )
         content = msg.content.strip()
         if not content:
-            result = await self.executor.advance_calibration(context, on_progress=on_progress)
+            result = await self.executor.advance_calibration(context, user_input=content, on_progress=on_progress)
             self._sync_calibration_state(session, setup_id=setup.setup_id, runtime_id=context.runtime.id, result=result)
         elif self._looks_like_calibration_request(content):
-            phase = self.executor.calibration_phase(context.runtime.id) or str(calibration_state.get("phase") or "")
-            calibration_path = context.profile.canonical_calibration_path()
-            result = self.executor._so101_calibration_phase_message(
-                context,
-                phase=phase,
-                calibration_path=calibration_path,
-            )
+            result = self.executor.describe_calibration(context)
         else:
-            phase = self.executor.calibration_phase(context.runtime.id) or str(calibration_state.get("phase") or "")
-            if phase == CalibrationPhase.AWAIT_MID_POSE_ACK:
-                message = localize_text(
-                    context.preferred_language,
-                    en=(
-                        f"Calibration is pending for setup `{setup.setup_id}`."
-                        " Move the arm to a middle pose, then press Enter to start live calibration."
-                    ),
-                    zh=(
-                        f"setup `{setup.setup_id}` 的标定正在等待继续。"
-                        " 先把机械臂移动到中间位姿，然后按 Enter 开始实时标定。"
-                    ),
-                )
-            else:
-                message = localize_text(
-                    context.preferred_language,
-                    en=(
-                        f"Calibration is already streaming for setup `{setup.setup_id}`."
-                        " Keep moving every joint through its full range of motion, then press Enter to stop and save."
-                    ),
-                    zh=(
-                        f"setup `{setup.setup_id}` 的标定已经在实时采样了。"
-                        " 继续把每个关节跑完整量程，然后按 Enter 停止并保存。"
-                    ),
-                )
-            result = ProcedureExecutionResult(
-                procedure=ProcedureKind.CALIBRATE,
-                ok=False,
-                message=message,
-                details={"calibration_phase": phase},
-            )
+            result = self.executor.describe_calibration(context)
 
         self._sync_runtime_state(session, setup_id=setup.setup_id, runtime=context.runtime)
         if result.ok and result.procedure == ProcedureKind.CALIBRATE:

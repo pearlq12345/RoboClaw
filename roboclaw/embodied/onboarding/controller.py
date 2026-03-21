@@ -15,10 +15,16 @@ from loguru import logger
 
 from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.bus.events import InboundMessage, OutboundMessage
+from roboclaw.embodied.builtins import (
+    get_builtin_probe_provider,
+    list_builtin_robot_aliases,
+    list_supported_robot_labels,
+)
 from roboclaw.embodied.catalog import build_default_catalog
 from roboclaw.embodied.execution.integration.adapters.ros2.profiles import get_ros2_profile
 from roboclaw.embodied.execution.integration.control_surfaces import ARM_HAND_CONTROL_SURFACE_PROFILE
 from roboclaw.embodied.localization import choose_language, infer_language, localize_text
+from roboclaw.embodied.probes import ProbeResult
 from roboclaw.embodied.onboarding.model import (
     PREFERRED_LANGUAGE_KEY,
     SETUP_STATE_KEY,
@@ -46,15 +52,11 @@ from roboclaw.session.manager import Session
 ProgressCallback = Callable[[str], Awaitable[None]]
 IntentParser = Callable[[Session, SetupOnboardingState, str], Awaitable[OnboardingIntent | None]]
 CalibrationStarter = Callable[..., Awaitable[Any]]
-SO101_SERIAL_PROBE_MODULE = "roboclaw.embodied.execution.integration.control_surfaces.ros2.scservo_probe"
 
 
 class OnboardingController:
     """Handle first-run embodied setup and later setup refinements."""
 
-    _ROBOT_ALIASES = {
-        "so101": ("so101", "so 101"),
-    }
     _SETUP_START_KEYWORDS = (
         "connect", "real robot", "setup", "onboard",
         "真实机器人", "真实的机器人", "机械臂", "机器人",
@@ -171,7 +173,7 @@ class OnboardingController:
 
     def _looks_like_setup_start(self, content: str) -> bool:
         text = content.lower()
-        if any(alias in text for aliases in self._ROBOT_ALIASES.values() for alias in aliases):
+        if any(alias in text for aliases in list_builtin_robot_aliases().values() for alias in aliases):
             return True
         return any(keyword in text for keyword in self._SETUP_START_KEYWORDS)
 
@@ -331,7 +333,7 @@ class OnboardingController:
     def _extract_robot_ids(self, content: str) -> list[str]:
         normalized = content.lower()
         matched: list[str] = []
-        for robot_id, aliases in self._ROBOT_ALIASES.items():
+        for robot_id, aliases in list_builtin_robot_aliases().items():
             if any(alias in normalized for alias in aliases):
                 matched.append(robot_id)
         for manifest in self.catalog.robots.list():
@@ -464,6 +466,7 @@ class OnboardingController:
         primary_profile = self._primary_profile(state)
 
         if not state.robot_attachments:
+            example_robot = next(iter(list_supported_robot_labels()), "a supported robot")
             next_state = replace(
                 state,
                 stage=SetupStage.IDENTIFY_SETUP_SCOPE,
@@ -477,18 +480,19 @@ class OnboardingController:
                     en=(
                         "Let's get your robot connected!"
                         "\nFirst, tell me what robot you have."
-                        "\nFor example: `SO101`, or `SO101 with a wrist camera`."
+                        f"\nFor example: `{example_robot}`, or `{example_robot} with a wrist camera`."
                     ),
                     zh=(
                         "让我们来连接你的机器人！"
                         "\n先告诉我你有什么机器人。"
-                        "\n例如：`SO101`，或 `SO101 加腕部摄像头`。"
+                        f"\n例如：`{example_robot}`，或 `{example_robot} 加腕部摄像头`。"
                     ),
                 ),
             }
 
         if primary_profile is None:
             primary_robot_id = state.robot_attachments[0]["robot_id"]
+            supported_models = ", ".join(list_supported_robot_labels()) or "none"
             next_state = replace(
                 state,
                 stage=SetupStage.IDENTIFY_SETUP_SCOPE,
@@ -501,13 +505,13 @@ class OnboardingController:
                     language,
                     en=(
                         f"I don't recognize the robot model '{primary_robot_id}'."
-                        "\nCurrently supported: SO101."
+                        f"\nCurrently supported: {supported_models}."
                         "\nPlease check the name and try again."
                         "\nTechnical detail: RoboClaw does not have a framework ROS2 control surface profile for this model yet."
                     ),
                     zh=(
                         f"我不认识机器人型号 '{primary_robot_id}'。"
-                        "\n目前支持的型号：SO101。"
+                        f"\n目前支持的型号：{supported_models}。"
                         "\n请检查名称后再试一次。"
                     ),
                 ),
@@ -628,20 +632,20 @@ class OnboardingController:
                     status=SetupStatus.BOOTSTRAPPING,
                     missing_facts=["serial_device_by_id"],
                 )
-                detail = state.detected_facts.get("serial_probe_error", "SO101 serial probe did not receive a status packet.")
+                detail = state.detected_facts.get("serial_probe_error", "The registered embodiment probe did not receive a valid status packet.")
                 return {
                     "state": next_state,
                     "content": localize_text(
                         language,
                         en=(
-                            "I found a stable `/dev/serial/by-id/...` device, but it did not answer an SO101 servo probe."
+                            "I found a stable `/dev/serial/by-id/...` device, but it did not answer the registered embodiment probe."
                             f"\nProbe result: `{detail}`."
-                            "\nConnect the actual SO101 controller or expose the correct stable by-id device, then reply again."
+                            "\nConnect the actual controller or expose the correct stable by-id device, then reply again."
                         ),
                         zh=(
-                            "我找到了稳定的 `/dev/serial/by-id/...` 设备，但它没有回应 SO101 的舵机探测。"
+                            "我找到了稳定的 `/dev/serial/by-id/...` 设备，但它没有回应当前本体注册的探测。"
                             f"\n探测结果：`{detail}`。"
-                            "\n请接上真正的 SO101 控制器，或者暴露正确、稳定的 by-id 设备路径，然后再回复我。"
+                            "\n请接上真正的控制器，或者暴露正确、稳定的 by-id 设备路径，然后再回复我。"
                         ),
                     ),
                 }
@@ -658,11 +662,11 @@ class OnboardingController:
                         language,
                         en=(
                             "I found a serial device, but I will not persist an unstable tty node."
-                            "\nPlease expose a stable `/dev/serial/by-id/...` mapping for the SO101 controller, then reply again."
+                            "\nPlease expose a stable `/dev/serial/by-id/...` mapping for this controller, then reply again."
                         ),
                         zh=(
                             "我找到了串口设备，但不会把不稳定的 tty 节点写进配置。"
-                            "\n请为 SO101 控制器提供稳定的 `/dev/serial/by-id/...` 映射，然后再回复我。"
+                            "\n请为这个控制器提供稳定的 `/dev/serial/by-id/...` 映射，然后再回复我。"
                         ),
                     ),
                 }
@@ -969,11 +973,11 @@ class OnboardingController:
             )
             serial_by_id = self._select_serial_device_by_id(probe)
             if serial_by_id is not None:
-                serial_check = await self._probe_so101_serial_device(serial_by_id, on_progress=on_progress)
-                if serial_check["ok"]:
+                serial_check = await self._probe_serial_device(primary_profile.probe_provider_id, serial_by_id, on_progress=on_progress)
+                if serial_check.ok:
                     self._set_serial_device_by_id(facts, serial_by_id)
                 else:
-                    self._set_unresponsive_serial_device(facts, str(serial_check["detail"]))
+                    self._set_unresponsive_serial_device(facts, serial_check.detail)
             else:
                 self._set_unstable_serial_device(facts)
         if primary_profile is not None and primary_profile.requires_calibration:
@@ -1037,28 +1041,21 @@ class OnboardingController:
             notes = self._extend_unique(notes, f"probe:ros2={facts['ros2_distro']}")
         return replace(state, stage=SetupStage.PROBE_LOCAL_ENVIRONMENT, detected_facts=facts, notes=notes)
 
-    async def _probe_so101_serial_device(
+    async def _probe_serial_device(
         self,
+        probe_provider_id: str | None,
         serial_by_id: str,
         *,
         on_progress: Callable[..., Awaitable[None]] | None = None,
-    ) -> dict[str, str | bool]:
-        probe = await self._run_tool(
-            "exec",
-            {
-                "command": (
-                    "bash -lc 'PY_BIN=\"$(command -v python3 || command -v python || true)\"; "
-                    "if [ -z \"$PY_BIN\" ]; then printf \"ROBOCLAW_SO101_SERIAL_PYTHON_MISSING\\n\"; exit 0; fi; "
-                    f"\"$PY_BIN\" -m {SO101_SERIAL_PROBE_MODULE} {shlex.quote(serial_by_id)}'"
-                )
-            },
+    ) -> ProbeResult:
+        provider = get_builtin_probe_provider(probe_provider_id)
+        if provider is None:
+            return ProbeResult(ok=False, detail="No probe provider is registered for this embodiment.")
+        return await provider.probe_serial_device(
+            serial_by_id,
+            run_tool=self._run_tool,
             on_progress=on_progress,
         )
-        if "ROBOCLAW_SO101_SERIAL_OK" in probe:
-            return {"ok": True, "detail": ""}
-        lines = [line.strip() for line in probe.splitlines() if line.strip()]
-        detail = lines[-1] if lines else "SO101 serial probe failed"
-        return {"ok": False, "detail": detail}
 
     async def _read_ros2_guide(self, *, on_progress: Callable[..., Awaitable[None]] | None = None) -> str:
         guide_path = self.workspace / "embodied" / "guides" / "ROS2_INSTALL.md"

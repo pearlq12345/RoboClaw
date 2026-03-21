@@ -1,9 +1,12 @@
 import importlib
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from roboclaw.embodied.builtins import register_builtin_embodiment
+from roboclaw.embodied.builtins.model import BuiltinEmbodiment
 from roboclaw.embodied import RGB_CAMERA, SO101_ROBOT, build_default_catalog
 from roboclaw.embodied.definition.foundation.schema import (
     CarrierKind,
@@ -13,6 +16,11 @@ from roboclaw.embodied.definition.foundation.schema import (
     TransportKind,
     ValueUnit,
 )
+from roboclaw.embodied.definition.components.robots.model import (
+    PrimitiveSpec,
+    RobotManifest,
+)
+from roboclaw.embodied.execution.integration.adapters.ros2.profiles import Ros2EmbodimentProfile
 from roboclaw.embodied.definition.systems.assemblies import (
     AssemblyBlueprint,
     ControlGroup,
@@ -97,6 +105,7 @@ from roboclaw.embodied.workspace import (
     WorkspaceValidationStage,
     inspect_workspace_assets,
 )
+import roboclaw.embodied.builtins.registry as builtins_registry
 
 
 def _workspace_blueprint() -> AssemblyBlueprint:
@@ -210,6 +219,66 @@ def test_embodied_catalog_contains_reusable_definitions_only() -> None:
     assert catalog.adapters.for_assembly("workspace_so101") == ()
     assert catalog.deployments.for_assembly("workspace_so101") == ()
     assert RGB_CAMERA.supports_intrinsics is True
+
+
+def test_default_catalog_discovers_builtin_registrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        builtins_registry,
+        "_BUILTINS_BY_ID",
+        dict(builtins_registry._BUILTINS_BY_ID),
+    )
+    monkeypatch.setattr(
+        builtins_registry,
+        "_BUILTINS_BY_ROBOT_ID",
+        dict(builtins_registry._BUILTINS_BY_ROBOT_ID),
+    )
+    register_builtin_embodiment(
+        BuiltinEmbodiment(
+            id="demo_arm",
+            robot=RobotManifest(
+                id="demo_arm",
+                name="Demo Arm",
+                description="Fake built-in robot for registry discovery tests.",
+                robot_type=RobotType.ARM,
+                capability_families=SO101_ROBOT.capability_families,
+                primitives=(
+                    PrimitiveSpec(
+                        name="demo_ping",
+                        kind=SO101_ROBOT.primitives[0].kind,
+                        capability_family=SO101_ROBOT.primitives[0].capability_family,
+                        command_mode=SO101_ROBOT.primitives[0].command_mode,
+                        description="Demo primitive.",
+                    ),
+                ),
+                observation_schema=SO101_ROBOT.observation_schema,
+                health_schema=SO101_ROBOT.health_schema,
+            ),
+            ros2_profile=Ros2EmbodimentProfile(
+                id="demo_arm_ros2_standard",
+                robot_id="demo_arm",
+            ),
+            onboarding_aliases=("demo arm",),
+        )
+    )
+
+    catalog = build_default_catalog()
+
+    assert catalog.robots.get("demo_arm").name == "Demo Arm"
+
+
+def test_pyproject_no_longer_packages_vendored_scservo_sdk() -> None:
+    root = Path(__file__).resolve().parents[1]
+    with open(root / "pyproject.toml", "rb") as fh:
+        data = tomllib.load(fh)
+
+    wheel = data["tool"]["hatch"]["build"]["targets"]["wheel"]
+    include = data["tool"]["hatch"]["build"]["include"]
+    sdist = data["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+
+    assert "scservo_sdk" not in wheel["packages"]
+    assert not any("scservo_sdk" in item for item in include)
+    assert not any("scservo_sdk" in item for item in sdist)
+    assert not (root / "scservo_sdk").exists()
 
 
 def test_control_surface_profile_contract_is_machine_checkable() -> None:

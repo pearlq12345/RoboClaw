@@ -23,6 +23,7 @@ from roboclaw.agent.tools.shell import ExecTool
 from roboclaw.agent.tools.spawn import SpawnTool
 from roboclaw.agent.tools.web import WebFetchTool, WebSearchTool
 from roboclaw.bus.events import InboundMessage, OutboundMessage
+from roboclaw.embodied.builtins import list_ros2_profiles
 from roboclaw.embodied.catalog import build_catalog
 from roboclaw.embodied.execution.controller import EmbodiedExecutionController
 from roboclaw.embodied.execution.tools import EmbodiedControlTool, EmbodiedStatusTool
@@ -229,11 +230,11 @@ class AgentLoop:
         for robot in self.onboarding.catalog.robots.list():
             if robot.id not in supported_robots:
                 supported_robots.append(robot.id)
-        from roboclaw.embodied.execution.integration.adapters.ros2.profiles import DEFAULT_ROS2_PROFILES
 
-        for profile in DEFAULT_ROS2_PROFILES:
+        for profile in list_ros2_profiles():
             if profile.robot_id not in supported_robots:
                 supported_robots.append(profile.robot_id)
+        example_robot = supported_robots[0] if supported_robots else "robot"
 
         prompt = (
             "You extract embodied onboarding intent as JSON.\n"
@@ -248,7 +249,8 @@ class AgentLoop:
             "Do not infer facts that the user did not imply.\n"
             f"Supported robot models (canonical IDs): {', '.join(supported_robots)}.\n"
             "When the user mentions a robot, always normalize to the closest canonical ID from this list.\n"
-            "For example: 'SO-101', 'so_101', 'So101', 'SO 101' should all map to 'so101'.\n"
+            f"For example: '{example_robot.upper()}', '{example_robot.replace('-', '_')}', "
+            f"'{example_robot.title()}', '{example_robot.replace('-', ' ')}' should all map to '{example_robot}'.\n"
             "If the user's robot does not match any supported model, return the user's text as-is in robot_ids.\n"
             "Examples:\n"
             '- "帮我标定" -> {"calibration_requested": true, "preferred_language": "zh"}\n'

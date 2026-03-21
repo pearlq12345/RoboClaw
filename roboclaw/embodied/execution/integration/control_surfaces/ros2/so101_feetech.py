@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import importlib.util
 import os
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -303,10 +304,14 @@ class So101FeetechRuntime:
 
     @staticmethod
     def _ensure_scservo_sdk() -> None:
-        if importlib.util.find_spec("scservo_sdk") is not None:
-            return
+        try:
+            if "scservo_sdk" in sys.modules or importlib.util.find_spec("scservo_sdk") is not None:
+                return
+        except ValueError:
+            if "scservo_sdk" in sys.modules:
+                return
         raise ModuleNotFoundError(
-            "scservo_sdk is unavailable. Install the RoboClaw SO101 Python dependency bundle before launching the ROS2 control-surface server."
+            "scservo_sdk is unavailable. Install the external SO101 SDK first. See docs/embodiments/so101.md"
         )
 
 

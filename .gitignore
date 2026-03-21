@@ -6,6 +6,8 @@ dist/
 build/
 docs/*
 !docs/docker-workflow.md
+!docs/embodiments/
+!docs/embodiments/so101.md
 *.egg-info/
 *.egg
 *.pyc
