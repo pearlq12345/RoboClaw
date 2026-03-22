@@ -25,13 +25,13 @@
 
 ### 当前批次
 
-- [x] 1. 摄像头组合：本体 + 摄像头在 assembly 中绑定，实时取图，数据可录入 episode ✅
-- [x] 2. 数据采集格式：借鉴 LeRobot dataset 范式，实现带图像的 episode 录制格式（依赖 #1） ✅
-- [x] 3. 数据采集 GUI：采集时自动启动 HTTP 可视化界面（摄像头画面 + episode 进度 + 关节状态），借鉴 LeRobot，映射端口供远程浏览器访问 ✅
-- [x] 4. ACT 训练 recipe：借鉴 LeRobot ACT 实现，作为第一个内置可训练 policy（依赖 #2） ✅
-- [x] 5. Layer 2 能力查询接口：从 primitive 的 CapabilityFamily 自动聚合本体能力，Agent 可查询 ✅
-- [x] 6. 接入 PiperX 作为第二个 builtin 本体，参考 Evo-RL（GitHub），验证框架泛化（依赖 #5） ✅
-- [ ] 7. 验收测试（见 `docs/acceptance-test.md`）：A1 夹爪开合 / A4 仿真体验 / A6 采集 10 episode / A7 训练 ACT policy — A1 进行中：onboarding 流程正常（识别 SO101→探测串口→生成资产→就绪），但 gripper_open 命令返回 error，需要排查 ROS2 控制面启动问题 🚫 硬件已确认连接，Docker 镜像就绪，但远程 config.json 中所有 LLM provider API key 为空，Agent 无法启动对话
+- [ ] 1. Schema 精简：删除 ControlGroups、SafetyZones、SafetyBoundaries、ResourceOwnership、FailureDomains、CompensationSpec、IdempotencyMode；简化 Procedure 系统（去掉补偿/回滚/幂等）
+- [ ] 2. 获取 SO101 URDF 模型：从 LeRobot 或官方获取，放入 `simulation/models/so101.urdf`
+- [ ] 3. A4 仿真验收：没有硬件，对话进入仿真，虚拟臂运动（依赖 #2）
+- [ ] 4. A1 夹爪验收：在 4090-zhaobo 上对话控制 SO101 夹爪开合，摄像头确认。Agent 已可对话，需排查 ROS2 控制面启动问题
+- [ ] 5. A6 采集验收：对话引导采集 10 episode（依赖 #4）
+- [ ] 6. A7 训练验收：对话选算法、训练 ACT、checkpoint 保存（依赖 #5）
+
 
 
 ---

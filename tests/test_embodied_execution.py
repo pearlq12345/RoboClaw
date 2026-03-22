@@ -189,11 +189,6 @@ def _write_setup_assets(root: Path, setup_id: str, *, launch_command: str | None
                 '    default_execution_target_id="real",',
                 "    frame_transforms=(),",
                 "    tools=(),",
-                "    control_groups=(),",
-                "    safety_zones=(),",
-                "    safety_boundaries=(),",
-                "    failure_domains=(),",
-                "    resource_ownerships=(),",
                 ").build()",
                 "",
             ]

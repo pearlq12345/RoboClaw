@@ -23,14 +23,8 @@ from roboclaw.embodied.definition.components.robots.model import (
 from roboclaw.embodied.execution.integration.adapters.ros2.profiles import Ros2EmbodimentProfile
 from roboclaw.embodied.definition.systems.assemblies import (
     AssemblyBlueprint,
-    ControlGroup,
-    FailureDomain,
     FrameTransform,
-    ResourceLockScope,
-    ResourceOwnership,
     RobotAttachment,
-    SafetyBoundary,
-    SafetyZone,
     ToolAttachment,
     Transform3D,
     compose_assemblies,
@@ -87,12 +81,9 @@ from roboclaw.embodied.execution.observability import (
 from roboclaw.embodied.execution.orchestration.procedures import (
     AdapterProcedureAction,
     CancellationMode,
-    CompensationTrigger,
     DEFAULT_PROCEDURES,
-    IdempotencyMode,
     OrchestratorProcedureAction,
     ProcedureActionTarget,
-    RollbackStrategy,
 )
 from roboclaw.embodied.execution.orchestration.runtime import RuntimeManager, RuntimeStatus
 from roboclaw.embodied.workspace import (
@@ -156,54 +147,6 @@ def _workspace_blueprint() -> AssemblyBlueprint:
                 mount_frame="tool0",
                 tcp_frame="tcp",
                 kind="end_effector",
-            ),
-        ),
-        control_groups=(
-            ControlGroup(
-                id="manipulation",
-                robot_attachment_ids=("primary",),
-                sensor_attachment_ids=("wrist_camera",),
-                mode_hints=("position",),
-            ),
-        ),
-        default_control_group_id="manipulation",
-        safety_zones=(
-            SafetyZone(
-                id="workspace_zone",
-                frame="base_link",
-                min_xyz=(-0.5, -0.5, 0.0),
-                max_xyz=(0.5, 0.5, 0.8),
-            ),
-        ),
-        safety_boundaries=(
-            SafetyBoundary(
-                id="manipulation_safety",
-                control_group_ids=("manipulation",),
-                robot_attachment_ids=("primary",),
-                sensor_attachment_ids=("wrist_camera",),
-                zone_ids=("workspace_zone",),
-                max_linear_speed_mps=0.2,
-                max_joint_speed_scale=0.5,
-            ),
-        ),
-        failure_domains=(
-            FailureDomain(
-                id="arm_cell",
-                robot_attachment_ids=("primary",),
-                sensor_attachment_ids=("wrist_camera",),
-                target_ids=("real",),
-                containment_actions=("stop", "recover"),
-            ),
-        ),
-        resource_ownerships=(
-            ResourceOwnership(
-                id="manipulation_lock",
-                control_group_id="manipulation",
-                resource_ids=("joint_controller", "camera_stream"),
-                lock_scope=ResourceLockScope.EXCLUSIVE,
-                robot_attachment_ids=("primary",),
-                sensor_attachment_ids=("wrist_camera",),
-                failure_domain_id="arm_cell",
             ),
         ),
     )
@@ -359,8 +302,6 @@ def test_workspace_blueprint_can_be_composed_into_a_variant() -> None:
         ),
     )
     assert composed.execution_target("real").carrier == CarrierKind.REAL
-    assert composed.default_control_group_id == "manipulation"
-    assert composed.control_group().id == "manipulation"
     assert composed.frame_transforms[0].child_frame == "base_link"
     assert composed.tools[0].attachment_id == "primary_tool"
 
@@ -409,14 +350,8 @@ def test_assembly_topology_contract_is_machine_checkable() -> None:
 
     assert assembly.default_execution_target_id == "real"
     assert assembly.execution_target().id == "real"
-    assert assembly.default_control_group_id == "manipulation"
-    assert assembly.control_group().robot_attachment_ids == ("primary",)
     assert assembly.tools[0].robot_attachment_id == "primary"
     assert assembly.frame_transforms[1].parent_frame == "base_link"
-    assert assembly.safety_zones[0].id == "workspace_zone"
-    assert assembly.safety_boundaries[0].zone_ids == ("workspace_zone",)
-    assert assembly.failure_domains[0].containment_actions == ("stop", "recover")
-    assert assembly.resource_ownerships[0].control_group_id == "manipulation"
 
 
 def test_adapter_lifecycle_contract_is_machine_checkable() -> None:
@@ -617,9 +552,6 @@ def test_procedure_contract_is_machine_checkable() -> None:
     assert connect_step.timeout_s == 30.0
     assert connect_step.retry_policy.max_retries == 2
     assert connect.cancellation_policy.mode == CancellationMode.SAFE_POINT
-    assert connect.rollback_strategy == RollbackStrategy.REVERSE_COMPENSATION
-    assert connect.idempotency_policy.mode == IdempotencyMode.BEST_EFFORT
-    assert connect.idempotency_policy.key_fields == ("deployment_id", "target_id")
     select_target_step = next(step for step in connect.steps if step.id == "select_target")
     assert select_target_step.action.target == ProcedureActionTarget.ORCHESTRATOR
     assert select_target_step.action.name == OrchestratorProcedureAction.RESOLVE_TARGET.value
@@ -631,17 +563,10 @@ def test_procedure_contract_is_machine_checkable() -> None:
     assert connect_step.cancellation.cancel_action is not None
     assert connect_step.cancellation.cancel_action.target == ProcedureActionTarget.ADAPTER
     assert connect_step.cancellation.cancel_action.name == AdapterProcedureAction.DISCONNECT.value
-    assert connect_step.compensation is not None
-    assert connect_step.compensation.action.target == ProcedureActionTarget.ADAPTER
-    assert connect_step.compensation.action.name == AdapterProcedureAction.DISCONNECT.value
-    assert CompensationTrigger.ON_CANCEL in connect_step.compensation.triggers
-    assert connect_step.idempotency is not None
-    assert connect_step.idempotency.mode == IdempotencyMode.BEST_EFFORT
     assert connect.operator_interventions[0].step_id == "connect"
 
     reset = next(procedure for procedure in DEFAULT_PROCEDURES if procedure.id == "reset_default")
     assert reset.cancellation_policy.mode == CancellationMode.NON_CANCELLABLE
-    assert reset.idempotency_policy.mode == IdempotencyMode.STRICT
 
 
 def test_telemetry_contract_is_machine_checkable() -> None:
