@@ -327,6 +327,8 @@ class ProcedureExecutor:
         profile = context.profile
         if profile is None or not getattr(profile, "requires_calibration", False):
             return None
+        if getattr(context.target, "id", None) == "sim":
+            return None
         return profile.canonical_calibration_path()
 
     def _ensure_calibration_ready(self, context: ExecutionContext) -> ProcedureExecutionResult | None:

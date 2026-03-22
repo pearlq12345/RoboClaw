@@ -770,8 +770,8 @@ class EmbodiedExecutionController:
             "available_skills": tuple(skill.name for skill in available_skills),
             "primitive_alias_examples": primitive_alias_examples,
             "registered_policies": (),
-            "calibration_required": bool(getattr(profile, "requires_calibration", False)) if profile is not None else None,
-            "calibration_present": calibration_path.exists() if calibration_path is not None else None,
+            "calibration_required": bool(getattr(profile, "requires_calibration", False)) if profile is not None and deployment.target_id != "sim" else False,
+            "calibration_present": calibration_path.exists() if calibration_path is not None else (True if deployment.target_id == "sim" else None),
         }
 
     def _build_context(self, session: Session, setup: ResolvedSetup, catalog: Any | None = None) -> ExecutionContext:

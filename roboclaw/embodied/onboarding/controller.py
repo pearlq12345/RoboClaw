@@ -24,6 +24,7 @@ from roboclaw.embodied.builtins import (
 from roboclaw.embodied.catalog import build_default_catalog
 from roboclaw.embodied.execution.integration.adapters.ros2.profiles import get_ros2_profile
 from roboclaw.embodied.execution.integration.control_surfaces import ARM_HAND_CONTROL_SURFACE_PROFILE
+from roboclaw.embodied.intent import IntentClassifier, UserIntent
 from roboclaw.embodied.localization import choose_language, infer_language, localize_text
 from roboclaw.embodied.probes import ProbeResult
 from roboclaw.embodied.onboarding.model import (
@@ -81,6 +82,16 @@ class OnboardingController:
         self.catalog = build_default_catalog()
         self.intent_parser = intent_parser
         self.calibration_starter = calibration_starter
+        self._intent_classifier = IntentClassifier(
+            llm_caller=None,
+            known_robots=tuple(robot_id for robot_id in list_builtin_robot_aliases()),
+            robot_aliases=dict(list_builtin_robot_aliases()),
+        )
+        self._intent_cache: dict[str, UserIntent] = {}
+
+    def set_llm_caller(self, llm_caller) -> None:
+        self._intent_classifier._llm = llm_caller
+        self._intent_cache.clear()
 
     def should_handle(self, session: Session, content: str) -> bool:
         state = self._load_state(session)
@@ -114,7 +125,8 @@ class OnboardingController:
         if state is None:
             state = self._new_state(msg.content)
 
-        intent = await self._resolve_intent(session, state, msg.content)
+        classified_intent = await self._classify(msg.content, context=self._intent_context(state))
+        intent = await self._resolve_intent(session, state, msg.content, user_intent=classified_intent)
         preferred_language = choose_language(
             intent.preferred_language if intent is not None else None,
             session.metadata.get(PREFERRED_LANGUAGE_KEY),
@@ -173,27 +185,49 @@ class OnboardingController:
             execution_targets=[{"id": "real", "carrier": "real"}],
         )
 
+    @staticmethod
+    def _intent_context(state: SetupOnboardingState) -> str:
+        robot_ids = ",".join(item["robot_id"] for item in state.robot_attachments) or "none"
+        facts = ",".join(sorted(state.detected_facts)) or "none"
+        return f"stage={state.stage.value}; status={state.status.value}; robots={robot_ids}; facts={facts}"
+
+    async def _classify(self, content: str, *, context: str = "") -> UserIntent:
+        if content not in self._intent_cache:
+            self._intent_cache[content] = await self._intent_classifier.classify(content, context=context)
+        return self._intent_cache[content]
+
+    def _cached_intent(self, content: str) -> UserIntent | None:
+        if self._intent_classifier._llm is None:
+            return None
+        return self._intent_cache.get(content)
+
     def _looks_like_setup_start(self, content: str) -> bool:
-        text = content.lower()
-        if any(alias in text for aliases in list_builtin_robot_aliases().values() for alias in aliases):
-            return True
-        return self._looks_like_sim_request(content) or any(keyword in text for keyword in self._SETUP_START_KEYWORDS)
+        intent = self._cached_intent(content)
+        if intent is not None:
+            return intent.wants_setup or intent.is_embodied
+        return self._intent_classifier._keyword_fallback(content).wants_setup
 
     def _looks_like_sim_request(self, content: str) -> bool:
-        text = " ".join(content.lower().split())
-        return any(keyword in text for keyword in self._SIM_KEYWORDS)
+        intent = self._cached_intent(content)
+        if intent is not None:
+            return intent.wants_simulation
+        return self._intent_classifier._keyword_fallback(content).wants_simulation
 
     def _looks_like_setup_edit(self, content: str) -> bool:
-        text = content.lower()
-        return any(keyword in text for keyword in self._SETUP_EDIT_KEYWORDS)
+        intent = self._cached_intent(content)
+        if intent is not None:
+            return intent.wants_edit
+        return self._intent_classifier._keyword_fallback(content).wants_edit
 
     async def _resolve_intent(
         self,
         session: Session,
         state: SetupOnboardingState,
         content: str,
+        *,
+        user_intent: UserIntent | None = None,
     ) -> OnboardingIntent:
-        heuristic = self._heuristic_intent(content)
+        heuristic = self._heuristic_intent(content, user_intent=user_intent)
         if self.intent_parser is None or self._intent_has_signal(heuristic):
             return heuristic
         try:
@@ -220,19 +254,25 @@ class OnboardingController:
             )
         )
 
-    def _heuristic_intent(self, content: str) -> OnboardingIntent:
+    def _heuristic_intent(
+        self,
+        content: str,
+        *,
+        user_intent: UserIntent | None = None,
+    ) -> OnboardingIntent:
+        use_classified_intent = user_intent is not None and self._intent_classifier._llm is not None
         inferred_language = infer_language(content)
         return OnboardingIntent(
-            robot_ids=tuple(self._extract_robot_ids(content)),
-            simulation_requested=self._looks_like_sim_request(content),
+            robot_ids=((user_intent.robot_id,) if use_classified_intent and user_intent.robot_id else tuple(self._extract_robot_ids(content))),
+            simulation_requested=user_intent.wants_simulation if use_classified_intent else self._looks_like_sim_request(content),
             sensor_changes=tuple(self._extract_sensor_changes(content)),
-            connected=self._extract_connected_state(content),
-            serial_path=self._extract_serial_path(content),
+            connected=user_intent.connection_confirmed if use_classified_intent else self._extract_connected_state(content),
+            serial_path=user_intent.serial_path if use_classified_intent and user_intent.serial_path else self._extract_serial_path(content),
             ros2_install_profile=extract_ros2_profile(content),
             ros2_state=extract_ros2_state(content),
             ros2_install_requested=is_ros2_install_request(content),
             ros2_step_advance=is_ros2_step_advance(content),
-            calibration_requested=self._extract_calibration_request(content),
+            calibration_requested=user_intent.wants_calibration if use_classified_intent else self._extract_calibration_request(content),
             preferred_language="zh" if inferred_language == "zh" else None,
         )
 
@@ -341,6 +381,9 @@ class OnboardingController:
         return next_state, changed
 
     def _extract_robot_ids(self, content: str) -> list[str]:
+        intent = self._cached_intent(content)
+        if intent is not None and intent.robot_id:
+            return [intent.robot_id]
         normalized = content.lower()
         matched: list[str] = []
         for robot_id, aliases in list_builtin_robot_aliases().items():
@@ -427,34 +470,16 @@ class OnboardingController:
         return base if index == 0 or base != "camera" else f"{base}_{index + 1}"
 
     def _extract_connected_state(self, content: str) -> bool | None:
-        lower = content.lower()
-        if any(token in lower for token in ("connected", "已连接", "连接好了", "连好了", "接好了", "接上了", "连上了", "都连好了", "已经接好了", "已经连接好了")):
-            return True
-        if (
-            ("connect" in lower and any(token in lower for token in ("not", "no")))
-            or any(token in lower for token in ("没连", "没有连接", "未连接", "还没连", "没接好", "还没有接好", "还没有连接好"))
-        ):
-            return False
-        return None
+        intent = self._cached_intent(content)
+        if intent is not None:
+            return intent.connection_confirmed
+        return self._intent_classifier._keyword_fallback(content).connection_confirmed
 
     def _extract_calibration_request(self, content: str) -> bool:
-        lower = " ".join(content.lower().split())
-        return any(
-            token in lower
-            for token in (
-                "calibrate",
-                "calibration",
-                "start calibration",
-                "help me calibrate",
-                "need calibration",
-                "标定",
-                "校准",
-                "帮我标定",
-                "开始标定",
-                "帮我校准",
-                "开始校准",
-            )
-        )
+        intent = self._cached_intent(content)
+        if intent is not None:
+            return intent.wants_calibration
+        return self._intent_classifier._keyword_fallback(content).wants_calibration
 
     def _extract_serial_path(self, content: str) -> str | None:
         match = self._SERIAL_RE.search(content)
