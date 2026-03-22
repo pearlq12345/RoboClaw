@@ -115,22 +115,41 @@ def resolved_ros2_distro(state: SetupOnboardingState) -> str | None:
     return None
 
 
+def _resolve_sim_model_path(raw: str) -> str:
+    """Resolve a relative sim model path to an absolute path."""
+    p = Path(raw)
+    if p.is_absolute() and p.exists():
+        return raw
+    try:
+        from roboclaw.embodied.simulation import __file__ as sim_init
+        candidate = Path(sim_init).parent / "models" / p.name
+        if candidate.exists():
+            return str(candidate)
+    except Exception:
+        pass
+    resolved = p.resolve()
+    return str(resolved) if resolved.exists() else raw
+
+
 def launch_command(state: SetupOnboardingState) -> str | None:
     facts = state.detected_facts
     if facts.get("simulation_requested") is True:
         model_path = str(facts.get("sim_model_path") or "").strip()
         if not model_path:
             return None
+        model_path = _resolve_sim_model_path(model_path)
         namespace = ros2_namespace(state)
         joint_mapping = json.dumps(facts.get("sim_joint_mapping", {}) or {}, ensure_ascii=True, sort_keys=True)
         return " ".join(
             [
+                "fuser -k 9878/tcp 2>/dev/null; sleep 0.5;",
                 "source /opt/ros/*/setup.bash 2>/dev/null;",
-                "/usr/bin/python3 -m roboclaw.embodied.simulation.mujoco_ros2_node",
+                "python3 -m roboclaw.embodied.simulation.mujoco_ros2_node",
                 f"--model-path {shlex.quote(model_path)}",
                 f"--namespace {shlex.quote(namespace)}",
                 f"--joint-mapping {shlex.quote(joint_mapping)}",
                 "--viewer-port 9878",
+                f"--viewer-mode {shlex.quote(facts.get('sim_viewer_mode', 'web'))}",
             ]
         )
     if not state.robot_attachments:
@@ -194,6 +213,20 @@ def sensor_attachment_id(base: str, existing: list[Any], index: int) -> str:
 
 def simulation_options_message(language: str | None, options: str) -> str:
     return localize_text(language, en=f"I can set up simulation for: {options}.\nTell me which robot you want to try.", zh=f"我可以为这些机器人准备仿真：{options}。\n告诉我你想试哪个机器人。")
+
+
+def viewer_mode_question_message(language: str | None) -> str:
+    return localize_text(
+        language,
+        en="How would you like to view the simulation?\n"
+        "- **web** — view in your browser\n"
+        "- **local window** — native MuJoCo window (requires a display)\n"
+        "- **auto** — let me decide based on your environment",
+        zh="你想怎么查看仿真画面？\n"
+        "- **网页** — 通过浏览器查看\n"
+        "- **本地窗口** — MuJoCo 原生窗口（需要显示器）\n"
+        "- **自动** — 让我根据你的环境自动决定",
+    )
 
 
 def simulation_ready_message(language: str | None) -> str:

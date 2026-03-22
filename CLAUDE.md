@@ -40,7 +40,7 @@
 
 ### 写代码
 
-- 代码交给 Codex 写（`/codex-dispatch`）。Claude Code 负责读代码、设计方案、写 worker prompt、review 结果、跑验证、与用户沟通。
+- Claude Code 写代码。写完后用 `/codex-review` 让 Codex 审查，根据审查结果修复问题。
 - 每次结构性改动后，跑 `bash scripts/embodied_lines.sh` 并与上次对比。如果行数增长，必须给出理由或重构到不涨。向用户汇报 before/after。
 
 ### 代码规范

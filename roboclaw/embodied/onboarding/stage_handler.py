@@ -32,6 +32,7 @@ from roboclaw.embodied.onboarding.helpers import (
     unknown_robot_message,
     unstable_serial_message,
     validation_failed_message,
+    viewer_mode_question_message,
 )
 from roboclaw.embodied.onboarding.intent_engine import IntentEngine
 from roboclaw.embodied.onboarding.model import OnboardingIntent, SetupOnboardingState, SetupStage, SetupStatus
@@ -167,6 +168,11 @@ class StageHandler:
                 "state": replace(state, stage=SetupStage.IDENTIFY_SETUP_SCOPE, missing_facts=["simulation_robot"]),
                 "content": simulation_options_message(language, options),
             }
+        if selected is not None and not state.detected_facts.get("sim_viewer_mode"):
+            return {
+                "state": replace(state, stage=SetupStage.IDENTIFY_SETUP_SCOPE, missing_facts=["sim_viewer_mode"]),
+                "content": viewer_mode_question_message(language),
+            }
 
         state = replace(
             state,
@@ -178,6 +184,7 @@ class StageHandler:
                 "simulation_requested": True,
                 "sim_model_path": selected.sim_model_path,
                 "sim_joint_mapping": selected.sim_joint_mapping or {},
+                "sim_viewer_mode": state.detected_facts.get("sim_viewer_mode", "web"),
             },
             stage=SetupStage.MATERIALIZE_ASSEMBLY,
             missing_facts=[],

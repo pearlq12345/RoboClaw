@@ -23,6 +23,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace", required=True, help="ROS2 namespace")
     parser.add_argument("--joint-mapping", default="{}", help="JSON joint name mapping")
     parser.add_argument("--viewer-port", type=int, default=0, help="HTTP port for the optional simulation viewer")
+    parser.add_argument("--viewer-mode", choices=["native", "web", "auto"], default="auto")
     parser.add_argument("--gripper-actuator", default="gripper")
     parser.add_argument("--gripper-open-value", type=float, default=1.0)
     parser.add_argument("--gripper-close-value", type=float, default=0.0)
@@ -31,6 +32,18 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    import os
+    import sys
+
+    args = _parse_args()
+
+    # Resolve viewer mode and set MUJOCO_GL *before* any MuJoCo import/model load.
+    viewer_mode = args.viewer_mode
+    if viewer_mode == "auto":
+        viewer_mode = "native" if (os.environ.get("DISPLAY") or sys.platform == "darwin") else "web"
+    if viewer_mode == "web":
+        os.environ.setdefault("MUJOCO_GL", "osmesa")
+
     import rclpy
     from rclpy.node import Node
     from std_msgs.msg import String
@@ -38,7 +51,6 @@ def main() -> None:
 
     from roboclaw.embodied.simulation.mujoco_control_runtime import MujocoControlRuntime
 
-    args = _parse_args()
     mapping = json.loads(args.joint_mapping) if args.joint_mapping else {}
 
     runtime = MujocoControlRuntime(
@@ -49,13 +61,6 @@ def main() -> None:
         gripper_close_value=args.gripper_close_value,
     )
     runtime.connect()
-    viewer = None
-    if args.viewer_port > 0:
-        from roboclaw.embodied.simulation.viewer import SimulationViewer
-
-        viewer = SimulationViewer(runtime._mujoco, port=args.viewer_port)
-        viewer.start()
-        print(f"ROBOCLAW_SIM_VIEWER_URL=http://0.0.0.0:{viewer.port}", flush=True)
 
     node = None
     try:
@@ -185,10 +190,11 @@ def main() -> None:
         node.create_service(Trigger, f"{ns}/primitive_gripper_close", handle_gripper_close)
         node.create_service(Trigger, f"{ns}/primitive_go_home", handle_go_home)
 
-        rclpy.spin(node)
+        from roboclaw.embodied.simulation.session import SimulationSession
+
+        session = SimulationSession(runtime._mujoco, viewer_mode=args.viewer_mode, viewer_port=args.viewer_port)
+        session.run(node, lock)
     finally:
-        if viewer is not None:
-            viewer.stop()
         runtime.disconnect()
         if node is not None:
             node.destroy_node()

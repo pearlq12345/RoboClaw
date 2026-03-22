@@ -269,6 +269,9 @@ class OnboardingController:
         if intent.simulation_requested and facts.get("simulation_requested") is not True:
             facts["simulation_requested"] = True
             changed = True
+        if intent.sim_viewer_mode and facts.get("sim_viewer_mode") != intent.sim_viewer_mode:
+            facts["sim_viewer_mode"] = intent.sim_viewer_mode
+            changed = True
 
         next_status = state.status
         next_stage = state.stage

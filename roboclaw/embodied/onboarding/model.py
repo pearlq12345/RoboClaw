@@ -116,4 +116,5 @@ class OnboardingIntent:
     ros2_install_requested: bool = False
     ros2_step_advance: bool = False
     calibration_requested: bool = False
+    sim_viewer_mode: str | None = None
     preferred_language: str | None = None

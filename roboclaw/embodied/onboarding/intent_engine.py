@@ -110,6 +110,7 @@ class IntentEngine:
                 intent.ros2_install_requested,
                 intent.ros2_step_advance,
                 intent.calibration_requested,
+                intent.sim_viewer_mode,
             )
         )
 
@@ -131,6 +132,7 @@ class IntentEngine:
             ros2_install_requested=is_ros2_install_request(content),
             ros2_step_advance=is_ros2_step_advance(content),
             calibration_requested=user_intent.wants_calibration if use_classified_intent else self.extract_calibration_request(content),
+            sim_viewer_mode=self.extract_viewer_mode(content),
             preferred_language="zh" if inferred_language == "zh" else None,
         )
 
@@ -149,8 +151,23 @@ class IntentEngine:
             ros2_install_requested=secondary.ros2_install_requested or primary.ros2_install_requested,
             ros2_step_advance=secondary.ros2_step_advance or primary.ros2_step_advance,
             calibration_requested=secondary.calibration_requested or primary.calibration_requested,
+            sim_viewer_mode=secondary.sim_viewer_mode or primary.sim_viewer_mode,
             preferred_language=secondary.preferred_language or primary.preferred_language,
         )
+
+    @staticmethod
+    def extract_viewer_mode(content: str) -> str | None:
+        lowered = content.lower()
+        for kw in ("web", "browser", "网页", "网页版", "浏览器"):
+            if kw in lowered:
+                return "web"
+        for kw in ("native", "本地窗口", "本地", "窗口"):
+            if kw in lowered:
+                return "native"
+        for kw in ("auto", "自动", "你决定", "随便", "都行"):
+            if kw in lowered:
+                return "auto"
+        return None
 
     def extract_robot_ids(self, content: str) -> list[str]:
         intent = self.cached_intent(content)
