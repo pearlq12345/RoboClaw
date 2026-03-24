@@ -173,7 +173,10 @@ def setup_file(tmp_path: Path) -> Path:
         "cameras": {},
         "datasets": {"root": "/data"},
         "policies": {"root": "/policies"},
-        "scanned_ports": [],
+        "scanned_ports": [
+            {"by_path": "/dev/serial/by-path/pci-0:2.1", "by_id": "/dev/serial/by-id/usb-1a86_5B14032630", "dev": "/dev/ttyACM0"},
+            {"by_path": "/dev/serial/by-path/pci-0:2.2", "by_id": "/dev/serial/by-id/usb-1a86_5B14030892", "dev": "/dev/ttyACM1"},
+        ],
         "scanned_cameras": [
             {"by_path": "/dev/v4l/by-path/cam0", "by_id": "usb-cam0", "dev": "/dev/video0"},
             {"by_path": "/dev/v4l/by-path/cam1", "by_id": "usb-cam1", "dev": "/dev/video2"},
@@ -187,12 +190,26 @@ def test_set_arm(setup_file: Path) -> None:
     result = set_arm("follower", "so101_follower", "/dev/ttyACM0", path=setup_file)
     arm = result["arms"]["follower"]
     assert arm["type"] == "so101_follower"
-    assert arm["port"] == "/dev/ttyACM0"
+    # Port should be resolved to by_id from scanned_ports
+    assert arm["port"] == "/dev/serial/by-id/usb-1a86_5B14032630"
     assert arm["calibration_dir"] == str(_CALIBRATION_ROOT / "follower")
     assert arm["calibrated"] is False
     # Verify persisted
     persisted = load_setup(setup_file)
     assert persisted["arms"]["follower"] == arm
+
+
+def test_set_arm_resolves_volatile_port(setup_file: Path) -> None:
+    """Volatile /dev/ttyACMx should be resolved to stable /dev/serial/by-id/..."""
+    result = set_arm("leader", "so101_leader", "/dev/ttyACM1", path=setup_file)
+    assert result["arms"]["leader"]["port"] == "/dev/serial/by-id/usb-1a86_5B14030892"
+
+
+def test_set_arm_keeps_stable_port(setup_file: Path) -> None:
+    """Already-stable by-id port should be kept as-is."""
+    stable = "/dev/serial/by-id/usb-custom-device"
+    result = set_arm("follower", "so101_follower", stable, path=setup_file)
+    assert result["arms"]["follower"]["port"] == stable
 
 
 def test_set_arm_invalid_type(setup_file: Path) -> None:

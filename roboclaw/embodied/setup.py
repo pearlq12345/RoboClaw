@@ -78,6 +78,21 @@ def update_setup(updates: dict[str, Any], path: Path = SETUP_PATH) -> dict[str, 
     return setup
 
 
+def _resolve_port(port: str, scanned_ports: list[dict]) -> str:
+    """Resolve a volatile port (e.g. /dev/ttyACM0) to a stable by_id path.
+
+    If port already starts with /dev/serial/by-id/ or /dev/serial/by-path/, keep as-is.
+    Otherwise look up in scanned_ports and prefer by_id > by_path > original.
+    """
+    if port.startswith("/dev/serial/"):
+        return port
+    for entry in scanned_ports:
+        if entry.get("dev") != port:
+            continue
+        return entry.get("by_id") or entry.get("by_path") or port
+    return port
+
+
 # ── Structured mutators (exposed as agent actions) ──────────────────
 
 
@@ -90,6 +105,7 @@ def set_arm(role: str, arm_type: str, port: str, path: Path = SETUP_PATH) -> dic
     if not port:
         raise ValueError("Arm port is required.")
     setup = load_setup(path)
+    port = _resolve_port(port, setup.get("scanned_ports", []))
     setup.setdefault("arms", {})[role] = {
         "type": arm_type,
         "port": port,
