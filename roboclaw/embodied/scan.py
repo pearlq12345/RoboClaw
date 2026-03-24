@@ -27,15 +27,23 @@ def scan_cameras() -> list[dict[str, str | int]]:
     except ImportError:
         return []
 
-    devices = sorted(glob.glob("/dev/video*"))
-    cameras = []
-    for dev in devices:
-        idx = int(dev.replace("/dev/video", ""))
-        cap = cv2.VideoCapture(idx)
-        if not cap.isOpened():
-            continue
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        cameras.append({"id": dev, "width": w, "height": h})
-    return cameras
+    prev_level = os.environ.get("OPENCV_LOG_LEVEL", "")
+    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+    try:
+        devices = sorted(glob.glob("/dev/video*"))
+        cameras = []
+        for dev in devices:
+            idx = int(dev.replace("/dev/video", ""))
+            cap = cv2.VideoCapture(idx)
+            if not cap.isOpened():
+                continue
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            cameras.append({"id": dev, "width": w, "height": h})
+        return cameras
+    finally:
+        if prev_level:
+            os.environ["OPENCV_LOG_LEVEL"] = prev_level
+        else:
+            os.environ.pop("OPENCV_LOG_LEVEL", None)
