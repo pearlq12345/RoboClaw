@@ -313,6 +313,14 @@ def onboard():
 
     sync_workspace_templates(workspace)
 
+    # Scan hardware and create embodied setup
+    from roboclaw.embodied.setup import create_setup_with_scan, SETUP_PATH
+    if not SETUP_PATH.exists():
+        console.print("[dim]Scanning hardware...[/dim]")
+        setup = create_setup_with_scan()
+        n_ports = len(setup.get("scanned_ports", []))
+        console.print(f"[green]✓[/green] Embodied setup created ({n_ports} serial port(s) detected)")
+
     console.print(f"\n{__logo__} RoboClaw is ready!")
     console.print("\nNext steps:")
     console.print("  1. Add your API key to [cyan]~/.roboclaw/config.json[/cyan]")

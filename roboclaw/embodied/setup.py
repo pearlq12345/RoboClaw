@@ -23,6 +23,7 @@ _DEFAULT_SETUP: dict[str, Any] = {
     "datasets": {
         "root": str(Path("~/.roboclaw/workspace/embodied/datasets").expanduser()),
     },
+    "scanned_ports": [],
 }
 
 
@@ -39,13 +40,24 @@ def save_setup(setup: dict[str, Any], path: Path = SETUP_PATH) -> None:
     path.write_text(json.dumps(setup, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def create_setup_with_scan(path: Path = SETUP_PATH) -> dict[str, Any]:
+    """Create setup.json with auto-detected hardware. Called during onboard."""
+    from roboclaw.embodied.scan import scan_serial_ports
+
+    setup = copy.deepcopy(_DEFAULT_SETUP)
+    ports = scan_serial_ports()
+    setup["scanned_ports"] = ports
+    if len(ports) == 1:
+        setup["robot"]["port"] = ports[0]["path"]
+    save_setup(setup, path)
+    return setup
+
+
 def ensure_setup(path: Path = SETUP_PATH) -> dict[str, Any]:
     """Load setup.json if exists, otherwise create with defaults and return."""
     if path.exists():
         return load_setup(path)
-    defaults = copy.deepcopy(_DEFAULT_SETUP)
-    save_setup(defaults, path)
-    return defaults
+    return create_setup_with_scan(path)
 
 
 def update_setup(updates: dict[str, Any], path: Path = SETUP_PATH) -> dict[str, Any]:
