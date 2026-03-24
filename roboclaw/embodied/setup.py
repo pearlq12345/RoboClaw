@@ -42,13 +42,15 @@ def save_setup(setup: dict[str, Any], path: Path = SETUP_PATH) -> None:
 
 def create_setup_with_scan(path: Path = SETUP_PATH) -> dict[str, Any]:
     """Create setup.json with auto-detected hardware. Called during onboard."""
-    from roboclaw.embodied.scan import scan_serial_ports
+    from roboclaw.embodied.scan import scan_cameras, scan_serial_ports
 
     setup = copy.deepcopy(_DEFAULT_SETUP)
     ports = scan_serial_ports()
     setup["scanned_ports"] = ports
     if len(ports) == 1:
         setup["robot"]["port"] = ports[0]["path"]
+    cameras = scan_cameras()
+    setup["cameras"] = [{"id": c["id"], "type": "opencv", "width": c["width"], "height": c["height"]} for c in cameras]
     save_setup(setup, path)
     return setup
 
