@@ -16,7 +16,7 @@
 ## ✨ Architecture
 
 <p align="center">
-  <img src="roboclaw_arch.pdf" alt="RoboClaw Architecture" width="800" />
+  <img src="roboclaw_arch.png" alt="RoboClaw Architecture" width="800" />
 </p>
 
 ## 📢 News
