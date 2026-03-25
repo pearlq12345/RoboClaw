@@ -19,7 +19,7 @@ def test_calibrate_follower() -> None:
         "/cal/follower",
         "5B14032630",
     )
-    assert "lerobot-calibrate" in argv
+    assert argv[:4] == [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper", "calibrate"]
     assert "--robot.type=so101_follower" in argv
     assert "--robot.id=5B14032630" in argv
     assert "--robot.port=/dev/ttyACM0" in argv
@@ -33,7 +33,7 @@ def test_calibrate_leader() -> None:
         "/cal/leader",
         "5B14030892",
     )
-    assert "lerobot-calibrate" in argv
+    assert argv[:4] == [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper", "calibrate"]
     assert "--teleop.type=so101_leader" in argv
     assert "--teleop.id=5B14030892" in argv
     assert "--teleop.port=/dev/ttyACM1" in argv
@@ -51,7 +51,7 @@ def test_teleoperate() -> None:
         "/cal/l",
         "5B14030892",
     )
-    assert "lerobot-teleoperate" in argv
+    assert argv[:4] == [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper", "teleoperate"]
     assert "--robot.type=so101_follower" in argv
     assert "--robot.id=5B14032630" in argv
     assert "--teleop.type=so101_leader" in argv
@@ -69,7 +69,7 @@ def test_teleoperate_bimanual() -> None:
         left_teleop={"port": "/dev/c"},
         right_teleop={"port": "/dev/d"},
     )
-    assert argv[0] == "lerobot-teleoperate"
+    assert argv[:4] == [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper", "teleoperate"]
     assert "--robot.id=bimanual" in argv
     assert "--robot.calibration_dir=/cal/robot" in argv
     assert "--teleop.id=bimanual" in argv

@@ -37,7 +37,7 @@ _ACTION_DESCRIPTIONS = {
     "identify": "Launch the interactive arm-identification flow for detected serial ports.",
     "describe": "Explain adjustable parameters for a target embodied action.",
     "calibrate": "Calibrate one or more configured arms. If arms is omitted, calibrate every uncalibrated arm.",
-    "teleoperate": "Run live teleoperation. Select arms with a comma-separated alias list.",
+    "teleoperate": "Run live teleoperation. Select arms with a comma-separated port list.",
     "record": "Record a dataset with one follower/leader pair or two pairs for bimanual capture.",
     "replay": "Replay a recorded dataset episode on one or two follower arms.",
     "train": "Start ACT training for a recorded dataset as a detached job.",
@@ -75,7 +75,7 @@ class EmbodiedTool(Tool):
             "NEVER use exec for /dev queries. "
             "Actions: setup_show, identify, describe, calibrate, teleoperate, record, replay, "
             "train, run_policy, job_status, set_arm, rename_arm, remove_arm, set_camera, "
-            "remove_camera. Use arm aliases from setup.json via the arms parameter."
+            "remove_camera. Use arm port paths from setup.json via the arms parameter."
         )
 
     @property
@@ -160,7 +160,7 @@ class EmbodiedTool(Tool):
                 },
                 "arms": {
                     "type": "string",
-                    "description": "Comma-separated configured arm aliases for calibrate, teleoperate, record, replay, or run_policy.",
+                    "description": "Comma-separated arm port paths (by-id from setup_show).",
                 },
             },
             "required": ["action"],
@@ -466,7 +466,7 @@ class EmbodiedTool(Tool):
         selected = self._resolve_action_arms(setup, kwargs)
         grouped = _group_arms(selected)
         if kwargs.get("arms", "") and grouped["leaders"]:
-            return "Replay only supports follower arms. Remove leader aliases from arms."
+            return "Replay only supports follower arms. Remove leader arm ports from arms."
         followers = grouped["followers"]
         if not followers:
             return "No follower arm configured."
@@ -539,7 +539,7 @@ class EmbodiedTool(Tool):
         if not followers:
             return "No follower arm configured."
         if len(followers) != 1:
-            return "run_policy requires exactly 1 follower arm. Provide arms with a single follower alias."
+            return "run_policy requires exactly 1 follower arm. Provide arms with a single follower port."
         follower = followers[0]
         cameras = {} if kwargs.get("use_cameras") is False else self._resolve_cameras(setup)
         policies_root = setup.get("policies", {}).get("root", "")
@@ -598,23 +598,21 @@ class ActionError(Exception):
 
 
 def _resolve_arms(setup: dict[str, Any], arms_str: str) -> list[dict[str, Any]]:
-    from roboclaw.embodied.setup import find_arm
-
     configured = setup.get("arms", [])
     if not configured:
         return []
-    aliases = _split_aliases(arms_str)
-    if not aliases:
+    ports = _split_arm_tokens(arms_str)
+    if not ports:
         return list(configured)
     resolved: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for alias in aliases:
-        if alias in seen:
-            raise ValueError(f"Duplicate arm alias '{alias}' in arms.")
-        seen.add(alias)
-        arm = find_arm(configured, alias)
+    for port in ports:
+        if port in seen:
+            raise ValueError(f"Duplicate arm port '{port}' in arms.")
+        seen.add(port)
+        arm = next((item for item in configured if item.get("port") == port), None)
         if arm is None:
-            raise ValueError(f"No arm named '{alias}' found in setup.")
+            raise ValueError(f"No arm with port '{port}' found in setup.")
         resolved.append(arm)
     return resolved
 
@@ -631,10 +629,10 @@ def _group_arms(arms: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     return grouped
 
 
-def _split_aliases(arms_str: str) -> list[str]:
+def _split_arm_tokens(arms_str: str) -> list[str]:
     if not arms_str:
         return []
-    return [alias.strip() for alias in arms_str.split(",") if alias.strip()]
+    return [token.strip() for token in arms_str.split(",") if token.strip()]
 
 
 def _validate_pairing(followers: list[dict[str, Any]], leaders: list[dict[str, Any]]) -> str | None:

@@ -37,20 +37,23 @@ _MOCK_SCANNED_PORTS = [
     },
 ]
 
+_FOLLOWER_PORT = _MOCK_SCANNED_PORTS[0]["by_id"]
+_LEADER_PORT = _MOCK_SCANNED_PORTS[1]["by_id"]
+
 _MOCK_SETUP = {
     "version": 2,
     "arms": [
         {
             "alias": "right_follower",
             "type": "so101_follower",
-            "port": "/dev/ttyACM0",
+            "port": _FOLLOWER_PORT,
             "calibration_dir": "/cal/f",
             "calibrated": False,
         },
         {
             "alias": "left_leader",
             "type": "so101_leader",
-            "port": "/dev/ttyACM1",
+            "port": _LEADER_PORT,
             "calibration_dir": "/cal/l",
             "calibrated": False,
         },
@@ -171,7 +174,7 @@ async def test_calibrate_selected_arms_even_if_calibrated() -> None:
         patch("roboclaw.embodied.setup.mark_arm_calibrated") as mock_mark,
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
-        result = await tool.execute(action="calibrate", arms="right_follower")
+        result = await tool.execute(action="calibrate", arms=_FOLLOWER_PORT)
 
     assert "1 succeeded, 0 failed." in result
     mock_mark.assert_called_once_with("right_follower")
@@ -190,7 +193,7 @@ async def test_calibrate_missing_arm() -> None:
     tool = EmbodiedTool(tty_handoff=AsyncMock())
     with patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP):
         result = await tool.execute(action="calibrate", arms="missing_arm")
-    assert result == "No arm named 'missing_arm' found in setup."
+    assert result == "No arm with port 'missing_arm' found in setup."
 
 
 @pytest.mark.asyncio
@@ -226,7 +229,7 @@ async def test_record_action() -> None:
             dataset_name="test",
             task="grasp",
             num_episodes=5,
-            arms="right_follower,left_leader",
+            arms=f"{_FOLLOWER_PORT},{_LEADER_PORT}",
         )
 
     assert "Recording finished" in result
@@ -254,7 +257,7 @@ async def test_record_action_without_cameras() -> None:
             dataset_name="test",
             task="grasp",
             num_episodes=5,
-            arms="right_follower,left_leader",
+            arms=f"{_FOLLOWER_PORT},{_LEADER_PORT}",
             use_cameras=False,
         )
 
@@ -271,7 +274,7 @@ async def test_record_action_rejects_non_ascii_dataset_name() -> None:
             dataset_name="抓取任务",
             task="grasp",
             num_episodes=5,
-            arms="right_follower,left_leader",
+            arms=f"{_FOLLOWER_PORT},{_LEADER_PORT}",
         )
     assert "dataset_name must be" in result
 
@@ -300,7 +303,7 @@ async def test_record_bimanual() -> None:
             action="record",
             dataset_name="test",
             task="grasp",
-            arms="left_f,right_f,left_l,right_l",
+            arms="/dev/a,/dev/b,/dev/c,/dev/d",
         )
 
     assert "Recording finished" in result
@@ -350,7 +353,7 @@ async def test_replay_bimanual_with_root_fallback() -> None:
         patch("roboclaw.embodied.tool.shutil.copy2") as mock_copy,
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
-        result = await tool.execute(action="replay", dataset_name="test", arms="left_f,right_f")
+        result = await tool.execute(action="replay", dataset_name="test", arms="/dev/a,/dev/b")
 
     assert "Replay finished" in result
     argv = mock_runner.run_interactive.call_args.args[0]
@@ -363,7 +366,7 @@ async def test_replay_bimanual_with_root_fallback() -> None:
 async def test_replay_rejects_explicit_leaders() -> None:
     tool = EmbodiedTool(tty_handoff=AsyncMock())
     with patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP):
-        result = await tool.execute(action="replay", dataset_name="test", arms="left_leader")
+        result = await tool.execute(action="replay", dataset_name="test", arms=_LEADER_PORT)
     assert "Replay only supports follower arms" in result
 
 
@@ -387,7 +390,7 @@ async def test_teleoperate_bimanual() -> None:
         patch("roboclaw.embodied.tool.shutil.copy2") as mock_copy,
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
-        result = await tool.execute(action="teleoperate", arms="left_f,right_f,left_l,right_l")
+        result = await tool.execute(action="teleoperate", arms="/dev/a,/dev/b,/dev/c,/dev/d")
 
     assert "Teleoperation finished" in result
     argv = mock_runner.run_interactive.call_args.args[0]
@@ -648,7 +651,7 @@ def test_find_arm() -> None:
 
 
 def test_resolve_arms_single() -> None:
-    result = _resolve_arms(_MOCK_SETUP, "right_follower,left_leader")
+    result = _resolve_arms(_MOCK_SETUP, f"{_FOLLOWER_PORT},{_LEADER_PORT}")
     assert [arm["alias"] for arm in result] == ["right_follower", "left_leader"]
 
 
@@ -658,11 +661,16 @@ def test_resolve_arms_auto() -> None:
 
 
 def test_resolve_arms_missing() -> None:
-    with pytest.raises(ValueError, match="No arm named 'missing'"):
+    with pytest.raises(ValueError, match="No arm with port 'missing'"):
         _resolve_arms(_MOCK_SETUP, "missing")
 
 
+def test_resolve_arms_rejects_alias_lookup() -> None:
+    with pytest.raises(ValueError, match="No arm with port 'right_follower'"):
+        _resolve_arms(_MOCK_SETUP, "right_follower")
+
+
 def test_group_arms() -> None:
-    grouped = _group_arms(_resolve_arms(_MOCK_SETUP, "right_follower,left_leader"))
+    grouped = _group_arms(_resolve_arms(_MOCK_SETUP, f"{_FOLLOWER_PORT},{_LEADER_PORT}"))
     assert [arm["alias"] for arm in grouped["followers"]] == ["right_follower"]
     assert [arm["alias"] for arm in grouped["leaders"]] == ["left_leader"]

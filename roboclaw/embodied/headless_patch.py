@@ -120,4 +120,4 @@ def apply_headless_patch() -> None:
         return listener, events
 
     control_utils.init_keyboard_listener = init_keyboard_listener
-
+    control_utils.is_headless = lambda: not sys.stdin.isatty()

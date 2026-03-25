@@ -38,7 +38,7 @@ class SO101Controller:
         """
         prefix = self._arm_prefix(arm_type)
         return [
-            "lerobot-calibrate",
+            *self._wrapper_args("calibrate"),
             *self._arm_args(prefix, arm_type, arm_port, calibration_dir, arm_id),
         ]
 
@@ -51,7 +51,7 @@ class SO101Controller:
     ) -> list[str]:
         """Build teleoperation command (single follower + single leader)."""
         return [
-            "lerobot-teleoperate",
+            *self._wrapper_args("teleoperate"),
             *self._arm_args("robot", robot_type, robot_port, robot_cal_dir, robot_id),
             *self._arm_args("teleop", teleop_type, teleop_port, teleop_cal_dir, teleop_id),
         ]
@@ -65,7 +65,7 @@ class SO101Controller:
     ) -> list[str]:
         """Build bimanual teleoperation command (2 followers + 2 leaders)."""
         return [
-            "lerobot-teleoperate",
+            *self._wrapper_args("teleoperate"),
             "--robot.type=bi_so_follower",
             f"--robot.id={robot_id}",
             f"--robot.calibration_dir={Path(robot_cal_dir).expanduser()}",

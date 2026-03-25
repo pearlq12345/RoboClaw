@@ -42,11 +42,11 @@ For robot and hardware work, use this order unless the user explicitly asks othe
 2. `identify` when ports exist but aliases are missing or uncertain.
 3. `calibrate` before first motion and whenever hardware mapping may have changed.
 4. `teleoperate` to verify control and task feasibility before recording.
-5. `record` only after arm aliases, calibration, and camera usage are confirmed.
+5. `record` only after arm ports, calibration, and camera usage are confirmed.
 6. `train` after the dataset is consistent.
 7. `run_policy` only after a checkpoint exists and the robot setup matches training assumptions.
 
-Always refer to arms by alias, not raw `/dev` paths.
+ALWAYS pass arm port (by-id path) for `arms` param, NOT aliases.
 Always confirm whether the workflow is single-arm or bimanual.
 For bimanual recording, follower and leader counts must match and left/right roles must stay consistent.
 Before recording or training, use `describe` to check adjustable parameters.

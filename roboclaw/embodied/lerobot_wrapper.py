@@ -1,4 +1,4 @@
-"""Wrapper entrypoint that patches LeRobot before record/replay."""
+"""Wrapper entrypoint that patches LeRobot before LeRobot CLI actions."""
 
 from __future__ import annotations
 
@@ -15,12 +15,23 @@ def replay(argv: list[str] | None = None) -> None:
     _run("replay", argv)
 
 
+def teleoperate(argv: list[str] | None = None) -> None:
+    _run("teleoperate", argv)
+
+
+def calibrate(argv: list[str] | None = None) -> None:
+    _run("calibrate", argv)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
-        raise SystemExit("Usage: python -m roboclaw.embodied.lerobot_wrapper <record|replay> [args...]")
+        raise SystemExit(
+            "Usage: python -m roboclaw.embodied.lerobot_wrapper "
+            "<record|replay|teleoperate|calibrate> [args...]"
+        )
     action = args[0]
-    if action not in {"record", "replay"}:
+    if action not in {"record", "replay", "teleoperate", "calibrate"}:
         raise SystemExit(f"Unsupported action: {action}")
     _run(action, args[1:])
 
@@ -33,9 +44,15 @@ def _run(action: str, argv: list[str] | None = None) -> None:
         sys.argv = [f"lerobot-{action}", *args]
         if action == "record":
             from lerobot.scripts import lerobot_record as module
-        else:
+        elif action == "replay":
             from lerobot.scripts import lerobot_replay as module
+        elif action == "teleoperate":
+            from lerobot.scripts import lerobot_teleoperate as module
+        else:
+            from lerobot.scripts import lerobot_calibrate as module
         module.main()
+    except KeyboardInterrupt:
+        sys.exit(130)
     finally:
         sys.argv = original_argv
 
