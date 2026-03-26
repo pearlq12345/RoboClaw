@@ -83,6 +83,10 @@ def _confirm(prompt: str) -> bool:
 
 def probe_port(port_path: str, baudrate: int = DEFAULT_BAUDRATE) -> list[int]:
     """Try reading Present_Position for motor IDs 1-6. Return responding IDs."""
+    from roboclaw.embodied.stub import is_stub_mode, stub_motor_ids
+
+    if is_stub_mode():
+        return stub_motor_ids(port_path)
     import scservo_sdk as scs
 
     handler = scs.PortHandler(port_path)
@@ -103,6 +107,10 @@ def read_positions(
     port_path: str, motor_ids: list[int], baudrate: int = DEFAULT_BAUDRATE,
 ) -> dict[int, int]:
     """Read Present_Position (addr=56, len=2) for each motor ID."""
+    from roboclaw.embodied.stub import is_stub_mode
+
+    if is_stub_mode():
+        return {mid: 0 for mid in motor_ids}
     import scservo_sdk as scs
 
     handler = scs.PortHandler(port_path)
@@ -172,10 +180,10 @@ def _read_all_baselines(ports: list[dict]) -> dict[str, dict[int, int]]:
 
 def _find_moved_port(ports: list[dict], baselines: dict[str, dict[int, int]]) -> dict | None:
     """Read current positions, find the port with largest motion above threshold."""
-    from roboclaw.embodied.simulation import is_simulating, simulated_moved_port
+    from roboclaw.embodied.stub import is_stub_mode, stub_moved_port
 
-    if is_simulating():
-        return simulated_moved_port(ports)
+    if is_stub_mode():
+        return stub_moved_port(ports)
 
     best_port = None
     best_delta = 0

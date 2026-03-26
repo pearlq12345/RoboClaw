@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import re
@@ -15,24 +14,26 @@ _CAMERA_FIELDS = {"by_path", "by_id", "dev", "width", "height"}
 _VALID_TOP_KEYS = {"version", "arms", "cameras", "datasets", "policies", "scanned_ports", "scanned_cameras"}
 
 
-def _get_home() -> Path:
-    """Return ROBOCLAW_HOME (default ~/.roboclaw)."""
+def get_roboclaw_home(home: str | Path | None = None) -> Path:
+    """Return RoboClaw home directory, honoring ROBOCLAW_HOME env var."""
+    if home is not None:
+        return Path(home).expanduser()
     return Path(os.environ.get("ROBOCLAW_HOME", "~/.roboclaw")).expanduser()
 
 
 def get_setup_path(home: Path | None = None) -> Path:
     """Return the setup.json path under *home*."""
-    return (home or _get_home()) / "workspace" / "embodied" / "setup.json"
+    return (home or get_roboclaw_home()) / "workspace" / "embodied" / "setup.json"
 
 
 def get_calibration_root(home: Path | None = None) -> Path:
     """Return the calibration directory under *home*."""
-    return (home or _get_home()) / "workspace" / "embodied" / "calibration"
+    return (home or get_roboclaw_home()) / "workspace" / "embodied" / "calibration"
 
 
 def _default_setup(home: Path | None = None) -> dict[str, Any]:
     """Build a fresh default setup dict with paths under *home*."""
-    base = (home or _get_home()) / "workspace" / "embodied"
+    base = (home or get_roboclaw_home()) / "workspace" / "embodied"
     return {
         "version": 2,
         "arms": [],

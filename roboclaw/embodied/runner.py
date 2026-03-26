@@ -44,9 +44,9 @@ class LocalLeRobotRunner:
 
     async def run_interactive(self, argv: list[str]) -> int:
         """Run command with inherited TTY (user sees output directly). Returns exit code."""
-        from roboclaw.embodied.simulation import is_simulating
+        from roboclaw.embodied.stub import is_stub_mode
 
-        if is_simulating():
+        if is_stub_mode() and "roboclaw.embodied.identify" not in argv:
             return 0
 
         process = await asyncio.create_subprocess_exec(*argv, env=_utf8_env())

@@ -12,12 +12,13 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from roboclaw.agent.tools.base import Tool
-from roboclaw.embodied.setup import _get_home
+from roboclaw.embodied.setup import get_roboclaw_home
 
 
 def _logs_dir() -> Path:
     """Return the embodied jobs log directory under ROBOCLAW_HOME."""
-    return _get_home() / "workspace" / "embodied" / "jobs"
+    return get_roboclaw_home() / "workspace" / "embodied" / "jobs"
+
 _NO_TTY_MSG = "This action requires a local terminal. Run: roboclaw agent"
 _BIMANUAL_ID = "bimanual"
 _DEFAULT_REPLAY_ROOT = Path("~/.cache/huggingface/lerobot").expanduser()
@@ -851,7 +852,7 @@ def _dataset_root(setup: dict[str, Any], fallback: Path | None = None) -> Path:
         return Path(root).expanduser()
     if fallback is not None:
         return fallback.expanduser()
-    return _get_home() / "workspace" / "embodied" / "datasets"
+    return get_roboclaw_home() / "workspace" / "embodied" / "datasets"
 
 
 def _arm_id(arm: dict[str, Any]) -> str:

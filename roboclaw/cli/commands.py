@@ -393,6 +393,14 @@ def _onboard_plugins(config_path: Path) -> None:
 
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
+    # Allow PTY integration tests to inject a stub provider via env var.
+    # Gated behind ROBOCLAW_STUB to prevent accidental use in production.
+    stub_module = os.environ.get("ROBOCLAW_STUB_LLM")
+    if stub_module and os.environ.get("ROBOCLAW_STUB"):
+        import importlib
+        mod = importlib.import_module(stub_module)
+        return mod.create_provider(config)
+
     from roboclaw.providers.base import GenerationSettings
     from roboclaw.providers.openai_codex_provider import OpenAICodexProvider
     from roboclaw.providers.azure_openai_provider import AzureOpenAIProvider
