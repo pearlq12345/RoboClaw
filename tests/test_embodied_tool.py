@@ -14,6 +14,7 @@ from unittest.mock import patch as std_patch
 from roboclaw.embodied.setup import (
     arm_display_name,
     find_arm,
+    find_camera,
     load_setup,
     remove_arm,
     remove_camera,
@@ -63,9 +64,9 @@ _MOCK_SETUP = {
             "calibrated": False,
         },
     ],
-    "cameras": {
-        "front": {"by_path": "", "by_id": "", "dev": "/dev/video0"},
-    },
+    "cameras": [
+        {"alias": "front", "port": "/dev/video0", "width": 640, "height": 480, "fps": 30},
+    ],
     "datasets": {"root": "/data"},
     "policies": {"root": "/policies"},
     "scanned_ports": [],
@@ -507,7 +508,7 @@ def setup_file(tmp_path: Path) -> Path:
     base = {
         "version": 2,
         "arms": [],
-        "cameras": {},
+        "cameras": [],
         "datasets": {"root": "/data"},
         "policies": {"root": "/policies"},
         "scanned_ports": [
@@ -640,11 +641,13 @@ def test_rename_arm_rejects_duplicate_alias(setup_file: Path) -> None:
 
 def test_set_camera(setup_file: Path) -> None:
     result = set_camera("front", 0, path=setup_file)
-    cam = result["cameras"]["front"]
-    assert cam["by_path"] == "/dev/v4l/by-path/cam0"
-    assert cam["dev"] == "/dev/video0"
-    assert cam["by_id"] == "usb-cam0"
-    assert set(cam.keys()) <= {"by_path", "by_id", "dev"}
+    cam = find_camera(result["cameras"], "front")
+    assert cam is not None
+    assert cam["alias"] == "front"
+    assert cam["port"] == "/dev/v4l/by-path/cam0"
+    assert cam["width"] == 640
+    assert cam["height"] == 480
+    assert cam["fps"] == 30
 
 
 def test_set_camera_bad_index(setup_file: Path) -> None:
@@ -655,11 +658,11 @@ def test_set_camera_bad_index(setup_file: Path) -> None:
 def test_remove_camera(setup_file: Path) -> None:
     set_camera("front", 0, path=setup_file)
     result = remove_camera("front", path=setup_file)
-    assert "front" not in result["cameras"]
+    assert find_camera(result["cameras"], "front") is None
 
 
 def test_remove_camera_missing(setup_file: Path) -> None:
-    with pytest.raises(ValueError, match="No camera named"):
+    with pytest.raises(ValueError, match="No camera with alias"):
         remove_camera("nonexistent", path=setup_file)
 
 
@@ -672,7 +675,7 @@ def test_validation_rejects_unknown_arm_fields(setup_file: Path) -> None:
 
 def test_validation_rejects_unknown_camera_fields(setup_file: Path) -> None:
     bad = load_setup(setup_file)
-    bad["cameras"]["front"] = {"dev": "/dev/video0", "fps": 30}
+    bad["cameras"] = [{"alias": "front", "port": "/dev/video0", "junk": True}]
     with pytest.raises(ValueError, match="unknown fields"):
         save_setup(bad, setup_file)
 

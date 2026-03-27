@@ -10,7 +10,7 @@ from roboclaw.embodied.tool import create_embodied_tools, EmbodiedToolGroup
 _MOCK_SETUP_WITH_PORTS = {
     "version": 2,
     "arms": [],
-    "cameras": {},
+    "cameras": [],
     "datasets": {"root": "/data"},
     "policies": {"root": "/policies"},
     "scanned_ports": [
@@ -22,7 +22,7 @@ _MOCK_SETUP_WITH_PORTS = {
 _MOCK_SETUP_NO_PORTS = {
     "version": 2,
     "arms": [],
-    "cameras": {},
+    "cameras": [],
     "datasets": {"root": "/data"},
     "policies": {"root": "/policies"},
     "scanned_ports": [],

@@ -357,14 +357,15 @@ def _do_remove_arm(kwargs: dict[str, Any]) -> str:
 
 
 def _do_set_camera(kwargs: dict[str, Any]) -> str:
-    from roboclaw.embodied.setup import set_camera
+    from roboclaw.embodied.setup import find_camera, set_camera
 
     name = kwargs.get("camera_name", "")
     index = kwargs.get("camera_index")
     if not name or index is None:
         return "set_camera requires camera_name and camera_index."
     updated = set_camera(name, index)
-    return f"Camera '{name}' configured.\n{json.dumps(updated['cameras'][name], indent=2)}"
+    cam = find_camera(updated["cameras"], name)
+    return f"Camera '{name}' configured.\n{json.dumps(cam, indent=2)}"
 
 
 def _do_remove_camera(kwargs: dict[str, Any]) -> str:
@@ -764,13 +765,20 @@ class ActionError(Exception):
 
 
 def _resolve_cameras(setup: dict[str, Any]) -> dict[str, dict]:
-    cameras = setup.get("cameras", {})
+    cameras = setup.get("cameras", [])
     result = {}
-    for name, cam in cameras.items():
-        path = cam.get("by_path") or cam.get("dev", "")
-        if not path:
+    for cam in cameras:
+        alias = cam.get("alias", "")
+        port = cam.get("port", "")
+        if not alias or not port:
             continue
-        result[name] = {"type": "opencv", "index_or_path": path}
+        result[alias] = {
+            "type": "opencv",
+            "index_or_path": port,
+            "fps": cam.get("fps", 30),
+            "width": cam.get("width", 640),
+            "height": cam.get("height", 480),
+        }
     return result
 
 
