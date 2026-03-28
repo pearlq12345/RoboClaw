@@ -34,6 +34,33 @@ if TYPE_CHECKING:
     from roboclaw.cron.service import CronService
 
 
+_EMBODIED_SLASH: dict[str, tuple[str, str]] = {
+    "calibrate": ("embodied_hardware", "calibrate"),
+    "teleoperate": ("embodied_control", "teleoperate"),
+    "record": ("embodied_control", "record"),
+    "replay": ("embodied_replay", "replay"),
+    "train": ("embodied_train", "train"),
+    "infer": ("embodied_control", "record with checkpoint_path (policy inference)"),
+    "datasets": ("embodied_train", "list_datasets"),
+    "policies": ("embodied_train", "list_policies"),
+}
+
+
+def _match_embodied_slash(content: str) -> tuple[str, str] | None:
+    """If content is an embodied slash command, return (tool_name, rewritten_content)."""
+    if not content.startswith("/"):
+        return None
+    parts = content.split(maxsplit=1)
+    slash_name = parts[0][1:].lower()
+    entry = _EMBODIED_SLASH.get(slash_name)
+    if not entry:
+        return None
+    tool_name, action_hint = entry
+    remaining = parts[1] if len(parts) > 1 else ""
+    rewritten = f"Use the {tool_name} tool: {action_hint}. {remaining}".strip()
+    return tool_name, rewritten
+
+
 class AgentLoop:
     """
     The agent loop is the core processing engine.
@@ -190,6 +217,7 @@ class AgentLoop:
         self,
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
+        tool_choice: str | dict | None = None,
     ) -> tuple[str | None, list[str], list[dict]]:
         """Run the agent iteration loop."""
         messages = initial_messages
@@ -206,7 +234,16 @@ class AgentLoop:
                 messages=messages,
                 tools=tool_defs,
                 model=self.model,
+                tool_choice=tool_choice,
             )
+            if tool_choice and response.finish_reason == "error":
+                # Provider may not support forced tool_choice; retry with auto
+                response = await self.provider.chat_with_retry(
+                    messages=messages,
+                    tools=tool_defs,
+                    model=self.model,
+                )
+            tool_choice = None  # only force on first iteration
 
             if response.has_tool_calls:
                 if on_progress:
@@ -413,10 +450,31 @@ class AgentLoop:
                 "/stop — Stop the current task",
                 "/restart — Restart the bot",
                 "/help — Show available commands",
+                "",
+                "⚡ Embodied shortcuts:",
+                "/calibrate — Calibrate arms",
+                "/teleoperate — Start teleoperation",
+                "/record — Record episodes",
+                "/replay — Replay episodes",
+                "/train — Train a policy",
+                "/infer — Run policy inference",
+                "/datasets — List datasets",
+                "/policies — List policies",
             ]
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="\n".join(lines),
             )
+
+        # Embodied slash-command shortcuts: rewrite content + constrain tool
+        slash_tool = _match_embodied_slash(msg.content.strip())
+        slash_tool_choice: str | dict | None = None
+        if slash_tool:
+            tool_name, rewritten_content = slash_tool
+            if self.tools.get(tool_name):
+                from dataclasses import replace
+                msg = replace(msg, content=rewritten_content)
+                slash_tool_choice = {"type": "function", "function": {"name": tool_name}}
+
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
@@ -442,6 +500,7 @@ class AgentLoop:
 
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages, on_progress=on_progress or _bus_progress,
+            tool_choice=slash_tool_choice,
         )
 
         if final_content is None:
