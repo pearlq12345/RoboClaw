@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import shutil
-import sys
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,7 +12,6 @@ from typing import Any, Iterator
 from roboclaw.embodied.setup import get_roboclaw_home
 
 _NO_TTY_MSG = "This action requires a local terminal. Run: roboclaw agent"
-_WRAPPER_CMD = [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper"]
 _BIMANUAL_ID = "bimanual"
 _DEFAULT_REPLAY_ROOT = Path("~/.cache/huggingface/lerobot").expanduser()
 _DATASET_SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")

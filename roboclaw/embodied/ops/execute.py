@@ -18,7 +18,6 @@ from roboclaw.embodied.ops.helpers import (
     _BIMANUAL_ID,
     _DEFAULT_REPLAY_ROOT,
     _NO_TTY_MSG,
-    _WRAPPER_CMD,
     _arm_id,
     _bimanual_cal_dirs,
     _dataset_path,
@@ -33,102 +32,6 @@ from roboclaw.embodied.ops.helpers import (
     _validate_pairing,
 )
 from roboclaw.embodied.sensor.camera import resolve_cameras
-
-# ── CLI argv builders (moved from SO101Controller) ──────────────────
-
-
-def _dataset_args(
-    repo_id: str, dataset_root: str, task: str,
-    push_to_hub: bool, fps: int, num_episodes: int,
-    episode_time_s: int | None = None,
-    resume: bool = False,
-) -> list[str]:
-    """Build --dataset.* CLI args for record commands."""
-    args = [
-        f"--dataset.repo_id={repo_id}",
-        f"--dataset.root={Path(dataset_root).expanduser()}",
-        f"--dataset.push_to_hub={str(push_to_hub).lower()}",
-        f"--dataset.single_task={task}",
-        f"--dataset.fps={fps}",
-        f"--dataset.num_episodes={num_episodes}",
-    ]
-    if episode_time_s is not None:
-        args.append(f"--dataset.episode_time_s={episode_time_s}")
-    if resume:
-        args.append("--resume=true")
-    return args
-
-
-def _policy_args(
-    policy_path: str, repo_id: str, task: str,
-    num_episodes: int, dataset_root: str,
-    resume: bool = False,
-) -> list[str]:
-    """Build --policy.* and --dataset.* args for policy inference commands."""
-    args = [
-        f"--policy.path={Path(policy_path).expanduser()}",
-        f"--dataset.repo_id={repo_id}",
-        f"--dataset.single_task={task}",
-        "--dataset.push_to_hub=false",
-        f"--dataset.num_episodes={num_episodes}",
-    ]
-    if dataset_root:
-        args.append(f"--dataset.root={Path(dataset_root).expanduser()}")
-    if resume:
-        args.append("--resume=true")
-    return args
-
-
-def _build_record_argv(
-    robot_argv: list[str], cameras: dict[str, dict] | None,
-    record_kwargs: dict[str, Any],
-) -> list[str]:
-    """Build full record CLI argv from robot args + dataset params."""
-    argv = [*_WRAPPER_CMD, "record", *robot_argv]
-    if cameras:
-        argv.append(f"--robot.cameras={json.dumps(cameras)}")
-    argv.extend(_dataset_args(
-        record_kwargs["repo_id"], record_kwargs["dataset_root"],
-        record_kwargs["task"], record_kwargs.get("push_to_hub", False),
-        record_kwargs.get("fps", 30), record_kwargs.get("num_episodes", 10),
-        record_kwargs.get("episode_time_s"), record_kwargs.get("resume", False),
-    ))
-    return argv
-
-
-def _build_replay_argv(
-    robot_argv: list[str], repo_id: str, dataset_root: str,
-    episode: int, fps: int,
-) -> list[str]:
-    """Build full replay CLI argv from robot args + dataset params."""
-    return [*_WRAPPER_CMD, "replay", *robot_argv,
-            f"--dataset.repo_id={repo_id}",
-            f"--dataset.root={Path(dataset_root).expanduser()}",
-            f"--dataset.episode={episode}",
-            f"--dataset.fps={fps}"]
-
-
-def _build_teleoperate_argv(
-    robot_argv: list[str], cameras: dict[str, dict] | None,
-) -> list[str]:
-    """Build full teleoperate CLI argv from robot args + cameras."""
-    argv = [*_WRAPPER_CMD, "teleoperate", *robot_argv]
-    if cameras:
-        argv.append(f"--robot.cameras={json.dumps(cameras)}")
-    return argv
-
-
-def _build_policy_argv(
-    robot_argv: list[str], cameras: dict[str, dict] | None,
-    policy_path: str, repo_id: str, dataset_root: str,
-    task: str, num_episodes: int, resume: bool = False,
-) -> list[str]:
-    """Build full policy inference CLI argv from robot args + policy params."""
-    argv = [*_WRAPPER_CMD, "record", *robot_argv]
-    if cameras:
-        argv.append(f"--robot.cameras={json.dumps(cameras)}")
-    argv.extend(_policy_args(policy_path, repo_id, task, num_episodes, dataset_root, resume))
-    return argv
 
 
 async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
@@ -258,8 +161,17 @@ async def _teleoperate_single(
     from roboclaw.embodied.runner import LocalLeRobotRunner
     from roboclaw.embodied.setup import arm_display_name
 
-    robot_argv = controller.robot_argv(follower, leader)
-    argv = _build_teleoperate_argv(robot_argv, cameras)
+    argv = controller.teleoperate(
+        robot_type=follower["type"],
+        robot_port=follower["port"],
+        robot_cal_dir=follower["calibration_dir"],
+        robot_id=_arm_id(follower),
+        teleop_type=leader["type"],
+        teleop_port=leader["port"],
+        teleop_cal_dir=leader["calibration_dir"],
+        teleop_id=_arm_id(leader),
+        cameras=cameras,
+    )
     label = f"lerobot-teleoperate ({arm_display_name(follower)} + {arm_display_name(leader)})"
     rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, label)
     if _is_interrupted(rc):
@@ -279,14 +191,17 @@ async def _teleoperate_bimanual(
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
     with _bimanual_cal_dirs(followers, leaders) as (robot_dir, teleop_dir):
-        robot_argv = controller.bimanual_robot_argv(
-            robot_id=_BIMANUAL_ID, robot_cal_dir=robot_dir,
-            left_robot=followers[0], right_robot=followers[1],
-            teleop_id=_BIMANUAL_ID, teleop_cal_dir=teleop_dir,
-            left_teleop=leaders[0], right_teleop=leaders[1],
+        argv = controller.teleoperate_bimanual(
+            robot_id=_BIMANUAL_ID,
+            robot_cal_dir=robot_dir,
+            left_robot=followers[0],
+            right_robot=followers[1],
+            teleop_id=_BIMANUAL_ID,
+            teleop_cal_dir=teleop_dir,
+            left_teleop=leaders[0],
+            right_teleop=leaders[1],
             cameras=cameras,
         )
-        argv = _build_teleoperate_argv(robot_argv, None)
         rc, stderr_text = await _run_tty(
             tty_handoff, LocalLeRobotRunner(), argv, "lerobot-teleoperate (bimanual)",
         )
@@ -376,8 +291,17 @@ async def _record_single(
 ) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
-    robot_argv = controller.robot_argv(follower, leader)
-    argv = _build_record_argv(robot_argv, record_kwargs.get("cameras"), record_kwargs)
+    argv = controller.record(
+        robot_type=follower["type"],
+        robot_port=follower["port"],
+        robot_cal_dir=follower["calibration_dir"],
+        robot_id=_arm_id(follower),
+        teleop_type=leader["type"],
+        teleop_port=leader["port"],
+        teleop_cal_dir=leader["calibration_dir"],
+        teleop_id=_arm_id(leader),
+        **record_kwargs,
+    )
     rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record")
     if _is_interrupted(rc):
         return "interrupted"
@@ -396,14 +320,17 @@ async def _record_bimanual(
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
     with _bimanual_cal_dirs(followers, leaders) as (robot_dir, teleop_dir):
-        robot_argv = controller.bimanual_robot_argv(
-            robot_id=_BIMANUAL_ID, robot_cal_dir=robot_dir,
-            left_robot=followers[0], right_robot=followers[1],
-            teleop_id=_BIMANUAL_ID, teleop_cal_dir=teleop_dir,
-            left_teleop=leaders[0], right_teleop=leaders[1],
-            cameras=record_kwargs.get("cameras"),
+        argv = controller.record_bimanual(
+            robot_id=_BIMANUAL_ID,
+            robot_cal_dir=robot_dir,
+            left_robot=followers[0],
+            right_robot=followers[1],
+            teleop_id=_BIMANUAL_ID,
+            teleop_cal_dir=teleop_dir,
+            left_teleop=leaders[0],
+            right_teleop=leaders[1],
+            **record_kwargs,
         )
-        argv = _build_record_argv(robot_argv, None, record_kwargs)
         rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record")
     if _is_interrupted(rc):
         return "interrupted"
@@ -442,7 +369,8 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
     dataset_root = _dataset_path(setup, dataset_name)
     resume = _should_resume(user_specified, dataset_root)
     controller = SO101Controller()
-    policy_common = {
+    policy_kwargs = {
+        "cameras": cameras,
         "policy_path": checkpoint,
         "repo_id": f"local/{dataset_name}",
         "dataset_root": str(dataset_root),
@@ -451,16 +379,23 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
         "resume": resume,
     }
     if len(followers) == 1:
-        robot_argv = controller.follower_only_argv(followers[0])
-        argv = _build_policy_argv(robot_argv, cameras, **policy_common)
+        follower = followers[0]
+        argv = controller.run_policy(
+            robot_type=follower["type"],
+            robot_port=follower["port"],
+            robot_cal_dir=follower["calibration_dir"],
+            robot_id=_arm_id(follower),
+            **policy_kwargs,
+        )
         return await _run(LocalLeRobotRunner(), argv)
     with _bimanual_cal_dirs(followers, []) as (robot_dir, _):
-        robot_argv = controller.bimanual_follower_only_argv(
-            robot_id=_BIMANUAL_ID, robot_cal_dir=robot_dir,
-            left_robot=followers[0], right_robot=followers[1],
-            cameras=cameras,
+        argv = controller.run_policy_bimanual(
+            robot_id=_BIMANUAL_ID,
+            robot_cal_dir=robot_dir,
+            left_robot=followers[0],
+            right_robot=followers[1],
+            **policy_kwargs,
         )
-        argv = _build_policy_argv(robot_argv, None, **policy_common)
         return await _run(LocalLeRobotRunner(), argv)
 
 
@@ -498,8 +433,16 @@ async def _replay_single(
 ) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
-    robot_argv = controller.follower_only_argv(follower)
-    argv = _build_replay_argv(robot_argv, f"local/{dataset_name}", str(dataset_root), episode, fps)
+    argv = controller.replay(
+        robot_type=follower["type"],
+        robot_port=follower["port"],
+        robot_cal_dir=follower["calibration_dir"],
+        robot_id=_arm_id(follower),
+        repo_id=f"local/{dataset_name}",
+        dataset_root=str(dataset_root),
+        episode=episode,
+        fps=fps,
+    )
     rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-replay")
     if _is_interrupted(rc):
         return "interrupted"
@@ -516,11 +459,16 @@ async def _replay_bimanual(
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
     with _bimanual_cal_dirs(followers, []) as (robot_dir, _):
-        robot_argv = controller.bimanual_follower_only_argv(
-            robot_id=_BIMANUAL_ID, robot_cal_dir=robot_dir,
-            left_robot=followers[0], right_robot=followers[1],
+        argv = controller.replay_bimanual(
+            robot_id=_BIMANUAL_ID,
+            robot_cal_dir=robot_dir,
+            left_robot=followers[0],
+            right_robot=followers[1],
+            repo_id=f"local/{dataset_name}",
+            dataset_root=str(dataset_root),
+            episode=episode,
+            fps=fps,
         )
-        argv = _build_replay_argv(robot_argv, f"local/{dataset_name}", str(dataset_root), episode, fps)
         rc, stderr_text = await _run_tty(
             tty_handoff, LocalLeRobotRunner(), argv, "lerobot-replay (bimanual)",
         )
