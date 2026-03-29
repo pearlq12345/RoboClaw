@@ -41,6 +41,30 @@ def test_save_turn_keeps_image_placeholder_after_runtime_strip() -> None:
     assert session.messages[0]["content"] == [{"type": "text", "text": "[image]"}]
 
 
+def test_save_turn_strips_images_from_multimodal_tool_result() -> None:
+    loop = _mk_loop()
+    session = Session(key="test:multimodal-tool")
+
+    loop._save_turn(
+        session,
+        [{
+            "role": "tool",
+            "tool_call_id": "call_mm",
+            "name": "embodied_setup",
+            "content": [
+                {"type": "text", "text": "Detected 1 camera(s)."},
+                {"type": "text", "text": "Camera 0:"},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,abc"}},
+            ],
+        }],
+        skip=0,
+    )
+    saved = session.messages[0]["content"]
+    assert isinstance(saved, str)
+    assert "Detected 1 camera" in saved
+    assert "image" not in saved.lower()
+
+
 def test_save_turn_keeps_tool_results_under_16k() -> None:
     loop = _mk_loop()
     session = Session(key="test:tool-result")

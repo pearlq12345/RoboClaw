@@ -103,16 +103,56 @@ def capture_camera_frames(
 
 
 def _probe_cameras(cv2, by_path: dict, by_id: dict) -> list[dict[str, str | int]]:
-    """Try opening each /dev/videoN, return those that work."""
-    cameras = []
+    """Try opening each /dev/videoN, return one per physical USB device."""
+    raw = []
     for dev in sorted(glob.glob("/dev/video*")):
         m = re.match(r"/dev/video(\d+)$", dev)
         if not m:
             continue
         info = _try_open_camera(cv2, int(m.group(1)), dev, by_path, by_id)
         if info:
-            cameras.append(info)
-    return cameras
+            raw.append(info)
+    return _dedupe_by_usb_device(raw)
+
+
+def _usb_device_key(by_path_str: str) -> str:
+    """Extract physical USB device from by-path.
+
+    e.g. "pci-0000:00:14.0-usb-0:3:1.0-video-index0" → "usb-0:3"
+    Different interfaces (1.0, 1.3) on the same port are the same device.
+    """
+    m = re.search(r"(usb-\d+:\d+)", by_path_str)
+    return m.group(1) if m else ""
+
+
+def _interface_sort_key(cam: dict) -> tuple[tuple[int, int], str]:
+    """Sort key: prefer higher interface number (RealSense RGB = 1.3), then lowest video index."""
+    bp = cam.get("by_path", "")
+    # Extract interface e.g. "1.3" from "usb-0:2:1.3-video-index0"
+    m = re.search(r"usb-\d+:\d+:(\d+)\.(\d+)", bp)
+    iface = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    return (iface, cam.get("dev", ""))
+
+
+def _dedupe_by_usb_device(cameras: list[dict]) -> list[dict]:
+    """Keep one camera per physical USB device.
+
+    For multi-stream devices (e.g. RealSense), prefer the highest interface
+    number — on RealSense D435 interface 1.3 is RGB, 1.0 is depth/IR.
+    """
+    groups: dict[str, list[dict]] = {}
+    ungrouped = []
+    for cam in cameras:
+        key = _usb_device_key(cam.get("by_path", ""))
+        if key:
+            groups.setdefault(key, []).append(cam)
+        else:
+            ungrouped.append(cam)
+    result = list(ungrouped)
+    for cams in groups.values():
+        # Prefer highest interface (RGB on RealSense), then lowest video index
+        result.append(max(cams, key=_interface_sort_key))
+    return sorted(result, key=lambda c: c.get("dev", ""))
 
 
 def _try_open_camera(cv2, index: int, dev: str, by_path: dict, by_id: dict) -> dict[str, str | int] | None:
@@ -156,7 +196,10 @@ def _capture_camera_frame(
     try:
         if not cap.isOpened():
             return None
-        ok, frame = cap.read()
+        # Skip initial frames — some cameras (e.g. RealSense) produce
+        # garbage on the first few reads while the sensor initialises.
+        for _ in range(30):
+            ok, frame = cap.read()
         if not ok or frame is None:
             return None
         image_path = output_dir / f"{index:02d}_{Path(label).name}.jpg"

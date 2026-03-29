@@ -104,7 +104,7 @@ def _do_set_camera(kwargs: dict[str, Any]) -> str:
     return f"Camera '{name}' configured.\n{json.dumps(cam, indent=2)}"
 
 
-def _do_preview_cameras(kwargs: dict[str, Any]) -> str:
+def _do_preview_cameras(kwargs: dict[str, Any]) -> str | list:
     from roboclaw.embodied.scan import capture_camera_frames, scan_cameras
 
     scanned_cameras = scan_cameras()
@@ -116,7 +116,46 @@ def _do_preview_cameras(kwargs: dict[str, Any]) -> str:
         return f"Camera preview failed: {exc}"
     if not previews:
         return "No camera previews captured."
-    return json.dumps(previews, indent=2, ensure_ascii=False)
+    return _previews_to_multimodal(previews, scanned_cameras)
+
+
+def _previews_to_multimodal(
+    previews: list[dict[str, str]], scanned: list[dict],
+) -> list[dict]:
+    """Convert camera previews to multimodal content blocks with embedded images.
+
+    Previews may be a subset of *scanned* (some captures can fail), so we match
+    each preview back to its scanned entry via the ``camera`` path field.
+    """
+    import base64
+
+    # Build lookup: by_path/by_id/dev → scanned entry
+    cam_by_source = {}
+    for cam in scanned:
+        for key in ("by_path", "by_id", "dev"):
+            if val := cam.get(key):
+                cam_by_source[val] = cam
+
+    blocks: list[dict] = []
+    summary_lines = [f"Detected {len(scanned)} camera(s). Preview images below — "
+                     "suggest a descriptive name for each based on what you see "
+                     "(e.g. top, left_wrist, right_wrist, front, side)."]
+    for i, preview in enumerate(previews):
+        cam_info = cam_by_source.get(preview.get("camera", ""), {})
+        summary_lines.append(
+            f"\nCamera {i}: dev={cam_info.get('dev', '?')} "
+            f"({cam_info.get('width', '?')}x{cam_info.get('height', '?')} "
+            f"@ {cam_info.get('fps', '?')}fps)"
+        )
+        img_path = Path(preview.get("image_path", ""))
+        if img_path.is_file():
+            raw = img_path.read_bytes()
+            b64 = base64.b64encode(raw).decode()
+            blocks.append({"type": "text", "text": f"Camera {i}:"})
+            blocks.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+
+    blocks.insert(0, {"type": "text", "text": "\n".join(summary_lines)})
+    return blocks
 
 
 def _do_remove_camera(kwargs: dict[str, Any]) -> str:

@@ -686,12 +686,16 @@ async def test_preview_cameras_action() -> None:
     tool = _find_tool(create_embodied_tools(), "embodied_setup")
 
     with (
-        patch("roboclaw.embodied.scan.scan_cameras", return_value=[{"dev": "/dev/video0"}]),
+        patch("roboclaw.embodied.scan.scan_cameras", return_value=[{"dev": "/dev/video0", "width": 640, "height": 480, "fps": 30}]),
         patch("roboclaw.embodied.scan.capture_camera_frames", return_value=previews) as mock_capture,
+        patch("pathlib.Path.is_file", return_value=False),
     ):
         result = await tool.execute(action="preview_cameras")
 
-    assert json.loads(result) == previews
+    # Returns multimodal content blocks (list) with text summary
+    assert isinstance(result, list)
+    text_blocks = [b for b in result if b.get("type") == "text"]
+    assert any("Detected 1 camera" in b["text"] for b in text_blocks)
     output_dir = mock_capture.call_args.args[1]
     assert output_dir == Path("~/.roboclaw").expanduser() / "workspace" / "embodied" / "camera_previews"
 

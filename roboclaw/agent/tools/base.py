@@ -40,7 +40,7 @@ class Tool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> str:
+    async def execute(self, **kwargs: Any) -> str | list:
         """
         Execute the tool with given parameters.
 
@@ -48,7 +48,9 @@ class Tool(ABC):
             **kwargs: Tool-specific parameters.
 
         Returns:
-            String result of the tool execution.
+            String result, or a list of content blocks for multimodal results.
+            Content blocks follow OpenAI format:
+            [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:..."}}]
         """
         pass
 

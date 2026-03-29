@@ -251,7 +251,7 @@ class EmbodiedToolGroup(Tool):
     def parameters(self) -> dict[str, Any]:
         return self._spec["parameters"]
 
-    async def execute(self, **kwargs: Any) -> str:
+    async def execute(self, **kwargs: Any) -> str | list:
         action = kwargs.get("action", "")
         if action not in self._spec["actions"]:
             return f"Unknown action '{action}' for tool {self._group_name}."
@@ -274,7 +274,7 @@ _NO_SETUP_ACTIONS = frozenset({
 })
 
 
-async def _dispatch(action: str, kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def _dispatch(action: str, kwargs: dict[str, Any], tty_handoff: Any) -> str | list:
     from roboclaw.embodied.ops.configure import SYNC_DISPATCH
     from roboclaw.embodied.ops.execute import ASYNC_DISPATCH
     from roboclaw.embodied.ops.helpers import ActionError
