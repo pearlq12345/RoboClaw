@@ -236,6 +236,14 @@ export default function DashboardView() {
               ) : (
                 <div className="text-sm text-tx2 mb-3">{t('noCameras')}</div>
               )}
+              <div className="flex gap-2 flex-wrap">
+                <Btn variant="gn" disabled={!ok.connect} onClick={store.doConnect}>
+                  {t('connect')}
+                </Btn>
+                <Btn variant="rd" disabled={!ok.disconnect} onClick={store.doDisconnect}>
+                  {t('disconnect')}
+                </Btn>
+              </div>
             </div>
 
             {/* Teleop card */}
