@@ -1,15 +1,22 @@
+import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useWebSocket } from '../controllers/connection'
+import { useDashboard } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
 
 export default function Header() {
   const location = useLocation()
-  const { connected, sessionId } = useWebSocket()
+  const { connected } = useWebSocket()
+  const { networkInfo, fetchNetworkInfo } = useDashboard()
   const { t, locale, setLocale } = useI18n()
 
+  useEffect(() => {
+    fetchNetworkInfo()
+  }, [fetchNetworkInfo])
+
   const navItems = [
+    { path: '/dashboard', label: t('dataCollection') },
     { path: '/chat', label: t('chat') },
-    { path: '/data', label: t('dataCollection') },
     { path: '/settings', label: t('settings') },
   ]
 
@@ -45,9 +52,9 @@ export default function Header() {
 
       <div className="flex-1" />
 
-      {sessionId && (
+      {networkInfo && (
         <span className="text-2xs text-tx2 whitespace-nowrap mr-2">
-          {sessionId.slice(0, 12)}
+          {networkInfo.lan_ip}:{networkInfo.port}
         </span>
       )}
 
