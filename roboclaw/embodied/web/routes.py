@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from roboclaw.embodied.setup import load_setup
 from roboclaw.embodied.web.datasets import delete_dataset, get_dataset_info, list_datasets
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api/embodied")
 
 
 # ---------------------------------------------------------------------------

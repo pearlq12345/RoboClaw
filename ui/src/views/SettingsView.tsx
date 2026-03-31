@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-
 import { fetchProviderStatus, saveProviderConfig } from '../controllers/provider'
-
+import { useI18n } from '../controllers/i18n'
 
 export default function SettingsView() {
   const navigate = useNavigate()
+  const { t } = useI18n()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -21,27 +21,19 @@ export default function SettingsView() {
     async function load() {
       try {
         const payload = await fetchProviderStatus()
-        if (cancelled) {
-          return
-        }
+        if (cancelled) return
         setApiBase(payload.custom_provider.api_base || '')
         setSavedKeyMask(payload.custom_provider.masked_api_key || '')
         setHasSavedKey(Boolean(payload.custom_provider.has_api_key))
       } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Failed to load settings.')
-        }
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : 'Failed to load settings.')
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+        if (!cancelled) setLoading(false)
       }
     }
 
     load()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [])
 
   async function handleSave(event: React.FormEvent) {
@@ -51,14 +43,11 @@ export default function SettingsView() {
     setNotice('')
 
     try {
-      const payload = await saveProviderConfig({
-        api_key: apiKey,
-        api_base: apiBase,
-      })
+      const payload = await saveProviderConfig({ api_key: apiKey, api_base: apiBase })
       setApiBase(payload.custom_provider.api_base || '')
       setSavedKeyMask(payload.custom_provider.masked_api_key || '')
       setHasSavedKey(Boolean(payload.custom_provider.has_api_key))
-      setNotice('Provider settings saved. New chat requests will use this global RoboClaw provider.')
+      setNotice(t('saveSuccess'))
       setApiKey('')
       window.setTimeout(() => navigate('/chat'), 600)
     } catch (saveError) {
@@ -70,56 +59,53 @@ export default function SettingsView() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <header className="bg-gray-800 border-b border-gray-700 p-4">
-        <h2 className="text-xl font-semibold">设置</h2>
-        <p className="mt-2 text-sm text-gray-400">
-          这里只保留整个 RoboClaw 实例级别的全局 provider 配置。填写 base URL 和 API key 后，
-          新的对话请求会直接使用这份配置。
-        </p>
-      </header>
+      <div className="border-b border-bd p-4">
+        <h2 className="text-lg font-semibold">{t('settingsTitle')}</h2>
+        <p className="mt-1.5 text-sm text-tx2">{t('settingsDesc')}</p>
+      </div>
 
-      <div className="flex-1 p-6 max-w-3xl">
-        {loading && <p className="text-gray-400">Loading provider settings...</p>}
+      <div className="flex-1 p-5 max-w-3xl">
+        {loading && <p className="text-tx2">{t('loading')}</p>}
         {!loading && (
-          <form onSubmit={handleSave} className="space-y-6">
+          <form onSubmit={handleSave} className="space-y-5">
             {error && (
-              <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-red-200">
+              <div className="rounded-lg border border-rd/30 bg-rd/5 p-3 text-sm text-rd">
                 {error}
               </div>
             )}
             {notice && (
-              <div className="rounded-lg border border-green-500/40 bg-green-500/10 p-4 text-green-200">
+              <div className="rounded-lg border border-gn/30 bg-gn/5 p-3 text-sm text-gn">
                 {notice}
               </div>
             )}
 
-            <section className="rounded-xl border border-gray-700 bg-gray-800/80 p-5 space-y-4">
-              <h3 className="text-lg font-semibold">Global Provider</h3>
+            <section className="rounded-lg border border-bd bg-sf p-5 space-y-4">
+              <h3 className="text-xs text-tx2 uppercase tracking-wider font-medium">{t('globalProvider')}</h3>
 
-              <label className="block space-y-2">
-                <span className="text-sm text-gray-300">Base URL</span>
+              <label className="flex flex-col gap-1 text-xs text-tx2">
+                {t('baseUrl')}
                 <input
                   value={apiBase}
-                  onChange={(event) => setApiBase(event.target.value)}
-                  className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-2 text-white"
+                  onChange={(e) => setApiBase(e.target.value)}
+                  className="bg-bg border border-bd text-tx px-3 py-2 rounded text-sm focus:outline-none focus:border-ac"
                   placeholder="https://your-openai-compatible-endpoint/v1"
                 />
               </label>
 
-              <label className="block space-y-2">
-                <span className="text-sm text-gray-300">API key</span>
+              <label className="flex flex-col gap-1 text-xs text-tx2">
+                {t('apiKey')}
                 <input
                   type="password"
                   value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  className="w-full rounded-lg border border-gray-600 bg-gray-900 px-4 py-2 text-white"
-                  placeholder="留空表示保持当前 key 不变"
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="bg-bg border border-bd text-tx px-3 py-2 rounded text-sm focus:outline-none focus:border-ac"
+                  placeholder={t('apiKeyPlaceholder')}
                 />
               </label>
 
-              <div className="rounded-lg border border-gray-700 bg-gray-900/60 p-3 text-sm text-gray-300">
-                <div>当前保存状态: {hasSavedKey ? '已保存' : '未保存'}</div>
-                {savedKeyMask && <div>已保存的 key: {savedKeyMask}</div>}
+              <div className="rounded border border-bd bg-bg p-3 text-sm text-tx2">
+                <div>{t('savedStatus')}: {hasSavedKey ? t('saved') : t('notSaved')}</div>
+                {savedKeyMask && <div>{t('savedKey')}: {savedKeyMask}</div>}
               </div>
             </section>
 
@@ -127,13 +113,11 @@ export default function SettingsView() {
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-blue-600 px-5 py-2.5 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-600"
+                className="border border-gn text-gn px-5 py-2 rounded text-sm transition-colors hover:bg-gn/10 active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {saving ? '保存中...' : '保存设置'}
+                {saving ? t('saving') : t('saveSettings')}
               </button>
-              <div className="text-sm text-gray-400">
-                保存后会自动跳回聊天页。
-              </div>
+              <span className="text-sm text-tx2">{t('saveRedirectHint')}</span>
             </div>
           </form>
         )}

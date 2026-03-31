@@ -414,7 +414,11 @@ def create_app(
         web_ch.register_routes(app)
     _register_system_routes(app, agent)
 
-    # 13. Serve built frontend in production (ui/dist/)
+    # 13. Mount embodied data-collection routes
+    from roboclaw.embodied.web.routes import router as embodied_router
+    app.include_router(embodied_router)
+
+    # 14. Serve built frontend in production (ui/dist/)
     ui_dist = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
     if ui_dist.is_dir():
         from starlette.staticfiles import StaticFiles
@@ -424,7 +428,7 @@ def create_app(
     app.state.web_host = web_cfg["host"]
     app.state.web_port = web_cfg["port"]
 
-    # 14. Startup: launch all background tasks
+    # 15. Startup: launch all background tasks
     @app.on_event("startup")
     async def _startup() -> None:
         app.state.agent_task = asyncio.create_task(agent.run(), name="roboclaw-agent")
@@ -432,7 +436,7 @@ def create_app(
         app.state.cron_task = asyncio.create_task(cron.start(), name="roboclaw-cron")
         app.state.heartbeat_task = asyncio.create_task(heartbeat.start(), name="roboclaw-heartbeat")
 
-    # 15. Shutdown: tear down gracefully
+    # 16. Shutdown: tear down gracefully
     @app.on_event("shutdown")
     async def _shutdown() -> None:
         agent.stop()
