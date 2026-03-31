@@ -236,7 +236,7 @@ function canDo(state: RobotState) {
 // ── Main View ─────────────────────────────────────────────────
 export default function DashboardView() {
   const store = useDataCollection()
-  const { state, stats, logs, datasets, loading } = store
+  const { state, stats, logs, datasets, loading, currentEpisode, totalEpisodes } = store
   const { hardwareStatus: hwStatus, fetchHardwareStatus } = useDashboard()
   const ok = canDo(state)
   const logRef = useRef<HTMLDivElement>(null)
@@ -463,11 +463,25 @@ export default function DashboardView() {
 
               {state === 'recording' && (
                 <>
+                  {/* Progress bar */}
+                  <div className="mb-3">
+                    <div className="flex justify-between text-sm text-tx mb-1">
+                      <span>Episode {currentEpisode} / {totalEpisodes}</span>
+                      <span>{totalEpisodes > 0 ? Math.round(((currentEpisode - 1) / totalEpisodes) * 100) : 0}%</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-bd rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-ac rounded-full transition-all duration-500"
+                        style={{ width: `${totalEpisodes > 0 ? ((currentEpisode - 1) / totalEpisodes) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex gap-2 flex-wrap mb-3">
                     <Btn variant="gn" onClick={store.doSaveEpisode}>
                       {t('saveEpisode')}
                     </Btn>
-                    <Btn variant="rd" onClick={store.doDiscardEpisode}>
+                    <Btn variant="yl" onClick={store.doDiscardEpisode}>
                       {t('discardEpisode')}
                     </Btn>
                   </div>

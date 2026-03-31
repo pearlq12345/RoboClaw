@@ -13,6 +13,7 @@ def list_datasets(root: Path) -> list[dict]:
     """Scan *root* for LeRobot dataset directories and return metadata summaries.
 
     A valid dataset directory contains a ``meta/info.json`` file.
+    Scans up to 2 levels deep (handles ``root/local/dataset_name/`` layout).
     """
     if not root.is_dir():
         return []
@@ -24,6 +25,14 @@ def list_datasets(root: Path) -> list[dict]:
         info = _read_dataset_info(entry)
         if info is not None:
             datasets.append(info)
+            continue
+        # Scan one level deeper (e.g. root/local/*)
+        for sub in sorted(entry.iterdir()):
+            if not sub.is_dir():
+                continue
+            info = _read_dataset_info(sub)
+            if info is not None:
+                datasets.append(info)
     return datasets
 
 

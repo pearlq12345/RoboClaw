@@ -29,6 +29,8 @@ interface DataCollectionStore {
   logs: LogEntry[]
   stats: HeaderStats
   episodeNum: string
+  currentEpisode: number
+  totalEpisodes: number
   cameraFeeds: Record<string, string>
 
   // Actions
@@ -87,6 +89,8 @@ export const useDataCollection = create<DataCollectionStore>((set, get) => ({
   logs: [],
   stats: { arms: '--', fps: '--', frames: 0, episodes: 0 },
   episodeNum: '0 / 0',
+  currentEpisode: 0,
+  totalEpisodes: 0,
   cameraFeeds: {},
 
   addLog: (message, cls = 'info') => {
@@ -145,13 +149,14 @@ export const useDataCollection = create<DataCollectionStore>((set, get) => ({
   },
 
   doRecordStart: async (params) => {
-    set({ loading: 'record' })
+    set({ loading: 'record', currentEpisode: 0, totalEpisodes: params.num_episodes })
     get().addLog(
       `Starting recording: ${params.dataset_name} (${params.num_episodes} episodes @ ${params.fps} fps)`,
     )
     try {
       await postJson(`${API}/record/start`, params)
-      get().addLog('Recording started — hardware initializing...', 'ok')
+      set({ currentEpisode: 1 })
+      get().addLog('Recording started — episode 1', 'ok')
     } catch (e: unknown) {
       get().addLog(`Record start failed: ${(e as Error).message}`, 'err')
     } finally {
@@ -171,10 +176,13 @@ export const useDataCollection = create<DataCollectionStore>((set, get) => ({
   },
 
   doSaveEpisode: async () => {
-    get().addLog('Saving episode...')
+    const ep = get().currentEpisode
+    get().addLog(`Saving episode ${ep}...`)
     try {
       await postJson(`${API}/record/save-episode`)
-      get().addLog('Episode saved, starting next', 'ok')
+      const next = ep + 1
+      set({ currentEpisode: next })
+      get().addLog(`Episode ${ep} saved, starting episode ${next}`, 'ok')
     } catch (e: unknown) {
       get().addLog(`Save episode failed: ${(e as Error).message}`, 'err')
     }
