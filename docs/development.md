@@ -2,32 +2,40 @@
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Git
 
 ## Local Setup
 
 ```bash
-# Clone & install in editable mode with dev extras
+# Clone & sync dependencies with uv
 git clone https://github.com/MINT-SJTU/RoboClaw.git
 cd RoboClaw
-pip install -e ".[dev]"
+uv venv
+uv sync --extra dev
 
 # First-time setup (creates ~/.roboclaw/config.json & workspace)
-roboclaw onboard
+uv run roboclaw onboard
+```
+
+If you are working on embodied collection, replay, calibration, or training
+features, sync the learning stack too:
+
+```bash
+uv sync --extra dev --extra learning
 ```
 
 ## Running Tests
 
 ```bash
 # Unit tests (no hardware required)
-python -m pytest tests/ -x -q
+uv run pytest tests/ -x -q
 
 # Skip PTY integration tests (useful in minimal CI environments)
-python -m pytest tests/ -x -q -m "not pty"
+uv run pytest tests/ -x -q -m "not pty"
 
 # Run only PTY integration tests
-python -m pytest tests/integration/ -x -q -m pty
+uv run pytest tests/integration/ -x -q -m pty
 ```
 
 ## Stub Mode
@@ -38,10 +46,10 @@ teleoperate, record) to run on a laptop without any robot arms or cameras.
 
 ```bash
 # Run the agent in stub mode
-ROBOCLAW_STUB=1 roboclaw agent
+ROBOCLAW_STUB=1 uv run roboclaw agent
 
 # PTY integration tests use stub mode automatically
-python -m pytest tests/integration/ -x -q -m pty
+uv run pytest tests/integration/ -x -q -m pty
 ```
 
 What gets stubbed:
@@ -72,13 +80,13 @@ During development you may want to return to a clean state:
 
 ```bash
 # Interactive (asks for confirmation)
-roboclaw dev reset
+uv run roboclaw dev reset
 
 # Non-interactive
-roboclaw dev reset --yes
+uv run roboclaw dev reset --yes
 
 # Reset and configure a specific model
-roboclaw dev reset --yes --model openai/gpt-4o --api-key sk-...
+uv run roboclaw dev reset --yes --model openai/gpt-4o --api-key sk-...
 ```
 
 This deletes `~/.roboclaw/workspace` and `~/.roboclaw/config.json`, then
@@ -99,10 +107,10 @@ re-runs `roboclaw onboard` non-interactively.
 
 ### `ModuleNotFoundError: No module named 'lerobot'`
 
-LeRobot is an optional dependency under the `research` extra:
+Install the learning stack:
 
 ```bash
-pip install -e ".[research]"
+uv sync --extra dev --extra learning
 ```
 
 ### PTY tests fail with `ModuleNotFoundError: No module named 'pexpect'`
@@ -110,7 +118,7 @@ pip install -e ".[research]"
 Install the dev extra:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ### Terminal messed up after Ctrl-C
@@ -122,5 +130,5 @@ Run `reset` in your shell to restore terminal settings.
 Make sure you installed in editable mode:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
