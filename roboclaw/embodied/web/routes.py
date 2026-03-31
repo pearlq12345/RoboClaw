@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
 from pathlib import Path
 from typing import Any
 
@@ -113,20 +111,6 @@ async def record_stop() -> dict[str, str]:
     return {"status": "connected"}
 
 
-@router.post("/record/save")
-async def record_save() -> dict[str, str]:
-    """Save current episode."""
-    _session().save_episode()
-    return {"status": "episode_saved", "episode": _session().get_status()["episode_count"]}
-
-
-@router.post("/record/discard")
-async def record_discard() -> dict[str, str]:
-    """Discard current episode."""
-    _session().discard_episode()
-    return {"status": "episode_discarded"}
-
-
 # ---------------------------------------------------------------------------
 # Datasets
 # ---------------------------------------------------------------------------
@@ -170,42 +154,6 @@ async def cameras_discover() -> list[dict]:
     """Discover available cameras via hardware scan."""
     from roboclaw.embodied.scan import scan_cameras
     return scan_cameras()
-
-
-# ---------------------------------------------------------------------------
-# WebSocket: camera stream
-# ---------------------------------------------------------------------------
-
-@router.websocket("/ws/camera")
-async def ws_camera(websocket: WebSocket):
-    """Stream JPEG camera frames as base64-encoded JSON messages.
-
-    Client sends: {"camera": "<camera_name>", "fps": 10}
-    Server streams: {"camera": "<name>", "frame": "<base64 jpeg>"}
-    """
-    await websocket.accept()
-    try:
-        init_msg = await websocket.receive_text()
-        params = json.loads(init_msg)
-        camera_name = params.get("camera", "")
-        fps = min(params.get("fps", 10), 30)
-        dt = 1.0 / fps
-
-        while True:
-            start = asyncio.get_event_loop().time()
-            try:
-                frame_bytes = _session().get_camera_frame(camera_name)
-                b64 = base64.b64encode(frame_bytes).decode("ascii")
-                await websocket.send_json({"camera": camera_name, "frame": b64})
-            except (KeyError, RuntimeError):
-                await websocket.send_json({"camera": camera_name, "error": "no_frame"})
-
-            elapsed = asyncio.get_event_loop().time() - start
-            sleep_time = dt - elapsed
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
-    except WebSocketDisconnect:
-        logger.debug("Camera WebSocket disconnected")
 
 
 # ---------------------------------------------------------------------------

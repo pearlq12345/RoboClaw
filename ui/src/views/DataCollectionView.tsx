@@ -205,15 +205,6 @@ export default function DataCollectionView() {
                 </div>
               </div>
 
-              <div className="flex gap-2 flex-wrap mb-3">
-                <Btn variant="gn" disabled={!ok.saveEp} onClick={store.doSaveEpisode}>
-                  {t('saveEpisode')}
-                </Btn>
-                <Btn variant="rd" disabled={!ok.discardEp} onClick={store.doDiscardEpisode}>
-                  {t('discardEpisode')}
-                </Btn>
-              </div>
-
               {state === 'recording' && (
                 <div className="text-center py-4 bg-bg rounded-lg border border-bd">
                   <div className="text-4xl font-bold text-ac leading-tight max-[500px]:text-3xl">
