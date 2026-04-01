@@ -197,9 +197,10 @@ def _filter_feetech_ports(scanned_ports: list[dict]) -> list[dict]:
     """Probe each port, keep only those with Feetech motors. Attach motor_ids."""
     saved = suppress_stderr()
     try:
-        ordered = sorted(scanned_ports, key=_probe_priority)
-        primary = [p for p in ordered if _probe_priority(p)[0] == 0]
-        fallback = [p for p in ordered if _probe_priority(p)[0] != 0]
+        ranked = [(p, _probe_priority(p)) for p in scanned_ports]
+        ranked.sort(key=lambda x: x[1])
+        primary = [p for p, prio in ranked if prio[0] == 0]
+        fallback = [p for p, prio in ranked if prio[0] != 0]
         results = [_probe_single_port(p) for p in primary]
         found = [r for r in results if r is not None]
         if found:
