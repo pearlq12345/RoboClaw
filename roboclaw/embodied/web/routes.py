@@ -34,6 +34,7 @@ class RecordStartRequest(BaseModel):
     task: str
     fps: int = 30
     num_episodes: int = 10
+    episode_time_s: int = 300
 
 
 class TeleopStartRequest(BaseModel):
@@ -100,6 +101,7 @@ async def record_start(body: RecordStartRequest) -> dict[str, str]:
         task=body.task,
         fps=body.fps,
         num_episodes=body.num_episodes,
+        episode_time_s=body.episode_time_s,
     )
     return {"status": "recording"}
 

@@ -22,7 +22,7 @@ from roboclaw.web.troubleshooting import generate_fault_snapshot, get_troublesho
 class RecordingStartRequest(BaseModel):
     task: str
     num_episodes: int = 10
-    episode_time_s: int = 60
+    episode_time_s: int = 300
     reset_time_s: int = 10
 
 

@@ -18,7 +18,7 @@ function IdleForm({ hardwareReady }: { hardwareReady: boolean }) {
   const { startRecording } = useDashboard()
   const [task, setTask] = useState('')
   const [numEpisodes, setNumEpisodes] = useState(10)
-  const [episodeTime, setEpisodeTime] = useState(60)
+  const [episodeTime, setEpisodeTime] = useState(300)
   const [resetTime, setResetTime] = useState(10)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
