@@ -49,6 +49,9 @@ class SO101Controller:
         teleop_type: str, teleop_port: str, teleop_cal_dir: str,
         teleop_id: str,
         cameras: dict[str, dict] | None = None,
+        display_data: bool = False,
+        display_ip: str = "",
+        display_port: int = 0,
     ) -> list[str]:
         """Build teleoperation command (single follower + single leader)."""
         argv = [
@@ -58,6 +61,7 @@ class SO101Controller:
         ]
         if cameras:
             argv.append(f"--robot.cameras={json.dumps(cameras)}")
+        argv.extend(self._display_args(display_data, display_ip, display_port))
         return argv
 
     def teleoperate_bimanual(
@@ -67,9 +71,12 @@ class SO101Controller:
         teleop_id: str, teleop_cal_dir: str,
         left_teleop: dict, right_teleop: dict,
         cameras: dict[str, dict] | None = None,
+        display_data: bool = False,
+        display_ip: str = "",
+        display_port: int = 0,
     ) -> list[str]:
         """Build bimanual teleoperation command (2 followers + 2 leaders)."""
-        return [
+        argv = [
             *self._wrapper_args("teleoperate"),
             "--robot.type=bi_so_follower",
             f"--robot.id={robot_id}",
@@ -80,6 +87,8 @@ class SO101Controller:
             f"--teleop.calibration_dir={Path(teleop_cal_dir).expanduser()}",
             *self._bimanual_arm_args("teleop", left_teleop, right_teleop),
         ]
+        argv.extend(self._display_args(display_data, display_ip, display_port))
+        return argv
 
     def record(
         self,
@@ -95,6 +104,9 @@ class SO101Controller:
         episode_time_s: int | None = None,
         reset_time_s: int | None = None,
         resume: bool = False,
+        display_data: bool = False,
+        display_ip: str = "",
+        display_port: int = 0,
     ) -> list[str]:
         """Build recording command (follower + leader + cameras + dataset)."""
         argv = self._wrapper_args("record")
@@ -106,6 +118,7 @@ class SO101Controller:
             repo_id, dataset_root, task, push_to_hub, fps, num_episodes, episode_time_s,
             reset_time_s=reset_time_s, resume=resume,
         ))
+        argv.extend(self._display_args(display_data, display_ip, display_port))
         return argv
 
     def record_bimanual(
@@ -122,6 +135,9 @@ class SO101Controller:
         episode_time_s: int | None = None,
         reset_time_s: int | None = None,
         resume: bool = False,
+        display_data: bool = False,
+        display_ip: str = "",
+        display_port: int = 0,
     ) -> list[str]:
         """Build bimanual recording command (2 followers + 2 leaders + cameras)."""
         argv = [
@@ -139,6 +155,7 @@ class SO101Controller:
                 reset_time_s=reset_time_s, resume=resume,
             ),
         ]
+        argv.extend(self._display_args(display_data, display_ip, display_port))
         return argv
 
     def replay(
@@ -297,6 +314,18 @@ class SO101Controller:
             f"--{prefix}.port={port}",
             f"--{prefix}.calibration_dir={Path(cal_dir).expanduser()}",
         ]
+
+    def _display_args(
+        self, display_data: bool, display_ip: str, display_port: int,
+    ) -> list[str]:
+        if not display_data:
+            return []
+        args = ["--display.data=true"]
+        if display_ip:
+            args.append(f"--display.ip={display_ip}")
+        if display_port:
+            args.append(f"--display.port={display_port}")
+        return args
 
     def _bimanual_arm_args(
         self,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -138,210 +137,75 @@ async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
 
 
 async def _do_teleoperate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
+    from roboclaw.embodied.ops.helpers import ActionError, prepare_teleop
+    from roboclaw.embodied.runner import LocalLeRobotRunner
 
     if not tty_handoff:
         return _NO_TTY_MSG
-    grouped = _group_arms(_resolve_action_arms(setup, kwargs))
-    error = _validate_pairing(grouped["followers"], grouped["leaders"])
-    if error:
-        return error
-    controller = SO101Controller()
-    followers = grouped["followers"]
-    leaders = grouped["leaders"]
-    cameras = resolve_cameras(setup)
-    if len(followers) == 1:
-        return await _teleoperate_single(controller, followers[0], leaders[0], cameras, tty_handoff)
-    return await _teleoperate_bimanual(controller, followers, leaders, cameras, tty_handoff)
-
-
-async def _teleoperate_single(
-    controller: Any, follower: dict, leader: dict, cameras: dict, tty_handoff: Any,
-) -> str:
-    from roboclaw.embodied.runner import LocalLeRobotRunner
-    from roboclaw.embodied.setup import arm_display_name
-
-    argv = controller.teleoperate(
-        robot_type=follower["type"],
-        robot_port=follower["port"],
-        robot_cal_dir=follower["calibration_dir"],
-        robot_id=_arm_id(follower),
-        teleop_type=leader["type"],
-        teleop_port=leader["port"],
-        teleop_cal_dir=leader["calibration_dir"],
-        teleop_id=_arm_id(leader),
-        cameras=cameras,
-    )
-    label = f"lerobot-teleoperate ({arm_display_name(follower)} + {arm_display_name(leader)})"
-    rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, label)
-    if _is_interrupted(rc):
-        return "interrupted"
-    if rc == 0:
-        return "Teleoperation finished."
-    return _format_tty_failure("Teleoperation failed", rc, stderr_text)
-
-
-async def _teleoperate_bimanual(
-    controller: Any,
-    followers: list[dict],
-    leaders: list[dict],
-    cameras: dict,
-    tty_handoff: Any,
-) -> str:
-    from roboclaw.embodied.runner import LocalLeRobotRunner
-
-    with _bimanual_cal_dirs(followers, leaders) as (robot_dir, teleop_dir):
-        argv = controller.teleoperate_bimanual(
-            robot_id=_BIMANUAL_ID,
-            robot_cal_dir=robot_dir,
-            left_robot=followers[0],
-            right_robot=followers[1],
-            teleop_id=_BIMANUAL_ID,
-            teleop_cal_dir=teleop_dir,
-            left_teleop=leaders[0],
-            right_teleop=leaders[1],
-            cameras=cameras,
-        )
+    try:
+        argv, temp_dirs = prepare_teleop(setup, kwargs)
+    except ActionError as exc:
+        return str(exc)
+    try:
         rc, stderr_text = await _run_tty(
-            tty_handoff, LocalLeRobotRunner(), argv, "lerobot-teleoperate (bimanual)",
+            tty_handoff, LocalLeRobotRunner(), argv, "lerobot-teleoperate",
         )
+    finally:
+        import shutil
+        for d in temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
     if _is_interrupted(rc):
         return "interrupted"
     if rc == 0:
         return "Teleoperation finished."
     return _format_tty_failure("Teleoperation failed", rc, stderr_text)
-
-
-def _resolve_dataset_name(
-    kwargs: dict[str, Any], prefix: str,
-) -> tuple[str, bool] | str:
-    """Resolve dataset name and whether to resume.
-
-    Returns (dataset_name, user_specified) or an error string.
-    """
-    user_specified = "dataset_name" in kwargs
-    if user_specified:
-        name = kwargs["dataset_name"]
-    else:
-        name = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    error = _validate_dataset_name(name)
-    if error:
-        return error
-    return name, user_specified
-
-
-def _should_resume(
-    user_specified: bool, dataset_root: Path,
-) -> bool:
-    """Resume only when user explicitly named a dataset that already exists."""
-    return user_specified and dataset_root.exists()
 
 
 async def _do_record(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     if kwargs.get("checkpoint_path"):
         return await _do_run_policy(setup, kwargs, tty_handoff)
 
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
+    from roboclaw.embodied.ops.helpers import ActionError, prepare_record
+    from roboclaw.embodied.runner import LocalLeRobotRunner
 
     if not tty_handoff:
         return _NO_TTY_MSG
-    grouped = _group_arms(_resolve_action_arms(setup, kwargs))
-    error = _validate_pairing(grouped["followers"], grouped["leaders"])
+    try:
+        argv, dataset_name, dataset_root, temp_dirs = prepare_record(setup, kwargs)
+    except ActionError as exc:
+        return str(exc)
+    try:
+        rc, stderr_text = await _run_tty(
+            tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record",
+        )
+    finally:
+        import shutil
+        for d in temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+    if _is_interrupted(rc):
+        return "interrupted"
+    if rc == 0:
+        return "Recording finished."
+    return _format_tty_failure("Recording failed", rc, stderr_text)
+
+
+def _resolve_dataset_name(
+    kwargs: dict[str, Any], prefix: str,
+) -> tuple[str, bool] | str:
+    """Resolve dataset name and whether to resume. Used by _do_run_policy."""
+    from datetime import datetime
+
+    user_specified = "dataset_name" in kwargs
+    name = kwargs["dataset_name"] if user_specified else f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    error = _validate_dataset_name(name)
     if error:
         return error
-    result = _resolve_dataset_name(kwargs, "rec")
-    if isinstance(result, str):
-        return result
-    dataset_name, user_specified = result
-    controller = SO101Controller()
-    cameras = {} if kwargs.get("use_cameras") is False else resolve_cameras(setup)
-    record_kwargs = _build_record_kwargs(setup, kwargs, cameras, dataset_name)
-    dataset_root = Path(record_kwargs["dataset_root"])
-    if _should_resume(user_specified, dataset_root):
-        record_kwargs["resume"] = True
-    followers = grouped["followers"]
-    leaders = grouped["leaders"]
-    if len(followers) == 1:
-        return await _record_single(controller, followers[0], leaders[0], record_kwargs, tty_handoff)
-    return await _record_bimanual(controller, followers, leaders, record_kwargs, tty_handoff)
+    return name, user_specified
 
 
-def _build_record_kwargs(
-    setup: dict[str, Any], kwargs: dict[str, Any], cameras: dict, dataset_name: str,
-) -> dict[str, Any]:
-    result = {
-        "cameras": cameras,
-        "repo_id": f"local/{dataset_name}",
-        "task": kwargs.get("task", "default_task"),
-        "dataset_root": str(_dataset_path(setup, dataset_name)),
-        "push_to_hub": False,
-        "fps": kwargs.get("fps", 30),
-        "num_episodes": kwargs.get("num_episodes", 10),
-    }
-    episode_time_s = kwargs.get("episode_time_s")
-    if episode_time_s is not None:
-        if episode_time_s <= 0:
-            raise ValueError("episode_time_s must be positive.")
-        result["episode_time_s"] = episode_time_s
-    reset_time_s = kwargs.get("reset_time_s")
-    if reset_time_s is not None:
-        if reset_time_s < 0:
-            raise ValueError("reset_time_s must be non-negative.")
-        result["reset_time_s"] = reset_time_s
-    return result
-
-
-async def _record_single(
-    controller: Any, follower: dict, leader: dict, record_kwargs: dict, tty_handoff: Any,
-) -> str:
-    from roboclaw.embodied.runner import LocalLeRobotRunner
-
-    argv = controller.record(
-        robot_type=follower["type"],
-        robot_port=follower["port"],
-        robot_cal_dir=follower["calibration_dir"],
-        robot_id=_arm_id(follower),
-        teleop_type=leader["type"],
-        teleop_port=leader["port"],
-        teleop_cal_dir=leader["calibration_dir"],
-        teleop_id=_arm_id(leader),
-        **record_kwargs,
-    )
-    rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record")
-    if _is_interrupted(rc):
-        return "interrupted"
-    if rc == 0:
-        return "Recording finished."
-    return _format_tty_failure("Recording failed", rc, stderr_text)
-
-
-async def _record_bimanual(
-    controller: Any,
-    followers: list[dict],
-    leaders: list[dict],
-    record_kwargs: dict,
-    tty_handoff: Any,
-) -> str:
-    from roboclaw.embodied.runner import LocalLeRobotRunner
-
-    with _bimanual_cal_dirs(followers, leaders) as (robot_dir, teleop_dir):
-        argv = controller.record_bimanual(
-            robot_id=_BIMANUAL_ID,
-            robot_cal_dir=robot_dir,
-            left_robot=followers[0],
-            right_robot=followers[1],
-            teleop_id=_BIMANUAL_ID,
-            teleop_cal_dir=teleop_dir,
-            left_teleop=leaders[0],
-            right_teleop=leaders[1],
-            **record_kwargs,
-        )
-        rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record")
-    if _is_interrupted(rc):
-        return "interrupted"
-    if rc == 0:
-        return "Recording finished."
-    return _format_tty_failure("Recording failed", rc, stderr_text)
+def _should_resume(user_specified: bool, dataset_root: Path) -> bool:
+    """Resume only when user explicitly named a dataset that already exists."""
+    return user_specified and dataset_root.exists()
 
 
 async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:

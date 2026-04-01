@@ -1,35 +1,52 @@
-"""Data Collection Dashboard REST API routes."""
+"""Data Collection Dashboard — consolidated REST API routes.
+
+All dashboard endpoints live under ``/api/dashboard/``.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import socket
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
 from loguru import logger
 from pydantic import BaseModel
 
 from roboclaw.embodied.hardware_monitor import HardwareMonitor
-from roboclaw.embodied.recording import RecordingSession, RecordingStatus
 from roboclaw.embodied.setup import load_setup
+from roboclaw.web.dashboard_datasets import delete_dataset, get_dataset_info, list_datasets
+from roboclaw.web.dashboard_session import DashboardSession
 from roboclaw.web.troubleshooting import generate_fault_snapshot, get_troubleshoot_map_json
 
 
-class RecordingStartRequest(BaseModel):
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class RecordStartRequest(BaseModel):
     task: str
     num_episodes: int = 10
+    fps: int = 30
     episode_time_s: int = 300
     reset_time_s: int = 10
+    display_port: int = 0
+
+
+class TeleopStartRequest(BaseModel):
+    fps: int = 30
+    display_port: int = 0
 
 
 class RecheckRequest(BaseModel):
     fault_type: str
     device_alias: str
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _get_lan_ip() -> str:
     try:
@@ -49,11 +66,8 @@ def _check_arm_status(arm: dict[str, Any]) -> dict[str, Any]:
     arm_type = arm.get("type", "")
     role = "follower" if "follower" in arm_type else "leader" if "leader" in arm_type else ""
     return {
-        "alias": alias,
-        "type": arm_type,
-        "role": role,
-        "connected": connected,
-        "calibrated": calibrated,
+        "alias": alias, "type": arm_type, "role": role,
+        "connected": connected, "calibrated": calibrated,
     }
 
 
@@ -61,12 +75,8 @@ def _check_camera_status(cam: dict[str, Any]) -> dict[str, Any]:
     alias = cam.get("alias", "unknown")
     port = cam.get("port", "")
     connected = bool(port and Path(port).exists())
-    return {
-        "alias": alias,
-        "connected": connected,
-        "width": cam.get("width", 640),
-        "height": cam.get("height", 480),
-    }
+    return {"alias": alias, "connected": connected,
+            "width": cam.get("width", 640), "height": cam.get("height", 480)}
 
 
 def _compute_readiness(
@@ -78,143 +88,72 @@ def _compute_readiness(
 
     missing: list[str] = []
     grouped = _group_arms(arms)
-    followers = grouped["followers"]
-    leaders = grouped["leaders"]
-
-    if not followers:
+    if not grouped["followers"]:
         missing.append("No follower arm configured")
-    if not leaders:
+    if not grouped["leaders"]:
         missing.append("No leader arm configured")
-
-    for status in arm_statuses:
-        if not status["connected"]:
-            missing.append(f"Arm '{status['alias']}' is disconnected")
-        elif not status["calibrated"]:
-            missing.append(f"Arm '{status['alias']}' is not calibrated")
-
-    for status in camera_statuses:
-        if not status["connected"]:
-            missing.append(f"Camera '{status['alias']}' is disconnected")
-
-    if followers and leaders and len(followers) != len(leaders):
-        missing.append(
-            f"Follower/leader count mismatch: {len(followers)} vs {len(leaders)}"
-        )
-
+    for s in arm_statuses:
+        if not s["connected"]:
+            missing.append(f"Arm '{s['alias']}' is disconnected")
+        elif not s["calibrated"]:
+            missing.append(f"Arm '{s['alias']}' is not calibrated")
+    for s in camera_statuses:
+        if not s["connected"]:
+            missing.append(f"Camera '{s['alias']}' is disconnected")
+    f, l = grouped["followers"], grouped["leaders"]
+    if f and l and len(f) != len(l):
+        missing.append(f"Follower/leader count mismatch: {len(f)} vs {len(l)}")
     return len(missing) == 0, missing
 
 
-def _capture_preview_bytes(cam: dict[str, Any]) -> bytes:
-    """Open camera, grab one JPEG frame. Runs in a thread — blocking I/O."""
-    import cv2
-
-    port = cam.get("port", "")
-    cap = cv2.VideoCapture(port)
-    if not cap.isOpened():
-        raise HTTPException(status_code=503, detail=f"Cannot open camera at {port}")
-    try:
-        width = cam.get("width")
-        if isinstance(width, int) and width > 0:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        height = cam.get("height")
-        if isinstance(height, int) and height > 0:
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        fourcc = cam.get("fourcc")
-        if isinstance(fourcc, str) and len(fourcc) == 4:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
-
-        for _ in range(5):
-            cap.read()
-        ok, frame = cap.read()
-        if not ok or frame is None:
-            raise HTTPException(status_code=503, detail="Failed to capture frame")
-        success, jpeg_buf = cv2.imencode(".jpg", frame)
-        if not success:
-            raise HTTPException(status_code=500, detail="JPEG encoding failed")
-        return jpeg_buf.tobytes()
-    finally:
-        cap.release()
+def _datasets_root() -> Path:
+    from roboclaw.embodied.ops.helpers import _dataset_root
+    return _dataset_root(load_setup())
 
 
-def _build_recording_argv(
-    setup: dict[str, Any], params: RecordingStartRequest,
-) -> tuple[list[str], str, str, list[str]]:
-    """Build LeRobot record CLI argv from dashboard params.
+# ---------------------------------------------------------------------------
+# Servo position reading (blocking — run in thread)
+# ---------------------------------------------------------------------------
 
-    Returns (argv, dataset_name, dataset_root, temp_dirs_to_cleanup).
-    """
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
-    from roboclaw.embodied.ops.helpers import (
-        _BIMANUAL_ID,
-        _arm_id,
-        _dataset_path,
-        _group_arms,
-        _stage_bimanual_arm_pair,
-        _validate_pairing,
-    )
-    from roboclaw.embodied.sensor.camera import resolve_cameras
-
+def _read_servo_positions() -> dict[str, Any]:
+    setup = load_setup()
     arms = setup.get("arms", [])
-    grouped = _group_arms(arms)
-    followers = grouped["followers"]
-    leaders = grouped["leaders"]
+    result: dict[str, Any] = {"error": None, "arms": {}}
+    motor_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 
-    error = _validate_pairing(followers, leaders)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
+    for arm in arms:
+        if "follower" not in arm.get("type", ""):
+            continue
+        alias = arm.get("alias", "")
+        port = arm.get("port", "")
+        if not port:
+            continue
+        try:
+            from lerobot.motors.feetech import FeetechMotorsBus
+            from lerobot.motors.motors_bus import Motor, MotorNormMode
 
-    dataset_name = f"rec_{datetime.now():%Y%m%d_%H%M%S}"
-    cameras = resolve_cameras(setup)
+            motors = {
+                name: Motor(id=i + 1, model="sts3215", norm_mode=MotorNormMode.RANGE_M100_100)
+                for i, name in enumerate(motor_names)
+            }
+            bus = FeetechMotorsBus(port=port, motors=motors)
+            bus.connect()
+            positions = {}
+            for name in motor_names:
+                try:
+                    positions[name] = int(bus.read("Present_Position", name, normalize=False))
+                except Exception:
+                    positions[name] = None
+            bus.disconnect()
+            result["arms"][alias] = positions
+        except Exception as e:
+            result["arms"][alias] = {"error": str(e)}
+    return result
 
-    record_kwargs: dict[str, Any] = {
-        "cameras": cameras,
-        "repo_id": f"local/{dataset_name}",
-        "task": params.task,
-        "dataset_root": str(_dataset_path(setup, dataset_name)),
-        "push_to_hub": False,
-        "fps": 30,
-        "num_episodes": params.num_episodes,
-        "episode_time_s": params.episode_time_s,
-        "reset_time_s": params.reset_time_s,
-    }
-    dataset_root = record_kwargs["dataset_root"]
-    controller = SO101Controller()
 
-    if len(followers) == 1:
-        argv = controller.record(
-            robot_type=followers[0]["type"],
-            robot_port=followers[0]["port"],
-            robot_cal_dir=followers[0]["calibration_dir"],
-            robot_id=_arm_id(followers[0]),
-            teleop_type=leaders[0]["type"],
-            teleop_port=leaders[0]["port"],
-            teleop_cal_dir=leaders[0]["calibration_dir"],
-            teleop_id=_arm_id(leaders[0]),
-            **record_kwargs,
-        )
-        return argv, dataset_name, dataset_root, []
-
-    # Bimanual: persistent temp dirs, cleaned up on recording completion
-    import tempfile
-
-    robot_dir = tempfile.mkdtemp(prefix="roboclaw-bimanual-robot-")
-    teleop_dir = tempfile.mkdtemp(prefix="roboclaw-bimanual-teleop-")
-    _stage_bimanual_arm_pair(followers[0], followers[1], robot_dir)
-    _stage_bimanual_arm_pair(leaders[0], leaders[1], teleop_dir)
-
-    argv = controller.record_bimanual(
-        robot_id=_BIMANUAL_ID,
-        robot_cal_dir=robot_dir,
-        left_robot=followers[0],
-        right_robot=followers[1],
-        teleop_id=_BIMANUAL_ID,
-        teleop_cal_dir=teleop_dir,
-        left_teleop=leaders[0],
-        right_teleop=leaders[1],
-        **record_kwargs,
-    )
-    return argv, dataset_name, dataset_root, [robot_dir, teleop_dir]
-
+# ---------------------------------------------------------------------------
+# Route registration
+# ---------------------------------------------------------------------------
 
 def register_dashboard_routes(
     app: FastAPI,
@@ -223,30 +162,15 @@ def register_dashboard_routes(
 ) -> None:
     """Register all dashboard API endpoints on the FastAPI app."""
 
-    app.state.active_recording = None
-    app.state.recording_temp_dirs: list[str] = []
-
-    def _cleanup_recording() -> None:
-        """Reset recording state and clean up temp dirs."""
-        app.state.active_recording = None
-        app.state.hardware_monitor.set_recording_active(False)
-        for d in app.state.recording_temp_dirs:
-            import shutil
-            shutil.rmtree(d, ignore_errors=True)
-        app.state.recording_temp_dirs = []
-
-    async def _on_progress(status: RecordingStatus) -> None:
+    async def _on_state_change(status: dict[str, Any]) -> None:
         await web_channel.broadcast_dashboard_event({
-            "type": "dashboard.recording.progress",
-            **status.to_dict(),
+            "type": "dashboard.session.state_changed", **status,
         })
 
-    async def _on_recording_end(event_type: str, status: RecordingStatus) -> None:
-        _cleanup_recording()
-        await web_channel.broadcast_dashboard_event({
-            "type": event_type,
-            **status.to_dict(),
-        })
+    session = DashboardSession(on_state_change=_on_state_change)
+    app.state.dashboard_session = session
+
+    # -- Hardware status ---------------------------------------------------
 
     @app.get("/api/dashboard/hardware-status")
     async def hardware_status() -> dict[str, Any]:
@@ -256,76 +180,95 @@ def register_dashboard_routes(
         arm_statuses = [_check_arm_status(a) for a in arms]
         camera_statuses = [_check_camera_status(c) for c in cameras]
         ready, missing = _compute_readiness(arms, arm_statuses, camera_statuses)
-        recording = app.state.active_recording
         return {
-            "ready": ready,
-            "missing": missing,
-            "arms": arm_statuses,
-            "cameras": camera_statuses,
-            "recording_active": recording is not None and recording.active,
+            "ready": ready, "missing": missing,
+            "arms": arm_statuses, "cameras": camera_statuses,
+            "session_busy": session.busy,
         }
 
-    @app.get("/api/dashboard/camera-preview/{alias}")
-    async def camera_preview(alias: str) -> Response:
-        from roboclaw.embodied.web.app import get_session
-        if get_session().cameras_locked:
-            raise HTTPException(status_code=503, detail="Camera busy")
-        recording = getattr(app.state, "active_recording", None)
-        if recording is not None and recording.active:
-            raise HTTPException(status_code=503, detail="Camera busy")
-        setup = load_setup()
-        cam = next((c for c in setup.get("cameras", []) if c.get("alias") == alias), None)
-        if cam is None:
-            raise HTTPException(status_code=404, detail=f"Camera '{alias}' not found")
-        port = cam.get("port", "")
-        if not port:
-            raise HTTPException(status_code=400, detail=f"Camera '{alias}' has no port")
-        jpeg_bytes = await asyncio.to_thread(_capture_preview_bytes, cam)
-        return Response(content=jpeg_bytes, media_type="image/jpeg")
+    # -- Session lifecycle -------------------------------------------------
 
-    @app.post("/api/dashboard/recording/start")
-    async def recording_start(body: RecordingStartRequest) -> dict[str, Any]:
-        recording = app.state.active_recording
-        if recording is not None and recording.active:
-            raise HTTPException(
-                status_code=409, detail="A recording session is already active",
-            )
-        setup = load_setup()
-        argv, dataset_name, dataset_root, temp_dirs = _build_recording_argv(setup, body)
-        app.state.recording_temp_dirs = temp_dirs
-        session = RecordingSession(
-            argv=argv,
-            dataset_name=dataset_name,
-            dataset_root=dataset_root,
+    @app.get("/api/dashboard/session/status")
+    async def session_status() -> dict[str, Any]:
+        return session.get_status()
+
+    @app.post("/api/dashboard/session/teleop/start")
+    async def teleop_start(body: TeleopStartRequest | None = None) -> dict[str, str]:
+        dp = body.display_port if body else 0
+        await session.start_teleop(display_data=bool(dp), display_port=dp)
+        return {"status": "teleoperating"}
+
+    @app.post("/api/dashboard/session/teleop/stop")
+    async def teleop_stop() -> dict[str, str]:
+        await session.stop()
+        return {"status": "idle"}
+
+    @app.post("/api/dashboard/session/record/start")
+    async def record_start(body: RecordStartRequest) -> dict[str, Any]:
+        dataset_name = await session.start_recording(
             task=body.task,
-            total_episodes=body.num_episodes,
-            on_progress=_on_progress,
-            on_completed=lambda s: _on_recording_end("dashboard.recording.completed", s),
-            on_error=lambda s: _on_recording_end("dashboard.recording.error", s),
+            num_episodes=body.num_episodes,
+            fps=body.fps,
+            episode_time_s=body.episode_time_s,
+            reset_time_s=body.reset_time_s,
+            display_data=bool(body.display_port),
+            display_port=body.display_port,
         )
-        await session.start()
-        app.state.active_recording = session
         app.state.hardware_monitor.set_recording_active(True)
-        logger.info(
-            "Dashboard recording started: session={}, dataset={}",
-            session.session_id, dataset_name,
-        )
-        return {"session_id": session.session_id, "dataset_name": dataset_name}
+        return {"status": "recording", "dataset_name": dataset_name}
 
-    @app.post("/api/dashboard/recording/stop")
-    async def recording_stop() -> dict[str, str]:
-        recording = app.state.active_recording
-        if recording is None or not recording.active:
-            raise HTTPException(status_code=404, detail="No active recording session")
-        recording.stop()
-        return {"status": "stopping"}
+    @app.post("/api/dashboard/session/record/stop")
+    async def record_stop() -> dict[str, str]:
+        try:
+            await session.stop()
+        finally:
+            app.state.hardware_monitor.set_recording_active(False)
+        return {"status": "idle"}
 
-    @app.get("/api/dashboard/recording/status")
-    async def recording_status() -> dict[str, Any]:
-        recording = app.state.active_recording
-        if recording is None:
-            return {"active": False}
-        return {"active": recording.active, **recording.status.to_dict()}
+    # -- Episode control ---------------------------------------------------
+
+    @app.post("/api/dashboard/session/episode/save")
+    async def episode_save() -> dict[str, str]:
+        await session.save_episode()
+        return {"status": "episode_saved"}
+
+    @app.post("/api/dashboard/session/episode/discard")
+    async def episode_discard() -> dict[str, str]:
+        await session.discard_episode()
+        return {"status": "episode_discarded"}
+
+    @app.post("/api/dashboard/session/episode/skip-reset")
+    async def episode_skip_reset() -> dict[str, str]:
+        await session.skip_reset()
+        return {"status": "reset_skipped"}
+
+    # -- Datasets ----------------------------------------------------------
+
+    @app.get("/api/dashboard/datasets")
+    async def datasets_list_route() -> list[dict]:
+        return await asyncio.to_thread(list_datasets, _datasets_root())
+
+    @app.get("/api/dashboard/datasets/{name}")
+    async def dataset_detail(name: str) -> dict:
+        info = await asyncio.to_thread(get_dataset_info, _datasets_root(), name)
+        if info is None:
+            raise HTTPException(status_code=404, detail=f"Dataset '{name}' not found")
+        return info
+
+    @app.delete("/api/dashboard/datasets/{name}")
+    async def dataset_delete(name: str) -> dict[str, str]:
+        await asyncio.to_thread(delete_dataset, _datasets_root(), name)
+        return {"status": "deleted", "name": name}
+
+    # -- Servo positions ---------------------------------------------------
+
+    @app.get("/api/dashboard/servo-positions")
+    async def servo_positions() -> dict[str, Any]:
+        if session.busy:
+            return {"error": "busy", "arms": {}}
+        return await asyncio.to_thread(_read_servo_positions)
+
+    # -- Troubleshooting ---------------------------------------------------
 
     @app.get("/api/dashboard/troubleshoot-map")
     async def troubleshoot_map() -> dict[str, Any]:
@@ -342,9 +285,9 @@ def register_dashboard_routes(
         setup = load_setup()
         monitor: HardwareMonitor = app.state.hardware_monitor
         faults = monitor.active_faults
-        recording = app.state.active_recording
-        stderr_tail = recording.stderr_tail if recording is not None else ""
-        return generate_fault_snapshot(setup, faults, stderr_tail)
+        return generate_fault_snapshot(setup, faults, "")
+
+    # -- Network info ------------------------------------------------------
 
     @app.get("/api/dashboard/network-info")
     async def network_info() -> dict[str, Any]:

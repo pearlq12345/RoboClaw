@@ -443,11 +443,7 @@ def create_app(
             get_config=lambda: (web_cfg["host"], web_cfg["port"]),
         )
 
-    # 13. Mount embodied data-collection routes
-    from roboclaw.embodied.web.routes import router as embodied_router
-    app.include_router(embodied_router)
-
-    # 14. Serve built frontend in production (ui/dist/)
+    # 13. Serve built frontend in production (ui/dist/)
     ui_dist = Path(__file__).resolve().parent.parent.parent / "ui" / "dist"
     if ui_dist.is_dir():
         from starlette.staticfiles import StaticFiles
@@ -484,10 +480,10 @@ def create_app(
     # 16. Shutdown: tear down gracefully
     @app.on_event("shutdown")
     async def _shutdown() -> None:
-        # Stop active recording if any
-        active_rec = getattr(app.state, "active_recording", None)
-        if active_rec is not None and active_rec.active:
-            active_rec.stop()
+        # Stop dashboard session if active
+        dashboard_session = getattr(app.state, "dashboard_session", None)
+        if dashboard_session is not None and dashboard_session.busy:
+            await dashboard_session.stop()
 
         # Stop hardware monitor
         hw_mon = getattr(app.state, "hardware_monitor", None)

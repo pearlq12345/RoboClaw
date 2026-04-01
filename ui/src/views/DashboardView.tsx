@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useDataCollection, type RobotState } from '../controllers/datacollection'
-import { useDashboard } from '../controllers/dashboard'
+import { useDashboard, type SessionState } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
 
 // ── Servo chart colors ────────────────────────────────────────
@@ -107,62 +106,15 @@ function Btn({
   )
 }
 
-// ── Camera preview ────────────────────────────────────────────
-function CameraPreviewPanel({
-  cameras,
-  enabled,
-  t,
-}: {
-  cameras: { alias: string; connected: boolean; width: number; height: number }[]
-  enabled: boolean
-  t: (key: any) => string
-}) {
-  const [tick, setTick] = useState(0)
 
-  useEffect(() => {
-    if (!enabled) return
-    const connected = cameras.filter((c) => c.connected)
-    if (!connected.length) return
-    const timer = setInterval(() => setTick((n) => n + 1), 1500)
-    return () => clearInterval(timer)
-  }, [cameras, enabled])
-
-  const connected = cameras.filter((c) => c.connected)
-
-  if (!enabled || !connected.length) {
-    return (
-      <div className="bg-sf p-2 min-h-[100px] flex items-center justify-center border-b border-bd">
-        <span className="text-tx2">{!enabled ? t('camerasDisabled') : t('noCameraFeed')}</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-black/5 p-2 flex flex-wrap gap-2 border-b border-bd">
-      {connected.map((cam) => (
-        <div key={cam.alias} className="flex-1 min-w-[250px] max-w-[520px] relative bg-sf rounded-lg overflow-hidden border border-bd">
-          <img
-            src={`/api/dashboard/camera-preview/${cam.alias}?t=${tick}`}
-            alt={cam.alias}
-            className="w-full aspect-video object-contain bg-black"
-          />
-          <div className="absolute top-1.5 left-2 bg-black/60 text-white text-2xs px-2 py-0.5 rounded">
-            {cam.alias}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ServoChartPanel({ state, t }: { state: RobotState; t: (key: any) => string }) {
+function ServoChartPanel({ state, t }: { state: SessionState; t: (key: any) => string }) {
   const [histories, setHistories] = useState<Record<string, ServoHistory>>({})
-  const busy = state === 'teleoperating' || state === 'recording'
+  const busy = state === 'teleoperating' || state === 'recording' || state === 'preparing'
 
   const poll = useCallback(async () => {
     if (busy) return
     try {
-      const r = await fetch('/api/embodied/servo-positions')
+      const r = await fetch('/api/dashboard/servo-positions')
       const data = await r.json()
       if (data.error || !data.arms) return
       setHistories((prev) => {
@@ -215,18 +167,14 @@ function ServoChartPanel({ state, t }: { state: RobotState; t: (key: any) => str
   )
 }
 
-function canDo(state: RobotState) {
-  const disc = state === 'disconnected'
-  const conn = state === 'connected'
+function canDo(state: SessionState) {
+  const idle = state === 'idle'
   const tele = state === 'teleoperating'
   const rec = state === 'recording'
-  const prep = state === 'preparing'
   return {
-    connect: disc,
-    disconnect: !disc && !prep,
-    teleopStart: conn,
+    teleopStart: idle,
     teleopStop: tele,
-    recStart: conn || tele,
+    recStart: idle || tele,
     recStop: rec,
     saveEp: rec,
     discardEp: rec,
@@ -235,54 +183,39 @@ function canDo(state: RobotState) {
 
 // ── Main View ─────────────────────────────────────────────────
 export default function DashboardView() {
-  const store = useDataCollection()
-  const { state, logs, datasets, loading, episodePhase, savedEpisodes, targetEpisodes } = store
-  const { hardwareStatus: hwStatus, fetchHardwareStatus } = useDashboard()
+  const store = useDashboard()
+  const { session, logs, datasets, loading, hardwareStatus: hwStatus } = store
+  const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes } = session
   const ok = canDo(state)
   const logRef = useRef<HTMLDivElement>(null)
   const { t } = useI18n()
 
-  const stateLabel: Record<RobotState, string> = {
-    disconnected: t('stateDisconnected'),
-    connected: t('stateConnected'),
+  const stateLabel: Record<SessionState, string> = {
+    idle: t('stateConnected'),
     preparing: t('hwInitializing'),
     teleoperating: t('stateTeleoperating'),
     recording: t('stateRecording'),
   }
-  const stateBadgeCls: Record<RobotState, string> = {
-    disconnected: 'bg-rd/10 text-rd',
+  const stateBadgeCls: Record<SessionState, string> = {
+    idle: 'bg-gn/10 text-gn',
     preparing: 'bg-yl/10 text-yl',
-    connected: 'bg-gn/10 text-gn',
     teleoperating: 'bg-ac/10 text-ac',
     recording: 'bg-yl/10 text-yl',
   }
 
-  const [camerasEnabled, setCamerasEnabled] = useState(false)
-
-  // Auto-close camera preview BEFORE teleop/record starts (release device for subprocess)
-  useEffect(() => {
-    if (loading === 'teleop' || loading === 'record') {
-      setCamerasEnabled(false)
-    }
-  }, [loading])
-
-  const [dsName, setDsName] = useState('')
   const [task, setTask] = useState('')
-  const [fps, setFps] = useState(30)
   const [numEp, setNumEp] = useState(10)
+  const [episodeTime, setEpisodeTime] = useState(300)
+  const [resetTime, setResetTime] = useState(10)
 
   useEffect(() => {
-    store.connectStatusWs()
     store.loadDatasets()
     store.addLog('RoboClaw UI loaded')
-    fetchHardwareStatus()
+    store.fetchHardwareStatus()
     const hwInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') fetchHardwareStatus()
+      if (document.visibilityState === 'visible') store.fetchHardwareStatus()
     }, 5000)
-    return () => {
-      store.disconnectStatusWs()
-      clearInterval(hwInterval)
-    }
+    return () => clearInterval(hwInterval)
   }, [])
 
   useEffect(() => {
@@ -290,13 +223,12 @@ export default function DashboardView() {
   }, [logs])
 
   function handleRecordStart() {
-    if (!dsName.trim()) { store.addLog(t('fillDatasetName'), 'err'); return }
     if (!task.trim()) { store.addLog(t('fillTaskDesc'), 'err'); return }
     store.doRecordStart({
-      dataset_name: dsName.trim(),
       task: task.trim(),
-      fps,
       num_episodes: numEp,
+      episode_time_s: episodeTime,
+      reset_time_s: resetTime,
     })
   }
 
@@ -316,16 +248,13 @@ export default function DashboardView() {
       <div className="flex-1 grid grid-cols-[1fr_320px] overflow-hidden max-[900px]:grid-cols-1">
         {/* Left: camera + controls */}
         <div className="flex flex-col overflow-y-auto">
-          {/* Camera preview panel */}
-          <CameraPreviewPanel cameras={hwStatus?.cameras || []} enabled={camerasEnabled && state !== 'teleoperating' && state !== 'recording'} t={t} />
-
           {/* Control grid */}
           <div className="grid grid-cols-2 gap-3 p-4 max-[900px]:grid-cols-1">
             {/* Arms card */}
             <div className="bg-sf border border-bd rounded-lg p-4">
               <h3 className="text-xs text-tx2 uppercase tracking-wider mb-2 font-medium">{t('arms')}</h3>
               {hwStatus && hwStatus.arms.length > 0 ? (
-                <div className="space-y-2 mb-3">
+                <div className="space-y-2">
                   {hwStatus.arms.map((arm) => (
                     <div key={arm.alias} className="flex items-center gap-2 text-sm">
                       <span className={`w-2 h-2 rounded-full ${arm.connected ? 'bg-gn' : 'bg-rd'}`} />
@@ -344,23 +273,15 @@ export default function DashboardView() {
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-tx2 mb-3">{t('noArms')}</div>
+                <div className="text-sm text-tx2">{t('noArms')}</div>
               )}
-              <div className="flex gap-2 flex-wrap">
-                <Btn variant="gn" disabled={!ok.connect || loading === 'connect'} onClick={store.doConnect}>
-                  {loading === 'connect' ? t('connecting') : t('connect')}
-                </Btn>
-                <Btn variant="rd" disabled={!ok.disconnect || !!loading} onClick={store.doDisconnect}>
-                  {t('disconnect')}
-                </Btn>
-              </div>
             </div>
 
             {/* Cameras card */}
             <div className="bg-sf border border-bd rounded-lg p-4">
               <h3 className="text-xs text-tx2 uppercase tracking-wider mb-2 font-medium">{t('cameras')}</h3>
               {hwStatus && hwStatus.cameras.length > 0 ? (
-                <div className="space-y-2 mb-3">
+                <div className="space-y-2">
                   {hwStatus.cameras.map((cam) => (
                     <div key={cam.alias} className="flex items-center gap-2 text-sm">
                       <span className={`w-2 h-2 rounded-full ${cam.connected ? 'bg-gn' : 'bg-rd'}`} />
@@ -372,16 +293,8 @@ export default function DashboardView() {
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-tx2 mb-3">{t('noCameras')}</div>
+                <div className="text-sm text-tx2">{t('noCameras')}</div>
               )}
-              <div className="flex gap-2 flex-wrap">
-                <Btn variant="gn" disabled={camerasEnabled} onClick={() => setCamerasEnabled(true)}>
-                  {t('enablePreview')}
-                </Btn>
-                <Btn variant="rd" disabled={!camerasEnabled} onClick={() => setCamerasEnabled(false)}>
-                  {t('disablePreview')}
-                </Btn>
-              </div>
             </div>
 
             {/* Teleop card */}
@@ -408,16 +321,7 @@ export default function DashboardView() {
               <h3 className="text-xs text-tx2 uppercase tracking-wider mb-3 font-medium">{t('recording')}</h3>
 
               <div className="flex gap-2 flex-wrap mb-3">
-                <label className="flex flex-col gap-1 text-xs text-tx2 flex-1 min-w-[120px]">
-                  {t('datasetName')}
-                  <input
-                    value={dsName}
-                    onChange={(e) => setDsName(e.target.value)}
-                    placeholder="my_dataset"
-                    className="bg-bg border border-bd text-tx px-3 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-tx2 flex-1 min-w-[120px]">
+                <label className="flex flex-col gap-1 text-xs text-tx2 flex-1 min-w-[160px]">
                   {t('taskDesc')}
                   <input
                     value={task}
@@ -429,24 +333,33 @@ export default function DashboardView() {
               </div>
 
               <div className="flex gap-2 flex-wrap mb-3 items-end">
-                <label className="flex flex-col gap-1 text-xs text-tx2 w-[80px]">
-                  FPS
-                  <input
-                    type="number"
-                    value={fps}
-                    onChange={(e) => setFps(Number(e.target.value) || 30)}
-                    min={1}
-                    max={120}
-                    className="bg-bg border border-bd text-tx px-3 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-tx2 w-[100px]">
+                <label className="flex flex-col gap-1 text-xs text-tx2 w-[90px]">
                   {t('numEpisodes')}
                   <input
                     type="number"
                     value={numEp}
                     onChange={(e) => setNumEp(Number(e.target.value) || 10)}
                     min={1}
+                    className="bg-bg border border-bd text-tx px-3 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-tx2 w-[100px]">
+                  Ep time (s)
+                  <input
+                    type="number"
+                    value={episodeTime}
+                    onChange={(e) => setEpisodeTime(Number(e.target.value) || 300)}
+                    min={1}
+                    className="bg-bg border border-bd text-tx px-3 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-tx2 w-[100px]">
+                  Reset (s)
+                  <input
+                    type="number"
+                    value={resetTime}
+                    onChange={(e) => setResetTime(Number(e.target.value) || 10)}
+                    min={0}
                     className="bg-bg border border-bd text-tx px-3 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
                   />
                 </label>

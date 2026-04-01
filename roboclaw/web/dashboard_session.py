@@ -1,0 +1,387 @@
+"""Async session manager for the data collection dashboard.
+
+Manages one LeRobot subprocess at a time (teleop or recording) with:
+- State machine: idle → preparing → teleoperating/recording → idle
+- stdin control for episode save/discard/skip-reset/ESC
+- stdout parsing for episode lifecycle tracking
+- Callback-driven progress notifications
+"""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+import re
+import shutil
+import signal
+import time
+from typing import Any, Awaitable, Callable
+
+from loguru import logger
+
+from roboclaw.embodied.ops.helpers import (
+    ActionError,
+    prepare_record,
+    prepare_teleop,
+)
+from roboclaw.embodied.runner import LocalLeRobotRunner
+from roboclaw.embodied.setup import load_setup
+
+_RE_RECORDING_EP = re.compile(r"Recording episode (\d+)")
+_RE_EPISODE_DONE = re.compile(r"Episode (\d+) done")
+_RE_FRAME_COUNT = re.compile(r"frame[s]?\s*[:=]\s*(\d+)", re.IGNORECASE)
+
+# Serial devices may still be held by the OS after the previous process exits.
+# 5 seconds is empirically sufficient for V4L2/ttyUSB release on Linux.
+_DRAIN_SECONDS = 5
+_GRACEFUL_STOP_TIMEOUT = 15
+
+StatusCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+
+
+class DashboardSession:
+    """Manages one LeRobot subprocess (teleop or recording) at a time."""
+
+    def __init__(self, on_state_change: StatusCallback | None = None) -> None:
+        self._on_state_change = on_state_change
+        self._state = "idle"
+        self._process: asyncio.subprocess.Process | None = None
+        self._stdout_task: asyncio.Task | None = None
+        self._wait_task: asyncio.Task | None = None
+        self._cancel_prepare = asyncio.Event()
+        self._temp_dirs: list[str] = []
+
+        # Recording metadata
+        self._dataset_name = ""
+        self._dataset_root = ""
+        self._target_episodes = 0
+
+        # Episode tracking (updated by stdout parser)
+        self._episode_phase = ""  # "recording" | "saving" | "resetting" | ""
+        self._saved_episodes = 0
+        self._current_episode = 0
+        self._total_frames = 0
+        self._start_time = 0.0
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    @property
+    def busy(self) -> bool:
+        return self._state != "idle"
+
+    def get_status(self) -> dict[str, Any]:
+        elapsed = time.monotonic() - self._start_time if self._start_time else 0.0
+        return {
+            "state": self._state,
+            "episode_phase": self._episode_phase,
+            "saved_episodes": self._saved_episodes,
+            "current_episode": self._current_episode,
+            "target_episodes": self._target_episodes,
+            "total_frames": self._total_frames,
+            "elapsed_seconds": round(elapsed, 1),
+            "dataset": self._dataset_name if self._state == "recording" else None,
+        }
+
+    # -- Lifecycle ---------------------------------------------------------
+
+    async def start_teleop(
+        self, *, display_data: bool = False, display_ip: str = "", display_port: int = 0,
+    ) -> None:
+        self._require_idle_or_raise()
+        setup = load_setup()
+        try:
+            argv, temp_dirs = prepare_teleop(
+                setup, display_data=display_data, display_ip=display_ip, display_port=display_port,
+            )
+        except ActionError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        self._temp_dirs = temp_dirs
+        await self._transition_through_preparing("teleoperating", argv)
+
+    async def start_recording(
+        self,
+        task: str,
+        num_episodes: int = 10,
+        fps: int = 30,
+        episode_time_s: int = 300,
+        reset_time_s: int = 10,
+        *,
+        display_data: bool = False,
+        display_ip: str = "",
+        display_port: int = 0,
+    ) -> str:
+        """Start recording. Returns the generated dataset_name."""
+        if self._state == "teleoperating":
+            await self._kill_subprocess()
+            self._set_state("idle")
+        self._require_idle_or_raise()
+
+        setup = load_setup()
+        kwargs: dict[str, Any] = {
+            "task": task,
+            "num_episodes": num_episodes,
+            "fps": fps,
+            "episode_time_s": episode_time_s,
+            "reset_time_s": reset_time_s,
+        }
+        try:
+            argv, dataset_name, dataset_root, temp_dirs = prepare_record(
+                setup, kwargs,
+                display_data=display_data, display_ip=display_ip, display_port=display_port,
+            )
+        except ActionError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        self._dataset_name = dataset_name
+        self._dataset_root = dataset_root
+        self._target_episodes = num_episodes
+        self._saved_episodes = 0
+        self._current_episode = 0
+        self._total_frames = 0
+        self._episode_phase = ""
+        self._temp_dirs = temp_dirs
+
+        await self._transition_through_preparing("recording", argv)
+        return dataset_name
+
+    async def stop(self) -> None:
+        if self._state == "idle":
+            return
+        if self._state == "preparing":
+            self._cancel_prepare.set()
+            # Wait briefly for the prepare coroutine to notice cancellation
+            await asyncio.sleep(0.1)
+            if self._state == "idle":
+                return
+        if self._state == "recording":
+            await self._graceful_stop()
+        else:
+            await self._kill_subprocess()
+        self._episode_phase = ""
+        self._set_state("idle")
+
+    # -- Episode control ---------------------------------------------------
+
+    async def save_episode(self) -> None:
+        await self._send_key(b"\x1b[C")
+        logger.info("Sent save-episode signal (right arrow)")
+
+    async def discard_episode(self) -> None:
+        await self._send_key(b"\x1b[D")
+        logger.info("Sent discard-episode signal (left arrow)")
+
+    async def skip_reset(self) -> None:
+        await self._send_key(b"\x1b[C")
+        logger.info("Sent skip-reset signal (right arrow)")
+
+    # -- Internal ----------------------------------------------------------
+
+    def _require_idle_or_raise(self) -> None:
+        if self._state != "idle":
+            raise RuntimeError(f"Session busy (state={self._state})")
+
+    async def _transition_through_preparing(self, target_state: str, argv: list[str]) -> None:
+        self._cancel_prepare.clear()
+        self._set_state("preparing")
+        # Wait for drain, but allow cancellation via stop()
+        try:
+            await asyncio.wait_for(self._cancel_prepare.wait(), timeout=_DRAIN_SECONDS)
+            # If we get here, cancel was requested
+            self._cleanup_temp_dirs()
+            self._set_state("idle")
+            return
+        except asyncio.TimeoutError:
+            pass  # Normal: drain period elapsed without cancellation
+        # Re-check: stop() may have run during sleep
+        if self._cancel_prepare.is_set():
+            self._cleanup_temp_dirs()
+            self._set_state("idle")
+            return
+        await self._launch_subprocess(argv)
+        self._set_state(target_state)
+
+    async def _launch_subprocess(self, argv: list[str]) -> None:
+        runner = LocalLeRobotRunner()
+        proc = await runner.run_streaming_interactive(argv)
+        self._process = proc
+        self._start_time = time.monotonic()
+        # Auto-confirm calibration prompts
+        if proc.stdin:
+            proc.stdin.write(b"\n\n\n\n")
+            await proc.stdin.drain()
+        self._stdout_task = asyncio.create_task(
+            self._read_stdout(proc), name="dashboard-stdout",
+        )
+        self._wait_task = asyncio.create_task(
+            self._wait_for_exit(proc), name="dashboard-wait",
+        )
+        logger.info("Launched subprocess pid={}: {}", proc.pid, " ".join(argv[:5]))
+
+    async def _read_stdout(self, proc: asyncio.subprocess.Process) -> None:
+        assert proc.stdout is not None
+        async for raw_line in proc.stdout:
+            line = raw_line.decode("utf-8", errors="replace").rstrip()
+            if not line:
+                continue
+            logger.info("subprocess: {}", line)
+            prev_status = self.get_status()
+            self._parse_line(line)
+            new_status = self.get_status()
+            if new_status != prev_status:
+                await self._emit_state_change(new_status)
+
+    async def _wait_for_exit(self, proc: asyncio.subprocess.Process) -> None:
+        """Wait for subprocess to exit and clean up session state."""
+        # Wait for stdout reader to finish first
+        if self._stdout_task is not None:
+            await self._stdout_task
+        await proc.wait()
+        returncode = proc.returncode
+        logger.info("Subprocess exited with code {}", returncode)
+        # Clean up
+        self._close_stdin()
+        self._process = None
+        self._cleanup_temp_dirs()
+        self._episode_phase = ""
+        self._set_state("idle")
+
+    def _parse_line(self, line: str) -> None:
+        """Parse LeRobot stdout to track episode lifecycle and frame progress."""
+        m = _RE_RECORDING_EP.search(line)
+        if m:
+            if self._episode_phase in ("saving", "resetting"):
+                self._saved_episodes += 1
+            self._current_episode = int(m.group(1))
+            self._episode_phase = "recording"
+            return
+
+        if "Right arrow key pressed" in line:
+            if self._episode_phase in ("recording", "resetting"):
+                self._episode_phase = "saving"
+            return
+
+        if "Reset the environment" in line:
+            self._episode_phase = "resetting"
+            return
+
+        if "Re-record episode" in line:
+            self._episode_phase = "recording"
+            return
+
+        if "Stop recording" in line:
+            if self._episode_phase in ("saving", "resetting"):
+                self._saved_episodes += 1
+            self._episode_phase = ""
+            return
+
+        m = _RE_FRAME_COUNT.search(line)
+        if m:
+            self._total_frames = int(m.group(1))
+
+    async def _send_key(self, key: bytes) -> None:
+        if self._process is None or self._process.stdin is None:
+            raise RuntimeError("No subprocess stdin available")
+        self._process.stdin.write(key)
+        await self._process.stdin.drain()
+
+    async def _graceful_stop(self) -> None:
+        """Send ESC for graceful stop, wait, fallback to SIGINT."""
+        if self._process is None:
+            return
+        # Send ESC key
+        if self._process.stdin is not None:
+            try:
+                self._process.stdin.write(b"\x1b\n")
+                await self._process.stdin.drain()
+            except (OSError, ConnectionResetError):
+                pass
+
+        # Wait for process to exit
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=_GRACEFUL_STOP_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("Subprocess did not exit in {}s, sending SIGINT", _GRACEFUL_STOP_TIMEOUT)
+            self._send_sigint()
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                self._process.kill()
+
+        await self._await_stdout_task()
+        self._close_stdin()
+        self._process = None
+        self._cleanup_temp_dirs()
+
+    async def _kill_subprocess(self) -> None:
+        if self._process is None:
+            return
+        self._close_stdin()
+        self._send_sigint()
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            self._process.kill()
+        await self._await_stdout_task()
+        self._process = None
+        self._cleanup_temp_dirs()
+
+    async def _await_stdout_task(self) -> None:
+        """Wait for the stdout reader to finish before resetting state."""
+        if self._stdout_task is not None:
+            try:
+                await asyncio.wait_for(self._stdout_task, timeout=2)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._stdout_task.cancel()
+            self._stdout_task = None
+        # Cancel the wait task since we're handling cleanup ourselves
+        if self._wait_task is not None:
+            self._wait_task.cancel()
+            try:
+                await self._wait_task
+            except asyncio.CancelledError:
+                pass
+            self._wait_task = None
+
+    def _send_sigint(self) -> None:
+        if self._process is None or self._process.returncode is not None:
+            return
+        try:
+            self._process.send_signal(signal.SIGINT)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def _close_stdin(self) -> None:
+        if self._process is not None and self._process.stdin is not None:
+            try:
+                self._process.stdin.close()
+            except OSError:
+                pass
+
+    def _cleanup_temp_dirs(self) -> None:
+        for d in self._temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+        self._temp_dirs.clear()
+
+    def _set_state(self, new_state: str) -> None:
+        if self._state == new_state:
+            return
+        self._state = new_state
+        status = self.get_status()
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._emit_state_change(status), name="dashboard-notify")
+        except RuntimeError:
+            pass  # No event loop — skip notification (e.g. during tests)
+
+    async def _emit_state_change(self, status: dict[str, Any]) -> None:
+        if self._on_state_change is None:
+            return
+        try:
+            result = self._on_state_change(status)
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            logger.exception("Error in dashboard state change callback")
