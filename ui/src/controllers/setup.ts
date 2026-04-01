@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { postJson } from './api'
 
 const API = '/api/dashboard/setup'
 
@@ -65,19 +66,6 @@ interface SetupStore {
   removeCamera: (alias: string) => Promise<void>
 
   loadCurrentSetup: () => Promise<void>
-}
-
-async function postJson(url: string, body?: unknown) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || `HTTP ${res.status}`)
-  }
-  return res.json()
 }
 
 let motionTimer: ReturnType<typeof setInterval> | null = null
