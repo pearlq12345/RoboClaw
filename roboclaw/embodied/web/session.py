@@ -109,6 +109,7 @@ class RobotSession:
         task: str,
         fps: int = 30,
         num_episodes: int = 10,
+        episode_time_s: int = 300,
     ) -> None:
         from datetime import datetime
         dataset_name = f"{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -125,7 +126,7 @@ class RobotSession:
             self._state = "preparing"
         import time; time.sleep(5)
         with self._lock:
-            argv = self._build_record_argv(dataset_name, task, fps, num_episodes)
+            argv = self._build_record_argv(dataset_name, task, fps, num_episodes, episode_time_s)
             self._state = "recording"
             self._launch_subprocess(argv)
             logger.info("Recording started: dataset={}, episodes={}", dataset_name, num_episodes)
@@ -293,7 +294,7 @@ class RobotSession:
         )
 
     def _build_record_argv(
-        self, dataset_name: str, task: str, fps: int, num_episodes: int,
+        self, dataset_name: str, task: str, fps: int, num_episodes: int, episode_time_s: int,
     ) -> list[str]:
         from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
 
@@ -308,6 +309,7 @@ class RobotSession:
             "task": task,
             "fps": fps,
             "num_episodes": num_episodes,
+            "episode_time_s": episode_time_s,
         }
 
         if len(followers) == 1:
