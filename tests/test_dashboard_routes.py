@@ -89,7 +89,7 @@ class TestSessionLifecycle:
 class TestHardwareStatus:
     def test_hardware_status(self, client, monkeypatch):
         monkeypatch.setattr(
-            "roboclaw.embodied.service.load_setup",
+            "roboclaw.embodied.service.queries.load_setup",
             lambda: {"arms": [], "cameras": []},
         )
         resp = client.get("/api/dashboard/hardware-status")
