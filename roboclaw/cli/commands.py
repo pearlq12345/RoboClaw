@@ -638,7 +638,7 @@ def web_start(
         logging.basicConfig(level=logging.DEBUG)
 
     try:
-        from roboclaw.web.server import main as run_web_server
+        from roboclaw.http.server import main as run_web_server
     except ImportError as exc:
         console.print("[red]Error:[/red] Web dependencies are not installed.")
         console.print('Install them with: [cyan]pip install -e ".[web]"[/cyan]')

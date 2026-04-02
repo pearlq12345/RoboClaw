@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from roboclaw.config.loader import save_config, set_config_path
 from roboclaw.config.schema import Config
-from roboclaw.web.server import create_app
+from roboclaw.http.server import create_app
 
 
 def test_provider_status_and_save_roundtrip(tmp_path: Path) -> None:
@@ -54,7 +54,7 @@ def test_provider_save_auto_discovers_model(tmp_path: Path, monkeypatch) -> None
         assert api_key == "sk-test"
         return "gpt-4.1-mini"
 
-    monkeypatch.setattr("roboclaw.web.server._discover_custom_model", _fake_discover)
+    monkeypatch.setattr("roboclaw.http.server._discover_custom_model", _fake_discover)
 
     app = create_app(config_path=str(config_path), workspace=str(tmp_path / "workspace"))
     client = TestClient(app)
