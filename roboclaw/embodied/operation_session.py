@@ -204,44 +204,51 @@ class OperationSession:
         """Start a Rerun server, auto-retry on port conflict. Returns True on success."""
         if self._rerun_process is not None:
             return True
-        grpc_port = _RERUN_GRPC_PORT
-        web_port = _RERUN_WEB_PORT
-        for attempt in range(5):
+        grpc, web = _RERUN_GRPC_PORT, _RERUN_WEB_PORT
+        for _ in range(5):
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "rerun", "--serve-web",
-                    "--port", str(grpc_port),
-                    "--web-viewer-port", str(web_port),
-                    "--bind", _RERUN_BIND,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                for _ in range(40):
-                    if proc.returncode is not None:
-                        break
-                    await asyncio.sleep(0.05)
-                if proc.returncode is not None:
-                    stderr = await proc.stderr.read() if proc.stderr else b""
-                    msg = stderr.decode(errors="replace")[:200]
-                    if "Address already in use" in msg:
-                        logger.info("Rerun port {} in use, trying next", web_port)
-                        grpc_port += 2
-                        web_port += 2
-                        continue
-                    logger.warning("Rerun server exited (code={}): {}", proc.returncode, msg)
-                    return False
-                self._rerun_process = proc
-                self._rerun_grpc_port = grpc_port
-                self._rerun_web_port = web_port
-                logger.info("Rerun server started (gRPC={}, web={})", grpc_port, web_port)
-                return True
+                result = await self._try_launch_rerun(grpc, web)
             except FileNotFoundError:
                 logger.warning("Rerun CLI not found — visualization disabled")
                 return False
             except OSError as exc:
-                logger.warning("Failed to start Rerun server: {}", exc)
+                logger.warning("Failed to start Rerun: {}", exc)
                 return False
+            if result is True:
+                return True
+            if result is False:
+                return False
+            grpc += 2
+            web += 2
         logger.warning("Rerun: all port attempts exhausted")
+        return False
+
+    async def _try_launch_rerun(self, grpc_port: int, web_port: int) -> bool | None:
+        """Try one port pair. Returns True=success, False=fatal, None=port conflict."""
+        proc = await asyncio.create_subprocess_exec(
+            "rerun", "--serve-web",
+            "--port", str(grpc_port),
+            "--web-viewer-port", str(web_port),
+            "--bind", _RERUN_BIND,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        for _ in range(40):
+            if proc.returncode is not None:
+                break
+            await asyncio.sleep(0.05)
+        if proc.returncode is None:
+            self._rerun_process = proc
+            self._rerun_grpc_port = grpc_port
+            self._rerun_web_port = web_port
+            logger.info("Rerun server started (gRPC={}, web={})", grpc_port, web_port)
+            return True
+        stderr = await proc.stderr.read() if proc.stderr else b""
+        msg = stderr.decode(errors="replace")[:200]
+        if "Address already in use" in msg:
+            logger.info("Rerun port {} in use, trying next", web_port)
+            return None
+        logger.warning("Rerun exited (code={}): {}", proc.returncode, msg)
         return False
 
     async def _stop_rerun_server(self) -> None:
@@ -259,7 +266,7 @@ class OperationSession:
                 proc.kill()
                 await proc.wait()
             except (ProcessLookupError, PermissionError):
-                pass
+                logger.debug("Rerun process already terminated")
         logger.info("Rerun server stopped")
 
     def _require_idle_or_raise(self) -> None:
@@ -401,7 +408,7 @@ class OperationSession:
                 self._process.stdin.write(b"\x1b\n")
                 await self._process.stdin.drain()
             except (OSError, ConnectionResetError):
-                pass
+                logger.debug("Stdin write failed during graceful stop")
 
         # Wait for process to exit
         try:
@@ -464,7 +471,7 @@ class OperationSession:
             try:
                 self._process.stdin.close()
             except OSError:
-                pass
+                logger.debug("Stdin already closed")
 
     @staticmethod
     def _flush_serial_ports(ports: list[str]) -> None:
@@ -476,7 +483,7 @@ class OperationSession:
                     ser.reset_input_buffer()
                     ser.reset_output_buffer()
             except (OSError, serial.SerialException):
-                pass
+                logger.debug("Serial flush skipped for %s", port)
 
     def _release_port_locks(self) -> None:
         for port in self._held_port_locks:
@@ -494,7 +501,7 @@ class OperationSession:
             loop = asyncio.get_running_loop()
             loop.create_task(self._emit_state_change(status), name="dashboard-notify")
         except RuntimeError:
-            pass  # No event loop — skip notification (e.g. during tests)
+            logger.debug("No event loop for state notification")
 
     async def _emit_state_change(self, status: dict[str, Any]) -> None:
         if self._on_state_change is None:

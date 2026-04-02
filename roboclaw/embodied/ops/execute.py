@@ -29,6 +29,8 @@ from roboclaw.embodied.ops.helpers import (
     _validate_dataset_name,
     _validate_pairing,
 )
+from loguru import logger
+
 from roboclaw.embodied.embodiment.arm.registry import get_family
 from roboclaw.embodied.sensor.camera import resolve_cameras
 
@@ -81,6 +83,7 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
     try:
         from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
     except ImportError:
+        logger.debug("lerobot.motors not installed, skipping EEPROM sync")
         return
 
     from roboclaw.embodied.embodiment.arm.registry import get_family, get_role
@@ -112,7 +115,7 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
             bus.write("Min_Position_Limit", name, cfg["range_min"], normalize=False)
             bus.write("Max_Position_Limit", name, cfg["range_max"], normalize=False)
     except (OSError, ConnectionError):
-        pass
+        logger.debug("Motor EEPROM sync failed for %s", arm.get("alias", "?"))
     finally:
         bus.disconnect()
 
