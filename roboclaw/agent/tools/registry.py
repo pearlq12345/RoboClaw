@@ -31,6 +31,10 @@ class ToolRegistry:
         """Check if a tool is registered."""
         return name in self._tools
 
+    def iter_tools(self):
+        """Iterate over all registered Tool instances."""
+        return self._tools.values()
+
     def get_definitions(self) -> list[dict[str, Any]]:
         """Get all tool definitions in OpenAI format."""
         return [tool.to_schema() for tool in self._tools.values()]

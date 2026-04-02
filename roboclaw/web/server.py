@@ -453,7 +453,7 @@ def create_app(
         from roboclaw.embodied.tool import EmbodiedToolGroup
 
         agent.embodied_service = embodied_service
-        for tool in agent.tools._tools.values():
+        for tool in agent.tools.iter_tools():
             if isinstance(tool, EmbodiedToolGroup):
                 tool.embodied_service = embodied_service
 
