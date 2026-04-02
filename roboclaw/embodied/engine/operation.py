@@ -45,7 +45,7 @@ _RERUN_BIND = "0.0.0.0"
 StatusCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
 
-class OperationSession:
+class OperationEngine:
     """Manages one LeRobot subprocess (teleop or recording) at a time."""
 
     def __init__(self, on_state_change: StatusCallback | None = None) -> None:

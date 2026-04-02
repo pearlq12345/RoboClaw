@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from roboclaw.embodied.calibration import CalibrationSession
+from roboclaw.embodied.engine import CalibrationSession
 from roboclaw.embodied.port_lock import port_locks
 from roboclaw.embodied.setup import load_setup, mark_arm_calibrated
 

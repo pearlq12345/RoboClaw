@@ -17,7 +17,7 @@ from roboclaw.embodied.hardware_monitor import (
     check_arm_status,
     check_camera_status,
 )
-from roboclaw.embodied.operation_session import OperationSession, StatusCallback
+from roboclaw.embodied.engine import OperationEngine, StatusCallback
 from roboclaw.embodied.ops.helpers import group_arms
 from roboclaw.embodied.setup import load_setup
 
@@ -63,7 +63,7 @@ class EmbodiedService:
         on_state_change: StatusCallback | None = None,
     ) -> None:
         self._monitor = hardware_monitor
-        self._session = OperationSession(on_state_change=self._on_session_state_change)
+        self._session = OperationEngine(on_state_change=self._on_session_state_change)
         self._external_callback = on_state_change
         self._recording_started = False
         self._hw_lock_holder: str = ""
@@ -180,7 +180,7 @@ class EmbodiedService:
     # -- Internal: state change routing ---------------------------------------
 
     async def _on_session_state_change(self, status: dict[str, Any]) -> None:
-        """Called by OperationSession on every state transition.
+        """Called by OperationEngine on every state transition.
 
         Only resets recording_active when transitioning from an active
         recording (not from teleop or other states).

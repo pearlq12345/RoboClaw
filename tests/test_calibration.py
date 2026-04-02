@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from roboclaw.embodied.calibration import CalibrationSession
+from roboclaw.embodied.engine import CalibrationSession
 from roboclaw.embodied.embodiment.arm.registry import SO101
 
 
