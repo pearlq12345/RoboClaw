@@ -36,7 +36,7 @@ def _make_app(session_busy: bool = False) -> FastAPI:
     svc = MagicMock()
     svc.busy = session_busy
     if session_busy:
-        svc.acquire_hardware.side_effect = RuntimeError("Hardware busy: recording")
+        svc.acquire_embodiment.side_effect = RuntimeError("Embodiment busy: recording")
 
     # Wire scanner methods through to a real HardwareScanner for state-dependent tests
     scanner = HardwareScanner()

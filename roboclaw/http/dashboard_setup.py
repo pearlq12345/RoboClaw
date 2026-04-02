@@ -38,9 +38,9 @@ class RenameRequest(BaseModel):
 
 
 def _try_acquire(service: Any, reason: str) -> None:
-    """Acquire hardware lock, mapping RuntimeError to HTTP 409."""
+    """Acquire embodiment lock, mapping RuntimeError to HTTP 409."""
     try:
-        service.acquire_hardware(reason)
+        service.acquire_embodiment(reason)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -62,7 +62,7 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
         finally:
-            service.release_hardware()
+            service.release_embodiment()
         service.stop_motion_detection()
         return {"ports": ports, "cameras": cameras}
 
@@ -77,7 +77,7 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
         except RuntimeError as exc:
             raise HTTPException(400, str(exc)) from exc
         finally:
-            service.release_hardware()
+            service.release_embodiment()
         return previews
 
     @app.get("/api/dashboard/setup/camera-preview/{index}")
@@ -95,10 +95,10 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
         try:
             port_count = await asyncio.to_thread(service.start_motion_detection)
         except RuntimeError as exc:
-            service.release_hardware()
+            service.release_embodiment()
             raise HTTPException(400, str(exc)) from exc
         except Exception:
-            service.release_hardware()
+            service.release_embodiment()
             raise
         return {"status": "watching", "port_count": port_count}
 
@@ -113,7 +113,7 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
     @app.post("/api/dashboard/setup/motion/stop")
     async def motion_stop() -> dict[str, str]:
         service.stop_motion_detection()
-        service.release_hardware()
+        service.release_embodiment()
         return {"status": "stopped"}
 
     @app.post("/api/dashboard/setup/arm")
