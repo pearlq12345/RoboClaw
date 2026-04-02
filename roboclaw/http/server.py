@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from roboclaw.web.runtime import WebRuntime
+    from roboclaw.http.runtime import WebRuntime
 
 import httpx
 from fastapi import Body, FastAPI
@@ -203,7 +203,7 @@ def create_app(
     port: int | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with the full gateway runtime."""
-    from roboclaw.web.runtime import WebRuntime
+    from roboclaw.http.runtime import WebRuntime
 
     config = load_runtime_config(config_path, workspace)
     sync_workspace_templates(config.workspace_path)
@@ -232,7 +232,7 @@ def create_app(
 
     # Dashboard routes
     if web_ch is not None:
-        from roboclaw.web.dashboard import register_dashboard_routes
+        from roboclaw.http.dashboard import register_dashboard_routes
 
         app.state.hardware_monitor = runtime.hw_monitor
         app.state.embodied_service = runtime.embodied_service

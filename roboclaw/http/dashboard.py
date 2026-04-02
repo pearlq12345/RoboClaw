@@ -17,8 +17,8 @@ from pydantic import BaseModel
 from roboclaw.embodied.hardware_monitor import HardwareMonitor
 from roboclaw.embodied.service import EmbodiedService
 from roboclaw.embodied.setup import load_setup
-from roboclaw.web.dashboard_datasets import delete_dataset, get_dataset_info, list_datasets
-from roboclaw.web.troubleshooting import generate_fault_snapshot, get_troubleshoot_map_json
+from roboclaw.http.dashboard_datasets import delete_dataset, get_dataset_info, list_datasets
+from roboclaw.http.troubleshooting import generate_fault_snapshot, get_troubleshoot_map_json
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +181,10 @@ def register_dashboard_routes(
 
     # -- Setup wizard routes -----------------------------------------------
 
-    from roboclaw.web.dashboard_setup import register_setup_routes
+    from roboclaw.http.dashboard_setup import register_setup_routes
     register_setup_routes(app, service)
 
     # -- Calibration routes ------------------------------------------------
 
-    from roboclaw.web.dashboard_calibrate import register_calibrate_routes
+    from roboclaw.http.dashboard_calibrate import register_calibrate_routes
     register_calibrate_routes(app, service)

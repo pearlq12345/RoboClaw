@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from roboclaw.embodied.service import EmbodiedService
-from roboclaw.web.dashboard import register_dashboard_routes
+from roboclaw.http.dashboard import register_dashboard_routes
 
 
 @pytest.fixture()
@@ -107,7 +107,7 @@ class TestHardwareStatus:
 class TestDatasets:
     def test_list_datasets(self, client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "roboclaw.web.dashboard.load_setup",
+            "roboclaw.http.dashboard.load_setup",
             lambda: {"datasets": {"root": str(tmp_path)}},
         )
         resp = client.get("/api/dashboard/datasets")
@@ -117,7 +117,7 @@ class TestDatasets:
     def test_list_datasets_no_root_uses_default(self, client, monkeypatch):
         """When no datasets root is configured, falls back to default path."""
         monkeypatch.setattr(
-            "roboclaw.web.dashboard.load_setup",
+            "roboclaw.http.dashboard.load_setup",
             lambda: {"datasets": {}},
         )
         resp = client.get("/api/dashboard/datasets")
@@ -125,7 +125,7 @@ class TestDatasets:
 
     def test_delete_nonexistent(self, client, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "roboclaw.web.dashboard.load_setup",
+            "roboclaw.http.dashboard.load_setup",
             lambda: {"datasets": {"root": str(tmp_path)}},
         )
         resp = client.delete("/api/dashboard/datasets/nope")

@@ -11,7 +11,7 @@ pytest.importorskip("fastapi")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from roboclaw.web.dashboard_setup import register_setup_routes
+from roboclaw.http.dashboard_setup import register_setup_routes
 
 
 _MOCK_PORTS = [
@@ -147,7 +147,7 @@ def test_motion_stop_clears_state() -> None:
 def test_add_arm() -> None:
     app = _make_app()
     client = TestClient(app)
-    with patch("roboclaw.web.dashboard_setup.set_arm") as mock_set:
+    with patch("roboclaw.http.dashboard_setup.set_arm") as mock_set:
         resp = client.post(
             "/api/dashboard/setup/arm",
             json={"alias": "left", "arm_type": "so101_follower", "port_id": "/dev/serial/by-id/usb-ABC"},
@@ -160,7 +160,7 @@ def test_add_arm() -> None:
 def test_remove_arm() -> None:
     app = _make_app()
     client = TestClient(app)
-    with patch("roboclaw.web.dashboard_setup.remove_arm") as mock_rm:
+    with patch("roboclaw.http.dashboard_setup.remove_arm") as mock_rm:
         resp = client.delete("/api/dashboard/setup/arm/left")
     assert resp.status_code == 200
     assert resp.json()["status"] == "removed"
@@ -170,7 +170,7 @@ def test_remove_arm() -> None:
 def test_rename_arm() -> None:
     app = _make_app()
     client = TestClient(app)
-    with patch("roboclaw.web.dashboard_setup.rename_arm") as mock_rn:
+    with patch("roboclaw.http.dashboard_setup.rename_arm") as mock_rn:
         resp = client.patch(
             "/api/dashboard/setup/arm/left/rename",
             json={"new_alias": "right"},
@@ -183,7 +183,7 @@ def test_rename_arm() -> None:
 def test_add_camera() -> None:
     app = _make_app()
     client = TestClient(app)
-    with patch("roboclaw.web.dashboard_setup.set_camera") as mock_set:
+    with patch("roboclaw.http.dashboard_setup.set_camera") as mock_set:
         resp = client.post(
             "/api/dashboard/setup/camera",
             json={"alias": "top", "camera_index": 0},
@@ -196,7 +196,7 @@ def test_add_camera() -> None:
 def test_remove_camera() -> None:
     app = _make_app()
     client = TestClient(app)
-    with patch("roboclaw.web.dashboard_setup.remove_camera") as mock_rm:
+    with patch("roboclaw.http.dashboard_setup.remove_camera") as mock_rm:
         resp = client.delete("/api/dashboard/setup/camera/top")
     assert resp.status_code == 200
     mock_rm.assert_called_once_with("top")
@@ -210,7 +210,7 @@ def test_current_setup() -> None:
         "cameras": [{"alias": "top"}],
         "hands": [],
     }
-    with patch("roboclaw.web.dashboard_setup.load_setup", return_value=mock_setup):
+    with patch("roboclaw.http.dashboard_setup.load_setup", return_value=mock_setup):
         resp = client.get("/api/dashboard/setup/current")
     assert resp.status_code == 200
     data = resp.json()
