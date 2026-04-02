@@ -139,48 +139,20 @@ class EmbodiedService:
     # -- CLI TTY paths --------------------------------------------------------
 
     async def run_teleop_tty(self, tty_handoff: Any, setup: dict[str, Any], kwargs: dict[str, Any]) -> str:
-        """CLI path: busy check + prepare + TTY handoff."""
+        """CLI path: busy check then delegate to existing _do_teleoperate."""
         if self.busy:
             return "Another operation is in progress. Stop it first."
-        from roboclaw.embodied.ops.helpers import ActionError, prepare_teleop
-        from roboclaw.embodied.runner import LocalLeRobotRunner
+        from roboclaw.embodied.ops.execute import _do_teleoperate
 
-        try:
-            argv = prepare_teleop(setup, kwargs)
-        except ActionError as exc:
-            return str(exc)
-        from roboclaw.embodied.ops.helpers import _format_tty_failure, _is_interrupted, _run_tty
-
-        rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-teleoperate")
-        if _is_interrupted(rc):
-            return "interrupted"
-        if rc == 0:
-            return "Teleoperation finished."
-        return _format_tty_failure("Teleoperation failed", rc, stderr_text)
+        return await _do_teleoperate(setup, kwargs, tty_handoff)
 
     async def run_record_tty(self, tty_handoff: Any, setup: dict[str, Any], kwargs: dict[str, Any]) -> str:
-        """CLI path: busy check + prepare + TTY handoff."""
+        """CLI path: busy check then delegate to existing _do_record."""
         if self.busy:
             return "Another operation is in progress. Stop it first."
-        if kwargs.get("checkpoint_path"):
-            from roboclaw.embodied.ops.execute import _do_record
+        from roboclaw.embodied.ops.execute import _do_record
 
-            return await _do_record(setup, kwargs, tty_handoff)
-        from roboclaw.embodied.ops.helpers import ActionError, prepare_record
-        from roboclaw.embodied.runner import LocalLeRobotRunner
-
-        try:
-            argv, dataset_name, dataset_root = prepare_record(setup, kwargs)
-        except ActionError as exc:
-            return str(exc)
-        from roboclaw.embodied.ops.helpers import _format_tty_failure, _is_interrupted, _run_tty
-
-        rc, stderr_text = await _run_tty(tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record")
-        if _is_interrupted(rc):
-            return "interrupted"
-        if rc == 0:
-            return "Recording finished."
-        return _format_tty_failure("Recording failed", rc, stderr_text)
+        return await _do_record(setup, kwargs, tty_handoff)
 
     # -- Shutdown -------------------------------------------------------------
 

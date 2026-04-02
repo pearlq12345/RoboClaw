@@ -296,7 +296,7 @@ async def _dispatch(
     # Route teleop/record through EmbodiedService for busy checks
     if embodied_service is not None and action == "teleoperate":
         return await embodied_service.run_teleop_tty(tty_handoff, setup, kwargs)
-    if embodied_service is not None and action == "record" and not kwargs.get("checkpoint_path"):
+    if embodied_service is not None and action == "record":
         return await embodied_service.run_record_tty(tty_handoff, setup, kwargs)
 
     try:
