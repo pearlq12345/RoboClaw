@@ -9,15 +9,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from roboclaw.embodied.identify import (
-    MOTION_THRESHOLD,
-    _filter_feetech_ports,
-    _resolve_port_by_id,
-    _resolve_port_path,
-    detect_motion,
-    read_positions,
-)
-from roboclaw.embodied.scan import capture_camera_frames, scan_cameras, scan_serial_ports
+from roboclaw.embodied.engine import HardwareScanner
 from roboclaw.embodied.setup import (
     load_setup,
     remove_arm,
@@ -26,16 +18,6 @@ from roboclaw.embodied.setup import (
     set_arm,
     set_camera,
 )
-
-
-class SetupWizardState:
-    """Transient state for the setup wizard session."""
-
-    def __init__(self) -> None:
-        self.scanned_ports: list[dict] = []
-        self.scanned_cameras: list[dict] = []
-        self.baselines: dict[str, dict[int, int]] = {}
-        self.active = False  # True when motion detection is running
 
 
 # Request models
@@ -59,8 +41,8 @@ class RenameRequest(BaseModel):
 def register_setup_routes(app: FastAPI) -> None:
     """Register setup wizard API endpoints."""
 
-    wizard = SetupWizardState()
-    app.state.setup_wizard = wizard
+    scanner = HardwareScanner()
+    app.state.setup_wizard = scanner
 
     def _get_service():
         return getattr(app.state, "embodied_service", None)
@@ -82,26 +64,25 @@ def register_setup_routes(app: FastAPI) -> None:
     async def setup_scan() -> dict[str, Any]:
         _acquire_hardware("scanning")
         try:
-            ports = await asyncio.to_thread(_scan_and_probe)
-            cameras = await asyncio.to_thread(scan_cameras)
+            ports = await asyncio.to_thread(scanner.scan_ports)
+            cameras = await asyncio.to_thread(scanner.scan_cameras_list)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         finally:
             _release_hardware()
-        wizard.scanned_ports = ports
-        wizard.scanned_cameras = cameras
-        wizard.active = False
-        wizard.baselines = {}
+        scanner.stop_motion_detection()
         return {"ports": ports, "cameras": cameras}
 
     @app.post("/api/dashboard/setup/camera-previews")
     async def setup_camera_previews() -> list[dict]:
         _acquire_hardware("camera-preview")
         try:
-            if not wizard.scanned_cameras:
-                raise HTTPException(400, "No cameras scanned. Run scan first.")
-            output_dir = Path("/tmp/roboclaw-camera-previews")
+            output_dir = str(Path("/tmp/roboclaw-camera-previews"))
             previews = await asyncio.to_thread(
-                capture_camera_frames, wizard.scanned_cameras, output_dir,
+                scanner.capture_camera_previews, output_dir,
             )
+        except RuntimeError as exc:
+            raise HTTPException(400, str(exc)) from exc
         finally:
             _release_hardware()
         return previews
@@ -119,31 +100,25 @@ def register_setup_routes(app: FastAPI) -> None:
     async def motion_start() -> dict[str, Any]:
         _acquire_hardware("motion-detection")
         try:
-            if not wizard.scanned_ports:
-                raise HTTPException(400, "No scanned ports. Run scan first.")
-            baselines = await asyncio.to_thread(
-                _read_all_baselines, wizard.scanned_ports,
-            )
+            port_count = await asyncio.to_thread(scanner.start_motion_detection)
+        except RuntimeError as exc:
+            _release_hardware()
+            raise HTTPException(400, str(exc)) from exc
         except Exception:
             _release_hardware()
             raise
-        wizard.baselines = baselines
-        wizard.active = True
-        return {"status": "watching", "port_count": len(baselines)}
+        return {"status": "watching", "port_count": port_count}
 
     @app.get("/api/dashboard/setup/motion/poll")
     async def motion_poll() -> dict[str, Any]:
-        if not wizard.active or not wizard.baselines:
+        if not scanner.motion_active:
             raise HTTPException(400, "Motion detection not started")
-        results = await asyncio.to_thread(
-            _poll_motion, wizard.scanned_ports, wizard.baselines,
-        )
+        results = await asyncio.to_thread(scanner.poll_motion)
         return {"ports": results}
 
     @app.post("/api/dashboard/setup/motion/stop")
     async def motion_stop() -> dict[str, str]:
-        wizard.active = False
-        wizard.baselines = {}
+        scanner.stop_motion_detection()
         _release_hardware()
         return {"status": "stopped"}
 
@@ -180,106 +155,3 @@ def register_setup_routes(app: FastAPI) -> None:
             "cameras": setup.get("cameras", []),
             "hands": setup.get("hands", []),
         }
-
-
-def _scan_and_probe() -> list[dict]:
-    ports = scan_serial_ports()
-    try:
-        return _filter_feetech_ports(ports)
-    except Exception as exc:
-        if "Permission denied" not in str(exc) and "Errno 13" not in str(exc):
-            raise
-        # Auto-fix: install udev rules and retry
-        if _try_fix_serial_permissions():
-            return _filter_feetech_ports(ports)
-        raise HTTPException(
-            status_code=403,
-            detail="Serial port permission denied. Run: bash scripts/setup-udev.sh",
-        ) from exc
-
-
-def _try_fix_serial_permissions() -> bool:
-    """Attempt to install udev rules for serial device access. Returns True on success."""
-    import subprocess
-
-    from loguru import logger
-
-    # Try passwordless sudo first
-    udev_rule = (
-        'KERNEL=="ttyACM[0-9]*", MODE="0666"\n'
-        'KERNEL=="ttyUSB[0-9]*", MODE="0666"\n'
-        'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0666"\n'
-        'SUBSYSTEM=="video4linux", MODE="0666"\n'
-    )
-    try:
-        # Write rule and reload
-        result = subprocess.run(
-            ["sudo", "-n", "tee", "/etc/udev/rules.d/99-roboclaw.rules"],
-            input=udev_rule.encode(), capture_output=True, timeout=5,
-        )
-        if result.returncode != 0:
-            logger.warning("Passwordless sudo not available for udev rules")
-            return _try_chmod_devices()
-        subprocess.run(["sudo", "-n", "udevadm", "control", "--reload-rules"],
-                       capture_output=True, timeout=5)
-        subprocess.run(["sudo", "-n", "udevadm", "trigger"],
-                       capture_output=True, timeout=5)
-        logger.info("Installed udev rules for serial device access")
-        return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return _try_chmod_devices()
-
-
-def _try_chmod_devices() -> bool:
-    """Fallback: chmod individual device files."""
-    import os
-    import subprocess
-
-    from loguru import logger
-
-    from roboclaw.embodied.scan import list_serial_device_paths
-    devices = list_serial_device_paths()
-    if not devices:
-        return False
-    for dev in devices:
-        try:
-            os.chmod(dev, 0o666)
-        except PermissionError:
-            # Try sudo chmod
-            result = subprocess.run(
-                ["sudo", "-n", "chmod", "666", dev],
-                capture_output=True, timeout=5,
-            )
-            if result.returncode != 0:
-                logger.warning("Cannot chmod {}: no passwordless sudo", dev)
-                return False
-    logger.info("Fixed serial device permissions via chmod")
-    return True
-
-
-def _read_all_baselines(ports: list[dict]) -> dict[str, dict[int, int]]:
-    baselines: dict[str, dict[int, int]] = {}
-    for port in ports:
-        path = _resolve_port_path(port)
-        baselines[path] = read_positions(path, port["motor_ids"])
-    return baselines
-
-
-def _poll_motion(
-    ports: list[dict], baselines: dict[str, dict[int, int]],
-) -> list[dict]:
-    results = []
-    for port in ports:
-        path = _resolve_port_path(port)
-        current = read_positions(path, port["motor_ids"])
-        baseline = baselines.get(path, {})
-        delta = detect_motion(baseline, current)
-        results.append({
-            "port_id": _resolve_port_by_id(port),
-            "dev": port.get("dev", ""),
-            "by_id": port.get("by_id", ""),
-            "motor_ids": port.get("motor_ids", []),
-            "delta": delta,
-            "moved": delta > MOTION_THRESHOLD,
-        })
-    return results

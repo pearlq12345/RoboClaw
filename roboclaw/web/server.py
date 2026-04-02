@@ -302,8 +302,8 @@ def _check_device_permissions() -> None:
     if not denied:
         return
     logger.warning("Serial devices without permission: {}", denied)
-    from roboclaw.web.dashboard_setup import _try_fix_serial_permissions
-    if _try_fix_serial_permissions():
+    from roboclaw.embodied.engine.scanner import fix_serial_permissions
+    if fix_serial_permissions():
         logger.info("Auto-fixed serial device permissions")
     else:
         logger.warning(
