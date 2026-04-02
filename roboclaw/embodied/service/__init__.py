@@ -10,43 +10,12 @@ from __future__ import annotations
 from typing import Any
 
 from roboclaw.embodied.engine import StatusCallback
-from roboclaw.embodied.hardware_monitor import (
-    ArmStatus,
-    CameraStatus,
-    HardwareMonitor,
-    check_arm_status,
-    check_camera_status,
-)
-from roboclaw.embodied.ops.helpers import group_arms
+from roboclaw.embodied.hardware_monitor import HardwareMonitor
 from roboclaw.embodied.service.calibration import CalibrationService
+from roboclaw.embodied.service.config import ConfigService
+from roboclaw.embodied.service.queries import QueryService
 from roboclaw.embodied.service.scanning import ScanningService
 from roboclaw.embodied.service.session import SessionService
-from roboclaw.embodied.setup import load_setup
-
-
-def _compute_readiness(
-    arms: list[dict[str, Any]],
-    arm_statuses: list[ArmStatus],
-    camera_statuses: list[CameraStatus],
-) -> tuple[bool, list[str]]:
-    missing: list[str] = []
-    grouped = group_arms(arms)
-    if not grouped["followers"]:
-        missing.append("No follower arm configured")
-    if not grouped["leaders"]:
-        missing.append("No leader arm configured")
-    for s in arm_statuses:
-        if not s.connected:
-            missing.append(f"Arm '{s.alias}' is disconnected")
-        elif not s.calibrated:
-            missing.append(f"Arm '{s.alias}' is not calibrated")
-    for s in camera_statuses:
-        if not s.connected:
-            missing.append(f"Camera '{s.alias}' is disconnected")
-    f, l = grouped["followers"], grouped["leaders"]
-    if f and l and len(f) != len(l):
-        missing.append(f"Follower/leader count mismatch: {len(f)} vs {len(l)}")
-    return len(missing) == 0, missing
 
 
 class EmbodiedService:
@@ -75,6 +44,8 @@ class EmbodiedService:
         self.session = SessionService(self, external_callback=on_state_change)
         self.calibration = CalibrationService(self)
         self.scanning = ScanningService(self)
+        self.config = ConfigService(self)
+        self.queries = QueryService(self)
 
     # -- Embodiment lock ------------------------------------------------------
 
@@ -176,28 +147,13 @@ class EmbodiedService:
     def stop_motion_detection(self) -> None:
         self.scanning.stop_motion_detection()
 
-    # -- Hardware status / servo (stays here until queries.py) ----------------
+    # -- Delegated: queries (backward-compat wrappers) -------------------------
 
     def get_hardware_status(self) -> dict[str, Any]:
-        setup = load_setup()
-        arms = setup.get("arms", [])
-        cameras = setup.get("cameras", [])
-        arm_statuses = [check_arm_status(a) for a in arms]
-        camera_statuses = [check_camera_status(c) for c in cameras]
-        ready, missing = _compute_readiness(arms, arm_statuses, camera_statuses)
-        return {
-            "ready": ready,
-            "missing": missing,
-            "arms": [s.to_dict() for s in arm_statuses],
-            "cameras": [s.to_dict() for s in camera_statuses],
-            "session_busy": self.session.busy,
-        }
+        return self.queries.get_hardware_status()
 
     def read_servo_positions(self) -> dict[str, Any]:
-        if self.busy:
-            return {"error": "busy", "arms": {}}
-        from roboclaw.embodied.motors import read_servo_positions
-        return read_servo_positions()
+        return self.queries.read_servo_positions()
 
     # -- Shutdown -------------------------------------------------------------
 
