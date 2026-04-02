@@ -65,12 +65,14 @@ class AgentLoop:
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
         tty_handoff: Any = None,
+        embodied_service: Any = None,
     ):
         from roboclaw.config.schema import ExecToolConfig, WebSearchConfig
 
         self.bus = bus
         self.channels_config = channels_config
         self.tty_handoff = tty_handoff
+        self.embodied_service = embodied_service
         self.provider = provider
         self.workspace = workspace
         self.model = model or provider.get_default_model()
@@ -137,6 +139,7 @@ class AgentLoop:
         if not self.restrict_to_workspace:
             from roboclaw.embodied.tool import create_embodied_tools
             for tool in create_embodied_tools(tty_handoff=self.tty_handoff):
+                tool.embodied_service = self.embodied_service
                 self.tools.register(tool)
 
     async def _connect_mcp(self) -> None:

@@ -708,6 +708,10 @@ def agent(
             if _thinking:
                 _thinking.resume()
 
+    from roboclaw.embodied.service import EmbodiedService
+
+    embodied_service = EmbodiedService()
+
     agent_loop = AgentLoop(
         bus=bus,
         provider=provider,
@@ -723,6 +727,7 @@ def agent(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         tty_handoff=_embodied_tty_handoff,
+        embodied_service=embodied_service,
     )
 
     # Shared reference for progress callbacks

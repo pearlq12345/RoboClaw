@@ -242,6 +242,7 @@ class EmbodiedToolGroup(Tool):
         self._group_name = group_name
         self._spec = spec
         self._tty_handoff = tty_handoff
+        self.embodied_service = None  # Set after construction for lazy binding
 
     @property
     def name(self) -> str:
@@ -259,7 +260,7 @@ class EmbodiedToolGroup(Tool):
         action = kwargs.get("action", "")
         if action not in self._spec["actions"]:
             return f"Unknown action '{action}' for tool {self._group_name}."
-        return await _dispatch(action, kwargs, self._tty_handoff)
+        return await _dispatch(action, kwargs, self._tty_handoff, self.embodied_service)
 
 
 def create_embodied_tools(tty_handoff: Any = None) -> list[EmbodiedToolGroup]:
@@ -278,7 +279,9 @@ _NO_SETUP_ACTIONS = frozenset({
 })
 
 
-async def _dispatch(action: str, kwargs: dict[str, Any], tty_handoff: Any) -> str | list:
+async def _dispatch(
+    action: str, kwargs: dict[str, Any], tty_handoff: Any, embodied_service: Any = None,
+) -> str | list:
     from roboclaw.embodied.ops.configure import SYNC_DISPATCH
     from roboclaw.embodied.ops.execute import ASYNC_DISPATCH
     from roboclaw.embodied.ops.helpers import ActionError
@@ -289,6 +292,13 @@ async def _dispatch(action: str, kwargs: dict[str, Any], tty_handoff: Any) -> st
     from roboclaw.embodied.setup import ensure_setup
 
     setup = ensure_setup()
+
+    # Route teleop/record through EmbodiedService for busy checks
+    if embodied_service is not None and action == "teleoperate":
+        return await embodied_service.run_teleop_tty(tty_handoff, setup, kwargs)
+    if embodied_service is not None and action == "record" and not kwargs.get("checkpoint_path"):
+        return await embodied_service.run_record_tty(tty_handoff, setup, kwargs)
+
     try:
         return await ASYNC_DISPATCH[action](setup, kwargs, tty_handoff)
     except ActionError as exc:
