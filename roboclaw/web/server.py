@@ -240,10 +240,10 @@ def create_app(
         # Wire the service into the agent's embodied tool groups
         from roboclaw.embodied.tool import EmbodiedToolGroup
 
-        agent.embodied_service = embodied_service
-        for tool in agent.tools.iter_tools():
+        runtime.agent.embodied_service = runtime.embodied_service
+        for tool in runtime.agent.tools.iter_tools():
             if isinstance(tool, EmbodiedToolGroup):
-                tool.embodied_service = embodied_service
+                tool.embodied_service = runtime.embodied_service
 
         register_dashboard_routes(
             app,
