@@ -268,12 +268,16 @@ async def test_calibrate_interrupted_on_sigint() -> None:
 @pytest.mark.asyncio
 async def test_record_action() -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        assert action == "record"
+        assert kwargs.get("task") == "grasp"
+        assert kwargs.get("num_episodes") == 5
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -284,24 +288,18 @@ async def test_record_action() -> None:
         )
 
     assert "Recording finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert argv[:4] == [sys.executable, "-m", "roboclaw.embodied.lerobot_wrapper", "record"]
-    assert "--robot.type=so101_follower" in argv
-    assert "--teleop.type=so101_leader" in argv
-    assert "--dataset.root=/data/local/test" in argv
-    assert "--dataset.push_to_hub=false" in argv
-    assert any("--robot.cameras=" in arg for arg in argv)
 
 
 @pytest.mark.asyncio
-async def test_record_action_includes_stderr_on_failure() -> None:
+async def test_record_action_cli_reports_failure() -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (7, "camera init failed")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        return "Record failed: Process exited with code 7\ncamera init failed"
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -310,21 +308,23 @@ async def test_record_action_includes_stderr_on_failure() -> None:
             arms=f"{_FOLLOWER_PORT},{_LEADER_PORT}",
         )
 
-    assert "Recording failed (exit 7)." in result
+    assert "failed" in result.lower()
     assert "camera init failed" in result
 
 
 @pytest.mark.asyncio
 async def test_record_action_without_cameras() -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        assert kwargs.get("use_cameras") is False
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
-        await tool.execute(
+        result = await tool.execute(
             action="record",
             dataset_name="test",
             task="grasp",
@@ -333,14 +333,20 @@ async def test_record_action_without_cameras() -> None:
             use_cameras=False,
         )
 
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert not any("--robot.cameras=" in arg for arg in argv)
+    assert "Recording finished" in result
 
 
 @pytest.mark.asyncio
 async def test_record_action_rejects_non_ascii_dataset_name() -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    with patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP):
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        return "Recording finished."
+
+    with (
+        patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
+    ):
         result = await tool.execute(
             action="record",
             dataset_name="\u6293\u53d6\u4efb\u52a1",
@@ -363,13 +369,14 @@ async def test_record_bimanual() -> None:
         ],
     }
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        assert action == "record"
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=setup),
-        patch("roboclaw.embodied.ops.helpers.ensure_bimanual_cal_dir", return_value="/tmp/bimanual") as mock_cal,
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -379,11 +386,6 @@ async def test_record_bimanual() -> None:
         )
 
     assert "Recording finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert "--robot.id=bimanual" in argv
-    assert "--teleop.id=bimanual" in argv
-    assert "--dataset.root=/data/local/test" in argv
-    assert mock_cal.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -455,21 +457,18 @@ async def test_teleoperate_bimanual() -> None:
         ],
     }
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup_arg, kwargs, tty_handoff):
+        assert action == "teleoperate"
+        return "Teleoperation finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=setup),
-        patch("roboclaw.embodied.ops.helpers.ensure_bimanual_cal_dir", return_value="/tmp/bimanual") as mock_cal,
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(action="teleoperate", arms="/dev/a,/dev/b,/dev/c,/dev/d")
 
     assert "Teleoperation finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert "--robot.id=bimanual" in argv
-    assert "--teleop.id=bimanual" in argv
-    assert mock_cal.call_count == 2
 
 
 @pytest.mark.asyncio

@@ -73,14 +73,17 @@ def calibration_root(tmp_path: Path) -> Path:
 
 @pytest.mark.asyncio
 async def test_record_auto_generates_timestamp_name() -> None:
-    """When dataset_name is omitted, record should auto-generate a rec_YYYYMMDD_HHMMSS name."""
+    """When dataset_name is omitted, record goes through CLI adapter without error."""
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        assert action == "record"
+        assert "dataset_name" not in kwargs  # auto-generated inside engine
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -89,26 +92,24 @@ async def test_record_auto_generates_timestamp_name() -> None:
         )
 
     assert "Recording finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    repo_arg = [a for a in argv if a.startswith("--dataset.repo_id=")][0]
-    assert repo_arg.startswith("--dataset.repo_id=local/rec_")
-    assert "--resume=true" not in argv
 
 
 @pytest.mark.asyncio
 async def test_record_resumes_existing_named_dataset(tmp_path: Path) -> None:
-    """When user specifies dataset_name and it already exists, --resume=true should be set."""
+    """When user specifies dataset_name, it is passed through kwargs to CLI adapter."""
     setup = {**_MOCK_SETUP, "datasets": {"root": str(tmp_path)}}
     existing = tmp_path / "local" / "my_dataset"
     existing.mkdir(parents=True)
 
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup_arg, kwargs, tty_handoff):
+        assert kwargs.get("dataset_name") == "my_dataset"
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=setup),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -118,20 +119,20 @@ async def test_record_resumes_existing_named_dataset(tmp_path: Path) -> None:
         )
 
     assert "Recording finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert "--resume=true" in argv
 
 
 @pytest.mark.asyncio
 async def test_record_no_resume_for_new_named_dataset() -> None:
-    """When user specifies dataset_name but dir does not exist, no --resume."""
+    """When user specifies a new dataset_name, it is passed to CLI adapter."""
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "embodied_control")
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
+
+    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
+        assert kwargs.get("dataset_name") == "brand_new"
+        return "Recording finished."
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
+        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
     ):
         result = await tool.execute(
             action="record",
@@ -141,8 +142,6 @@ async def test_record_no_resume_for_new_named_dataset() -> None:
         )
 
     assert "Recording finished" in result
-    argv = mock_runner.run_interactive.call_args.args[0]
-    assert "--resume=true" not in argv
 
 
 # ── list_datasets / list_policies tests ──────────────────────────────

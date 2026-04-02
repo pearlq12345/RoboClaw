@@ -161,47 +161,41 @@ async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
     )
 
 
-async def _do_teleoperate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.ops.helpers import ActionError, prepare_teleop
-    from roboclaw.embodied.runner import LocalLeRobotRunner
+async def _do_teleoperate(
+    setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any,
+    service: Any = None,
+) -> str:
+    from roboclaw.embodied.adapters.cli import run_cli_session
 
     if not tty_handoff:
         return _NO_TTY_MSG
-    try:
-        argv = prepare_teleop(setup, kwargs)
-    except ActionError as exc:
-        return str(exc)
-    rc, stderr_text = await _run_tty(
-        tty_handoff, LocalLeRobotRunner(), argv, "lerobot-teleoperate",
-    )
-    if _is_interrupted(rc):
-        return "interrupted"
-    if rc == 0:
-        return "Teleoperation finished."
-    return _format_tty_failure("Teleoperation failed", rc, stderr_text)
+    if service is None:
+        from roboclaw.embodied.service import EmbodiedService
+        service = EmbodiedService()
+    return await run_cli_session(service, "teleoperate", setup, kwargs, tty_handoff)
 
 
-async def _do_record(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def _do_record(
+    setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any,
+    service: Any = None,
+) -> str:
     if kwargs.get("checkpoint_path"):
         return await _do_run_policy(setup, kwargs, tty_handoff)
 
-    from roboclaw.embodied.ops.helpers import ActionError, prepare_record
-    from roboclaw.embodied.runner import LocalLeRobotRunner
+    from roboclaw.embodied.adapters.cli import run_cli_session
 
     if not tty_handoff:
         return _NO_TTY_MSG
-    try:
-        argv, dataset_name, dataset_root = prepare_record(setup, kwargs)
-    except ActionError as exc:
-        return str(exc)
-    rc, stderr_text = await _run_tty(
-        tty_handoff, LocalLeRobotRunner(), argv, "lerobot-record",
-    )
-    if _is_interrupted(rc):
-        return "interrupted"
-    if rc == 0:
-        return "Recording finished."
-    return _format_tty_failure("Recording failed", rc, stderr_text)
+    # Early validation before handing off to terminal
+    dataset_name = kwargs.get("dataset_name")
+    if dataset_name:
+        error = _validate_dataset_name(dataset_name)
+        if error:
+            return error
+    if service is None:
+        from roboclaw.embodied.service import EmbodiedService
+        service = EmbodiedService()
+    return await run_cli_session(service, "record", setup, kwargs, tty_handoff)
 
 
 def _resolve_dataset_name(
