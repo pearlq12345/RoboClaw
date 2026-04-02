@@ -164,7 +164,8 @@ def prepare_teleop(
 
     Raises ActionError on validation failure.
     """
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
+    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+    from roboclaw.embodied.embodiment.arm.registry import get_family
     from roboclaw.embodied.sensor.camera import resolve_cameras
 
     kwargs = kwargs or {}
@@ -173,7 +174,9 @@ def prepare_teleop(
     if error:
         raise ActionError(error)
 
-    controller = SO101Controller()
+    all_arms = grouped["followers"] + grouped["leaders"]
+    family = get_family(all_arms[0]["type"]) if all_arms else None
+    controller = ArmCommandBuilder(family=family)
     followers = grouped["followers"]
     leaders = grouped["leaders"]
     cameras = resolve_cameras(setup)
@@ -223,7 +226,8 @@ def prepare_record(
     """
     from datetime import datetime
 
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
+    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+    from roboclaw.embodied.embodiment.arm.registry import get_family
     from roboclaw.embodied.sensor.camera import resolve_cameras
 
     grouped = group_arms(_resolve_action_arms(setup, kwargs))
@@ -241,7 +245,9 @@ def prepare_record(
     if name_error:
         raise ActionError(name_error)
 
-    controller = SO101Controller()
+    all_arms = grouped["followers"] + grouped["leaders"]
+    family = get_family(all_arms[0]["type"]) if all_arms else None
+    controller = ArmCommandBuilder(family=family)
     cameras = {} if kwargs.get("use_cameras") is False else resolve_cameras(setup)
     ds_path = dataset_path(setup, dataset_name)
     resume = user_specified and ds_path.exists()
@@ -307,7 +313,7 @@ def prepare_record(
 def _display_kwargs(
     display_data: bool, display_ip: str, display_port: int,
 ) -> dict[str, Any]:
-    """Build display keyword args for SO101Controller methods."""
+    """Build display keyword args for ArmCommandBuilder methods."""
     if not display_data:
         return {}
     result: dict[str, Any] = {"display_data": True}

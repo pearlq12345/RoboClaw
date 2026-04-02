@@ -187,7 +187,7 @@ class DashboardSession:
     # -- Internal ----------------------------------------------------------
 
     def _rerun_display_kwargs(self) -> dict[str, Any]:
-        """Build display kwargs for SO101Controller methods."""
+        """Build display kwargs for ArmCommandBuilder methods."""
         ok = self._rerun_process is not None
         return {
             "display_data": ok,

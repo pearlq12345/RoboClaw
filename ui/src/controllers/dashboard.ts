@@ -69,6 +69,18 @@ export interface NetworkInfo {
   lan_ip: string
 }
 
+export type CalibrationState = 'idle' | 'connected' | 'homing' | 'recording' | 'done'
+
+export interface CalibrationStatus {
+  state: CalibrationState
+  arm_alias: string
+  positions?: Record<string, number>
+  mins?: Record<string, number>
+  maxes?: Record<string, number>
+  homing_offsets?: Record<string, number>
+  error?: string
+}
+
 export interface StartRecordingParams {
   task: string
   num_episodes: number
@@ -97,6 +109,7 @@ interface DashboardStore {
   networkInfo: NetworkInfo | null
   logs: LogEntry[]
   loading: string | null
+  calibration: CalibrationStatus
 
   // Session actions
   doTeleopStart: () => Promise<void>
@@ -119,6 +132,13 @@ interface DashboardStore {
   recheckFault: (faultType: string, deviceAlias: string) => Promise<void>
   generateSnapshot: () => Promise<any>
   dismissFault: (faultType: string, deviceAlias: string) => void
+
+  // Calibration
+  startCalibration: (armAlias: string) => Promise<void>
+  setCalibrationHoming: () => Promise<void>
+  pollCalibrationPositions: () => Promise<void>
+  finishCalibration: () => Promise<void>
+  cancelCalibration: () => Promise<void>
 
   // Events & logging
   handleDashboardEvent: (event: any) => void
@@ -149,6 +169,8 @@ const defaultSession: SessionStatus = {
 // Store implementation
 // ---------------------------------------------------------------------------
 
+const defaultCalibration: CalibrationStatus = { state: 'idle', arm_alias: '' }
+
 export const useDashboard = create<DashboardStore>((set, get) => ({
   session: { ...defaultSession },
   hardwareStatus: null,
@@ -158,6 +180,7 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
   networkInfo: null,
   logs: [],
   loading: null,
+  calibration: { ...defaultCalibration },
 
   addLog: (message, cls = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -380,5 +403,49 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
         ),
       }))
     }
+  },
+
+  // -- Calibration --------------------------------------------------------
+
+  startCalibration: async (armAlias) => {
+    try {
+      const data = await postJson(`${API}/calibrate/start`, { arm_alias: armAlias })
+      set({ calibration: { state: data.state, arm_alias: data.arm_alias } })
+    } catch (e: unknown) {
+      set({ calibration: { state: 'idle', arm_alias: '', error: (e as Error).message } })
+    }
+  },
+
+  setCalibrationHoming: async () => {
+    try {
+      const data = await api(`${API}/calibrate/set-homing`, { method: 'POST' })
+      set((s) => ({
+        calibration: { ...s.calibration, state: data.state, homing_offsets: data.homing_offsets },
+      }))
+    } catch { /* ignore */ }
+  },
+
+  pollCalibrationPositions: async () => {
+    try {
+      const data = await api(`${API}/calibrate/positions`)
+      set((s) => ({
+        calibration: { ...s.calibration, positions: data.positions, mins: data.mins, maxes: data.maxes },
+      }))
+    } catch { /* ignore */ }
+  },
+
+  finishCalibration: async () => {
+    try {
+      await postJson(`${API}/calibrate/finish`)
+      set({ calibration: { ...defaultCalibration, state: 'done' } })
+      get().fetchHardwareStatus()
+    } catch { /* ignore */ }
+  },
+
+  cancelCalibration: async () => {
+    try {
+      await postJson(`${API}/calibrate/cancel`)
+    } catch { /* ignore */ }
+    set({ calibration: { ...defaultCalibration } })
   },
 }))

@@ -29,14 +29,25 @@ from roboclaw.embodied.ops.helpers import (
     _validate_dataset_name,
     _validate_pairing,
 )
+from roboclaw.embodied.embodiment.arm.registry import get_family
 from roboclaw.embodied.sensor.camera import resolve_cameras
 
 
+def _builder_for_arms(arms: list[dict[str, Any]]) -> Any:
+    """Create an ArmCommandBuilder with the family derived from arm types."""
+    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+
+    if not arms:
+        return ArmCommandBuilder()
+    family = get_family(arms[0]["type"])
+    return ArmCommandBuilder(family=family)
+
+
 async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
+    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
-    result = await _run(LocalLeRobotRunner(), SO101Controller().doctor())
+    result = await _run(LocalLeRobotRunner(), ArmCommandBuilder().doctor())
     return result + f"\n\nCurrent setup:\n{json.dumps(setup, indent=2, ensure_ascii=False)}"
 
 
@@ -60,6 +71,7 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
     """Write calibration values from file to motor EEPROM.
 
     Best-effort: failures are logged but never block the calibration result.
+    Uses the arm family registry to pick the correct motor bus and models.
     """
     cal_dir = arm.get("calibration_dir", "")
     serial = Path(cal_dir).name
@@ -67,20 +79,32 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
     if not cal_path.exists():
         return
     try:
-        from lerobot.motors.feetech import FeetechMotorsBus
         from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
     except ImportError:
         return
+
+    from roboclaw.embodied.embodiment.arm.registry import get_family, get_role
+
+    family = get_family(arm["type"])
+    role = get_role(arm["type"])
+    model_map = family.motor_models(role)
     cal = json.loads(cal_path.read_text())
+
     motors, calibration = {}, {}
     for name, cfg in cal.items():
-        motors[name] = Motor(id=cfg["id"], model="sts3215", norm_mode=MotorNormMode.DEGREES)
+        model = model_map.get(name, list(model_map.values())[0])
+        motors[name] = Motor(id=cfg["id"], model=model, norm_mode=MotorNormMode.DEGREES)
         calibration[name] = MotorCalibration(
             id=cfg["id"], drive_mode=cfg["drive_mode"],
             homing_offset=cfg["homing_offset"],
             range_min=cfg["range_min"], range_max=cfg["range_max"],
         )
-    bus = FeetechMotorsBus(port=arm["port"], motors=motors, calibration=calibration)
+
+    import importlib
+    mod = importlib.import_module(family.motor_bus_module)
+    BusClass = getattr(mod, family.motor_bus_class)
+
+    bus = BusClass(port=arm["port"], motors=motors, calibration=calibration)
     try:
         bus.connect()
         for name, cfg in cal.items():
@@ -94,7 +118,6 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
 
 
 async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
     from roboclaw.embodied.runner import LocalLeRobotRunner
     from roboclaw.embodied.setup import arm_display_name, mark_arm_calibrated
 
@@ -107,7 +130,7 @@ async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
         return "All arms are already calibrated."
     if not tty_handoff:
         return _NO_TTY_MSG
-    controller = SO101Controller()
+    controller = _builder_for_arms(targets)
     runner = LocalLeRobotRunner()
     succeeded = 0
     failed = 0
@@ -199,7 +222,6 @@ def _should_resume(user_specified: bool, dataset_root: Path) -> bool:
 
 async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     """Run a trained policy - called from record when checkpoint_path is set."""
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
     from roboclaw.embodied.learning.act import ACTPipeline
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
@@ -226,7 +248,7 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
         dataset_name = f"eval_{dataset_name}"
     dataset_root = dataset_path(setup, dataset_name)
     resume = _should_resume(user_specified, dataset_root)
-    controller = SO101Controller()
+    controller = _builder_for_arms(followers)
     policy_kwargs = {
         "cameras": cameras,
         "policy_path": checkpoint,
@@ -259,8 +281,6 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
 
 
 async def _do_replay(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.embodiment.arm.so101 import SO101Controller
-
     if not tty_handoff:
         return _NO_TTY_MSG
     selected = _resolve_action_arms(setup, kwargs)
@@ -279,7 +299,7 @@ async def _do_replay(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff:
     dataset_root = dataset_path(setup, dataset_name, fallback=_DEFAULT_REPLAY_ROOT)
     episode = kwargs.get("episode", 0)
     fps = kwargs.get("fps", 30)
-    controller = SO101Controller()
+    controller = _builder_for_arms(followers)
     if len(followers) == 1:
         return await _replay_single(controller, followers[0], dataset_name, dataset_root, episode, fps, tty_handoff)
     return await _replay_bimanual(controller, followers, dataset_name, dataset_root, episode, fps, tty_handoff)

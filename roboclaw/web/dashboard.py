@@ -234,3 +234,8 @@ def register_dashboard_routes(
 
     from roboclaw.web.dashboard_setup import register_setup_routes
     register_setup_routes(app)
+
+    # -- Calibration routes ------------------------------------------------
+
+    from roboclaw.web.dashboard_calibrate import register_calibrate_routes
+    register_calibrate_routes(app)

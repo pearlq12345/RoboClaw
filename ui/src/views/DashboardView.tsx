@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDashboard, type SessionState } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
 import { postJson } from '../controllers/api'
+import { CalibrationWizard } from '../components/CalibrationWizard'
 
 // ── Servo chart ──────────────────────────────────────────────
 const MOTOR_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper']
@@ -261,7 +262,8 @@ function canDo(state: SessionState, hwReady: boolean) {
 // ── Main View ─────────────────────────────────────────────────
 export default function DashboardView() {
   const store = useDashboard()
-  const { session, logs, datasets, loading, hardwareStatus: hwStatus } = store
+  const { session, logs, datasets, loading, hardwareStatus: hwStatus, startCalibration } = store
+  const [showCalibration, setShowCalibration] = useState(false)
   const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes } = session
   const hwReady = hwStatus?.ready ?? false
   const ok = canDo(state, hwReady)
@@ -369,9 +371,22 @@ export default function DashboardView() {
                         {arm.role === 'leader' ? t('leader') : t('follower')}
                       </span>
                       {arm.connected && (
-                        <span className={`text-2xs ${arm.calibrated ? 'text-gn' : 'text-yl'}`}>
-                          {arm.calibrated ? t('hwCalibrated') : t('hwUncalibrated')}
-                        </span>
+                        <>
+                          <span className={`text-2xs ${arm.calibrated ? 'text-gn' : 'text-yl'}`}>
+                            {arm.calibrated ? t('hwCalibrated') : t('hwUncalibrated')}
+                          </span>
+                          {!arm.calibrated && (
+                            <button
+                              className="text-2xs text-ac hover:underline ml-1"
+                              onClick={() => {
+                                startCalibration(arm.alias)
+                                setShowCalibration(true)
+                              }}
+                            >
+                              校准
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   ))}
@@ -613,6 +628,10 @@ export default function DashboardView() {
           </div>
         </div>
       </div>
+
+      {showCalibration && (
+        <CalibrationWizard onClose={() => { setShowCalibration(false); store.fetchHardwareStatus() }} />
+      )}
     </div>
   )
 }

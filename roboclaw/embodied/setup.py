@@ -9,7 +9,9 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-_ARM_TYPES = ("so101_follower", "so101_leader")
+from roboclaw.embodied.embodiment.arm.registry import all_arm_types
+
+_ARM_TYPES = all_arm_types()
 _ARM_FIELDS = {"alias", "type", "port", "calibration_dir", "calibrated"}
 _HAND_TYPES = ("inspire_rh56", "revo2")
 _HAND_FIELDS = {"alias", "type", "port", "slave_id"}
