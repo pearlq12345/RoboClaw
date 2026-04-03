@@ -21,14 +21,13 @@ def app():
         async def broadcast(self, event):
             pass
 
+    from roboclaw.embodied.events import EventBus
     from roboclaw.embodied.hardware_monitor import HardwareMonitor
-    hw_monitor = HardwareMonitor(
-        on_fault=lambda f: None,
-        on_fault_resolved=lambda f: None,
-    )
+    event_bus = EventBus()
+    hw_monitor = HardwareMonitor(event_bus=event_bus)
     app.state.hardware_monitor = hw_monitor
 
-    service = EmbodiedService(hardware_monitor=hw_monitor)
+    service = EmbodiedService(hardware_monitor=hw_monitor, event_bus=event_bus)
     app.state.embodied_service = service
 
     register_dashboard_routes(app, FakeChannel(), service, get_config=lambda: ("0.0.0.0", 8080))

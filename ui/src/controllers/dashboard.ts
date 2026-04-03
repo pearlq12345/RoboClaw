@@ -378,7 +378,7 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
       return
     }
 
-    if (type === 'dashboard.fault') {
+    if (type === 'dashboard.fault.detected') {
       const fault: Fault = {
         fault_type: event.fault_type,
         device_alias: event.device_alias,
@@ -402,6 +402,11 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
           (f) => !(f.fault_type === event.fault_type && f.device_alias === event.device_alias),
         ),
       }))
+      return
+    }
+
+    if (type === 'dashboard.calibration.state_changed') {
+      set({ calibration: { state: event.state || 'idle', arm_alias: event.arm_alias || '' } })
     }
   },
 
