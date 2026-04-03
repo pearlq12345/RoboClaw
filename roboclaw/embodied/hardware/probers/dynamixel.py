@@ -27,15 +27,17 @@ class DynamixelProber:
                 return []
         except OSError:
             return []
-        handler.setBaudRate(baudrate)
-        packet = dxl.PacketHandler(2.0)
-        found = []
-        for mid in MOTOR_IDS:
-            val, result, _ = packet.read4ByteTxRx(handler, mid, _DYNAMIXEL_POS_ADDR)
-            if result == dxl.COMM_SUCCESS:
-                found.append(mid)
-        handler.closePort()
-        return found
+        try:
+            handler.setBaudRate(baudrate)
+            packet = dxl.PacketHandler(2.0)
+            found = []
+            for mid in MOTOR_IDS:
+                val, result, _ = packet.read4ByteTxRx(handler, mid, _DYNAMIXEL_POS_ADDR)
+                if result == dxl.COMM_SUCCESS:
+                    found.append(mid)
+            return found
+        finally:
+            handler.closePort()
 
     def read_positions(
         self, port_path: str, motor_ids: list[int], baudrate: int = DEFAULT_BAUDRATE,
@@ -50,15 +52,17 @@ class DynamixelProber:
         handler = dxl.PortHandler(port_path)
         if not handler.openPort():
             return {}
-        handler.setBaudRate(baudrate)
-        packet = dxl.PacketHandler(2.0)
-        positions: dict[int, int] = {}
-        for mid in motor_ids:
-            val, result, _ = packet.read4ByteTxRx(handler, mid, _DYNAMIXEL_POS_ADDR)
-            if result == dxl.COMM_SUCCESS:
-                positions[mid] = val
-        handler.closePort()
-        return positions
+        try:
+            handler.setBaudRate(baudrate)
+            packet = dxl.PacketHandler(2.0)
+            positions: dict[int, int] = {}
+            for mid in motor_ids:
+                val, result, _ = packet.read4ByteTxRx(handler, mid, _DYNAMIXEL_POS_ADDR)
+                if result == dxl.COMM_SUCCESS:
+                    positions[mid] = val
+            return positions
+        finally:
+            handler.closePort()
 
 
 register_prober("dynamixel", DynamixelProber)
