@@ -73,6 +73,16 @@ class CalibrationStateChangedEvent(Event):
     arm_alias: str = ""
 
 
+# -- Config changes ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ConfigChangedEvent(Event):
+    change_type: str = ""      # "arm_added", "arm_removed", "arm_renamed", "arm_calibrated",
+                               # "camera_added", "camera_removed", "hand_added", "hand_removed"
+    device_alias: str = ""
+
+
 # ---------------------------------------------------------------------------
 # EventBus
 # ---------------------------------------------------------------------------

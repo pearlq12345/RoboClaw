@@ -1,0 +1,287 @@
+"""Pure helper functions for manifest state management.
+
+Moved from setup.py — no class state, no I/O beyond calibration-file checks.
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+from roboclaw.embodied.embodiment.arm.registry import all_arm_types
+
+# ── Constants ──────────────────────────────────────────────────────────
+
+_ARM_TYPES = all_arm_types()
+_ARM_FIELDS = {"alias", "type", "port", "calibration_dir", "calibrated"}
+_HAND_TYPES = ("inspire_rh56", "revo2")
+_HAND_FIELDS = {"alias", "type", "port", "slave_id"}
+_CAMERA_FIELDS = {"alias", "port", "width", "height", "fps", "fourcc"}
+_VALID_TOP_KEYS = {"version", "arms", "hands", "cameras", "datasets", "policies"}
+
+
+# ── Path helpers ───────────────────────────────────────────────────────
+
+
+def get_roboclaw_home(home: str | Path | None = None) -> Path:
+    """Return RoboClaw home directory, honoring ROBOCLAW_HOME env var."""
+    if home is not None:
+        return Path(home).expanduser()
+    return Path(os.environ.get("ROBOCLAW_HOME", "~/.roboclaw")).expanduser()
+
+
+def get_manifest_path(home: Path | None = None) -> Path:
+    """Return the manifest.json path under *home*."""
+    return (home or get_roboclaw_home()) / "workspace" / "embodied" / "manifest.json"
+
+
+def get_setup_path(home: Path | None = None) -> Path:
+    """Return the legacy setup.json path (for migration only)."""
+    return (home or get_roboclaw_home()) / "workspace" / "embodied" / "setup.json"
+
+
+def get_calibration_root(home: Path | None = None) -> Path:
+    """Return the calibration directory under *home*."""
+    return (home or get_roboclaw_home()) / "workspace" / "embodied" / "calibration"
+
+
+# ── Default manifest ──────────────────────────────────────────────────
+
+
+def _default_manifest(home: Path | None = None) -> dict[str, Any]:
+    """Build a fresh default manifest dict with paths under *home*."""
+    base = (home or get_roboclaw_home()) / "workspace" / "embodied"
+    return {
+        "version": 2,
+        "arms": [],
+        "hands": [],
+        "cameras": [],
+        "datasets": {"root": str(base / "datasets")},
+        "policies": {"root": str(base / "policies")},
+    }
+
+
+# ── Device finders ────────────────────────────────────────────────────
+
+
+def _find_by_alias(items: list[dict], alias: str) -> dict | None:
+    """Find an item in a list of dicts by its 'alias' field."""
+    for item in items:
+        if item.get("alias") == alias:
+            return item
+    return None
+
+
+def find_arm(arms: list[dict], alias: str) -> dict | None:
+    return _find_by_alias(arms, alias)
+
+
+def find_camera(cameras: list[dict], alias: str) -> dict | None:
+    return _find_by_alias(cameras, alias)
+
+
+def find_hand(hands: list[dict], alias: str) -> dict | None:
+    return _find_by_alias(hands, alias)
+
+
+def arm_display_name(arm: dict) -> str:
+    """Return user-friendly display name: the arm's alias."""
+    return arm.get("alias", "unnamed")
+
+
+# ── Port resolution ───────────────────────────────────────────────────
+
+
+def _resolve_port(port: str, scanned_ports: list[dict]) -> str:
+    """Resolve a volatile port (e.g. /dev/ttyACM0) to a stable by_id path."""
+    if port.startswith("/dev/serial/"):
+        return port
+    for entry in scanned_ports:
+        if entry.get("dev") != port:
+            continue
+        by_id = entry.get("by_id", "")
+        if by_id:
+            return by_id
+        return port
+    return port
+
+
+def _extract_serial_number(port: str) -> str:
+    """Extract serial number from a by_id port path.
+
+    E.g. "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B14032630-if00" -> "5B14032630"
+    Falls back to the full filename if no pattern matches.
+    """
+    filename = Path(port).name
+    m = re.search(r"_([A-Za-z0-9]+)(?:-if\d+)?$", filename)
+    if m:
+        return m.group(1)
+    return filename
+
+
+# ── Validation ────────────────────────────────────────────────────────
+
+
+def _validate_setup(setup: dict[str, Any]) -> None:
+    """Validate setup against schema. Raises ValueError on invalid data."""
+    invalid_top = set(setup.keys()) - _VALID_TOP_KEYS
+    if invalid_top:
+        raise ValueError(f"Unknown top-level keys: {invalid_top}")
+    _validate_arms(setup.get("arms", []))
+    _validate_hands(setup.get("hands", []))
+    _validate_cameras(setup.get("cameras", []))
+
+
+def _validate_arms(arms: Any) -> None:
+    _validate_device_list(arms, _ARM_FIELDS, _ARM_TYPES, "Arm")
+
+
+def _validate_hands(hands: Any) -> None:
+    _validate_device_list(hands, _HAND_FIELDS, _HAND_TYPES, "Hand")
+
+
+def _validate_cameras(cameras: Any) -> None:
+    if not isinstance(cameras, list):
+        raise ValueError("'cameras' must be a list.")
+    for cam in cameras:
+        if not isinstance(cam, dict):
+            raise ValueError(f"Each camera must be a dict, got {type(cam).__name__}.")
+        alias = cam.get("alias")
+        if not alias:
+            raise ValueError("Camera entry missing required 'alias' field.")
+        if not cam.get("port"):
+            raise ValueError(f"Camera '{alias}' missing required 'port' field.")
+        bad = set(cam.keys()) - _CAMERA_FIELDS
+        if bad:
+            raise ValueError(f"Camera '{alias}' has unknown fields: {bad}")
+
+
+def _validate_device_list(
+    items: Any, allowed_fields: set, allowed_types: tuple, label: str,
+) -> None:
+    if not isinstance(items, list):
+        raise ValueError(f"'{label.lower()}s' must be a list.")
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError(f"Each {label.lower()} entry must be a dict, got {type(item).__name__}.")
+        alias = item.get("alias", "<unknown>")
+        bad_fields = set(item.keys()) - allowed_fields
+        if bad_fields:
+            raise ValueError(f"{label} '{alias}' has unknown fields: {bad_fields}")
+        item_type = item.get("type")
+        if item_type is not None and item_type not in allowed_types:
+            raise ValueError(f"{label} '{alias}' has invalid type '{item_type}'.")
+
+
+def _ensure_unique_port(arms: list[dict], alias: str, port: str) -> None:
+    for arm in arms:
+        if arm.get("alias") == alias:
+            continue
+        if arm.get("port") == port:
+            raise ValueError(f"Port '{port}' is already assigned to arm '{arm['alias']}'.")
+
+
+# ── Calibration file management ───────────────────────────────────────
+
+
+def _refresh_calibration_state(setup: dict[str, Any]) -> bool:
+    """Migrate None.json and recompute calibrated from disk for all arms. Returns True if anything changed."""
+    changed = False
+    for arm in setup.get("arms", []):
+        cal_dir = Path(arm.get("calibration_dir", ""))
+        serial = cal_dir.name
+        if not serial or not cal_dir.exists():
+            continue
+        _migrate_none_calibration_file(cal_dir, serial)
+        on_disk = _has_calibration_file(cal_dir, serial)
+        if arm.get("calibrated") != on_disk:
+            arm["calibrated"] = on_disk
+            changed = True
+    return changed
+
+
+def _has_calibration_file(calibration_dir: Path, serial: str) -> bool:
+    return (calibration_dir / f"{serial}.json").exists()
+
+
+def _migrate_none_calibration_file(calibration_dir: Path, serial: str) -> None:
+    legacy = calibration_dir / "None.json"
+    target = calibration_dir / f"{serial}.json"
+    if legacy.exists() and not target.exists():
+        legacy.rename(target)
+
+
+def load_calibration(arm: dict[str, Any]) -> dict[str, Any]:
+    """Load calibration JSON for an arm. Returns empty dict if not found."""
+    cal_dir = arm.get("calibration_dir", "")
+    if not cal_dir:
+        return {}
+    serial = Path(cal_dir).name
+    cal_path = Path(cal_dir).expanduser() / f"{serial}.json"
+    if not cal_path.exists():
+        return {}
+    return json.loads(cal_path.read_text(encoding="utf-8"))
+
+
+# ── Bimanual calibration directory management ─────────────────────────
+
+
+def ensure_bimanual_cal_dir(
+    left_arm: dict[str, Any], right_arm: dict[str, Any], role: str,
+) -> str:
+    """Return a persistent bimanual calibration directory, creating/refreshing if needed."""
+    target_dir = get_calibration_root() / f"bimanual_{role}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for side, arm in [("left", left_arm), ("right", right_arm)]:
+        cal_dir = Path(arm["calibration_dir"]).expanduser()
+        serial = cal_dir.name
+        source = cal_dir / f"{serial}.json"
+        if not source.exists():
+            continue
+        dest = target_dir / f"bimanual_{side}.json"
+        if dest.exists() and source.stat().st_mtime <= dest.stat().st_mtime:
+            continue
+        shutil.copy2(source, dest)
+    return str(target_dir)
+
+
+def refresh_bimanual_cal_dirs(setup: dict[str, Any]) -> None:
+    """Eagerly refresh bimanual calibration dirs if a bimanual pair exists."""
+    from loguru import logger
+
+    arms = setup.get("arms", [])
+    followers = [a for a in arms if "follower" in a.get("type", "")]
+    leaders = [a for a in arms if "leader" in a.get("type", "")]
+    try:
+        if len(followers) == 2:
+            ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
+        if len(leaders) == 2:
+            ensure_bimanual_cal_dir(leaders[0], leaders[1], "leaders")
+    except Exception:
+        logger.opt(exception=True).warning("Failed to refresh bimanual calibration dirs")
+
+
+# ── Hand probing ──────────────────────────────────────────────────────
+
+
+def _probe_hand_slave_id(hand_type: str, port: str) -> int:
+    """Auto-detect slave_id by probing the serial port."""
+    _PROBE_MODULES = {
+        "inspire_rh56": "roboclaw.embodied.embodiment.hand.inspire_rh56",
+        "revo2": "roboclaw.embodied.embodiment.hand.revo2",
+    }
+    module_path = _PROBE_MODULES.get(hand_type)
+    if not module_path:
+        raise ValueError(f"No probe available for hand type '{hand_type}'.")
+    probe_fn = getattr(importlib.import_module(module_path), "probe_slave_ids")
+    found = probe_fn(port)
+    if not found:
+        raise ValueError(f"No {hand_type} hand detected on this port.")
+    if len(found) > 1:
+        raise ValueError(f"Multiple devices detected on this port (found {len(found)}). Only one hand per port is supported.")
+    return found[0]
