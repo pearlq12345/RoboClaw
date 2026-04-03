@@ -8,7 +8,7 @@ from typing import Any
 from roboclaw.agent.tools.base import Tool
 
 _SETUP_ACTIONS = [
-    "status", "scan", "set_arm", "remove_arm", "rename_arm",
+    "hardware_status", "scan", "set_arm", "remove_arm", "rename_arm",
     "set_camera", "preview_cameras", "remove_camera", "describe", "doctor",
     "set_hand", "remove_hand",
 ]
@@ -307,7 +307,7 @@ async def _dispatch(
     svc = _get_service(service)
 
     # Config operations — no setup needed
-    if action == "status":
+    if action == "hardware_status":
         return svc.queries.get_setup()
     if action == "scan":
         result = await asyncio.to_thread(svc.scanning.run_full_scan)
