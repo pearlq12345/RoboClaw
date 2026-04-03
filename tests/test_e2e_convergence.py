@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.service import EmbodiedService, EmbodimentBusyError
 from roboclaw.http.routes import register_all_routes
 
@@ -24,6 +25,7 @@ from roboclaw.http.routes import register_all_routes
 # ---------------------------------------------------------------------------
 
 MOCK_SETUP = {
+    "version": 2,
     "arms": [
         {
             "alias": "leader",
@@ -53,16 +55,11 @@ MOCK_SETUP = {
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def service(monkeypatch):
-    """EmbodiedService with mocked load_setup and /dev/* paths always 'connected'."""
-    monkeypatch.setattr(
-        "roboclaw.embodied.service.queries.load_setup",
-        lambda *_a, **_kw: MOCK_SETUP.copy(),
-    )
-    monkeypatch.setattr(
-        "roboclaw.embodied.hardware.monitor.load_setup",
-        lambda *_a, **_kw: MOCK_SETUP.copy(),
-    )
+def service(tmp_path, monkeypatch):
+    """EmbodiedService with mocked manifest and /dev/* paths always 'connected'."""
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(MOCK_SETUP, indent=2), encoding="utf-8")
+    manifest = Manifest(path=manifest_path)
 
     _original_exists = Path.exists
 
@@ -73,7 +70,7 @@ def service(monkeypatch):
 
     monkeypatch.setattr(Path, "exists", _mock_exists)
 
-    return EmbodiedService()
+    return EmbodiedService(manifest=manifest)
 
 
 @pytest.fixture()
@@ -82,7 +79,7 @@ def app_and_service(service):
     from roboclaw.embodied.hardware.monitor import HardwareMonitor
 
     app = FastAPI()
-    hw = HardwareMonitor()
+    hw = HardwareMonitor(manifest=service.manifest)
     app.state.hardware_monitor = hw
     app.state.embodied_service = service
 

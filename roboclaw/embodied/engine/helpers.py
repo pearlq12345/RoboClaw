@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from roboclaw.embodied.setup import ensure_bimanual_cal_dir, get_roboclaw_home
+from roboclaw.embodied.manifest.helpers import ensure_bimanual_cal_dir, get_roboclaw_home
 
 _NO_TTY_MSG = "This action requires a local terminal. Run: roboclaw agent"
 _BIMANUAL_ID = "bimanual"

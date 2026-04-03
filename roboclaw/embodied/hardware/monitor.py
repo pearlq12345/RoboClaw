@@ -16,7 +16,6 @@ from typing import Any
 from loguru import logger
 
 from roboclaw.embodied.events import EventBus, FaultDetectedEvent, FaultResolvedEvent
-from roboclaw.embodied.setup import load_setup
 
 _CHECK_INTERVAL_SECONDS = 5
 
@@ -103,8 +102,13 @@ def _fault_key(fault: HardwareFault) -> str:
 class HardwareMonitor:
     """Periodically checks hardware health and emits fault events."""
 
-    def __init__(self, event_bus: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        manifest: "Manifest | None" = None,
+    ) -> None:
         self._bus = event_bus
+        self._manifest = manifest
         self._active_faults: dict[str, HardwareFault] = {}
         self._recording_active = False
         self._stop_event = asyncio.Event()
@@ -163,7 +167,11 @@ class HardwareMonitor:
 
     def check_hardware(self) -> list[HardwareFault]:
         """Check all configured devices and return current faults."""
-        setup = load_setup()
+        if self._manifest is not None:
+            setup = self._manifest.snapshot
+        else:
+            from roboclaw.embodied.setup import load_setup
+            setup = load_setup()
         now = time.time()
         faults: list[HardwareFault] = []
         _check_arms(setup.get("arms", []), now, faults)

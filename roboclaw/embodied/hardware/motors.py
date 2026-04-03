@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger
 
-from roboclaw.embodied.setup import load_calibration, load_setup
+from roboclaw.embodied.manifest.helpers import load_calibration
 
 SO101_MOTOR_NAMES = (
     "shoulder_pan", "shoulder_lift", "elbow_flex",
@@ -39,13 +39,11 @@ def _motor_config_from_calibration(arm: dict[str, Any]) -> dict[str, tuple[int, 
     }
 
 
-def read_servo_positions(setup: dict[str, Any] | None = None) -> dict[str, Any]:
+def read_servo_positions(setup: dict[str, Any]) -> dict[str, Any]:
     """Read current servo positions for all arms (followers + leaders).
 
     Returns ``{"error": None, "arms": {alias: {motor_name: position}}}``.
     """
-    if setup is None:
-        setup = load_setup()
     arms = setup.get("arms", [])
     result: dict[str, Any] = {"error": None, "arms": {}}
 

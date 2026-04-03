@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 
 import pytest
 from fastapi import FastAPI
@@ -13,7 +13,7 @@ from roboclaw.http.routes import register_all_routes
 
 
 @pytest.fixture()
-def app():
+def app(tmp_path):
     """Minimal FastAPI app with dashboard routes registered."""
     app = FastAPI()
 
@@ -23,11 +23,15 @@ def app():
 
     from roboclaw.embodied.events import EventBus
     from roboclaw.embodied.hardware.monitor import HardwareMonitor
+    from roboclaw.embodied.manifest import Manifest
+
+    manifest_path = tmp_path / "manifest.json"
     event_bus = EventBus()
-    hw_monitor = HardwareMonitor(event_bus=event_bus)
+    manifest = Manifest(path=manifest_path, event_bus=event_bus)
+    hw_monitor = HardwareMonitor(event_bus=event_bus, manifest=manifest)
     app.state.hardware_monitor = hw_monitor
 
-    service = EmbodiedService(hardware_monitor=hw_monitor, event_bus=event_bus)
+    service = EmbodiedService(hardware_monitor=hw_monitor, event_bus=event_bus, manifest=manifest)
     app.state.embodied_service = service
 
     register_all_routes(app, FakeChannel(), service, get_config=lambda: ("0.0.0.0", 8080))
@@ -59,7 +63,7 @@ class TestSessionStatus:
 
 
 # ---------------------------------------------------------------------------
-# Session lifecycle (wrong state → 500)
+# Session lifecycle (wrong state -> 500)
 # ---------------------------------------------------------------------------
 
 class TestSessionLifecycle:
@@ -86,11 +90,7 @@ class TestSessionLifecycle:
 # ---------------------------------------------------------------------------
 
 class TestHardwareStatus:
-    def test_hardware_status(self, client, monkeypatch):
-        monkeypatch.setattr(
-            "roboclaw.embodied.service.queries.load_setup",
-            lambda: {"arms": [], "cameras": []},
-        )
+    def test_hardware_status(self, client):
         resp = client.get("/api/dashboard/hardware-status")
         assert resp.status_code == 200
         data = resp.json()
@@ -104,29 +104,17 @@ class TestHardwareStatus:
 # ---------------------------------------------------------------------------
 
 class TestDatasets:
-    def test_list_datasets(self, client, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "roboclaw.http.routes.datasets.load_setup",
-            lambda: {"datasets": {"root": str(tmp_path)}},
-        )
+    def test_list_datasets(self, client):
         resp = client.get("/api/dashboard/datasets")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_list_datasets_no_root_uses_default(self, client, monkeypatch):
+    def test_list_datasets_no_root_uses_default(self, client):
         """When no datasets root is configured, falls back to default path."""
-        monkeypatch.setattr(
-            "roboclaw.http.routes.datasets.load_setup",
-            lambda: {"datasets": {}},
-        )
         resp = client.get("/api/dashboard/datasets")
         assert resp.status_code == 200
 
-    def test_delete_nonexistent(self, client, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "roboclaw.http.routes.datasets.load_setup",
-            lambda: {"datasets": {"root": str(tmp_path)}},
-        )
+    def test_delete_nonexistent(self, client):
         resp = client.delete("/api/dashboard/datasets/nope")
         assert resp.status_code == 500
 
@@ -136,11 +124,7 @@ class TestDatasets:
 # ---------------------------------------------------------------------------
 
 class TestServoPositions:
-    def test_servo_when_idle(self, client, monkeypatch):
-        monkeypatch.setattr(
-            "roboclaw.embodied.hardware.motors.load_setup",
-            lambda: {"arms": []},
-        )
+    def test_servo_when_idle(self, client):
         resp = client.get("/api/dashboard/servo-positions")
         assert resp.status_code == 200
         data = resp.json()

@@ -330,11 +330,6 @@ async def _dispatch(
         return svc.config.set_hand(kwargs["alias"], kwargs.get("hand_type", ""), kwargs.get("port", ""))
     if action == "remove_hand":
         return svc.config.remove_hand(kwargs["alias"])
-    if action == "list_datasets":
-        return svc.queries.list_datasets()
-    if action == "list_policies":
-        return svc.queries.list_policies()
-
     # Operations requiring setup — ActionError is a user-facing error
     # raised by helpers (e.g. missing arm), converted to a plain string.
     return await _dispatch_with_setup(action, kwargs, tty_handoff, svc)
@@ -357,6 +352,10 @@ async def _dispatch_with_setup(
 async def _run_action(
     action: str, kwargs: dict[str, Any], tty_handoff: Any, svc: Any, setup: dict,
 ) -> str | list:
+    if action == "list_datasets":
+        return svc.queries.list_datasets(setup)
+    if action == "list_policies":
+        return svc.queries.list_policies(setup)
     if action == "doctor":
         return await svc.run_doctor(setup, kwargs, tty_handoff)
 

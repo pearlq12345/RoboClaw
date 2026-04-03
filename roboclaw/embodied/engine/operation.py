@@ -28,7 +28,6 @@ from roboclaw.embodied.engine.helpers import (
 )
 from roboclaw.embodied.hardware.port_lock import port_locks
 from roboclaw.embodied.runner import LocalLeRobotRunner
-from roboclaw.embodied.setup import load_setup
 
 _RE_RECORDING_EP = re.compile(r"Recording episode (\d+)")
 _RE_EPISODE_DONE = re.compile(r"Episode (\d+) done")
@@ -99,11 +98,13 @@ class OperationEngine:
 
     # -- Lifecycle ---------------------------------------------------------
 
-    async def start_teleop(self, *, fps: int = 30) -> None:
+    async def start_teleop(self, *, fps: int = 30, setup: dict[str, Any] | None = None) -> None:
         self._require_idle_or_raise()
         self._error_message = ""
         self._stderr_lines = []
-        setup = load_setup()
+        if setup is None:
+            from roboclaw.embodied.setup import load_setup
+            setup = load_setup()
         await self._start_rerun_server()
         try:
             argv = prepare_teleop(
@@ -122,6 +123,7 @@ class OperationEngine:
         fps: int = 30,
         episode_time_s: int = 300,
         reset_time_s: int = 10,
+        setup: dict[str, Any] | None = None,
     ) -> str:
         """Start recording. Returns the generated dataset_name."""
         self._error_message = ""
@@ -131,7 +133,9 @@ class OperationEngine:
             self._set_state("idle")
         self._require_idle_or_raise()
 
-        setup = load_setup()
+        if setup is None:
+            from roboclaw.embodied.setup import load_setup
+            setup = load_setup()
         await self._start_rerun_server()
         kwargs: dict[str, Any] = {
             "task": task,

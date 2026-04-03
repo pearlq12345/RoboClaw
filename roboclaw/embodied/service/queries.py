@@ -14,7 +14,6 @@ from roboclaw.embodied.hardware.monitor import (
     check_camera_status,
 )
 from roboclaw.embodied.engine.helpers import _camera_previews_dir, group_arms
-from roboclaw.embodied.setup import load_setup
 
 if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
@@ -119,7 +118,7 @@ class QueryService:
 
     def get_current_config(self) -> dict[str, Any]:
         """Return current setup config (arms, cameras, hands)."""
-        setup = load_setup()
+        setup = self._parent.manifest.snapshot
         return {
             "arms": setup.get("arms", []),
             "cameras": setup.get("cameras", []),
@@ -133,7 +132,7 @@ class QueryService:
         + calibration + readiness. Discovery of new hardware uses the separate
         ``scan`` action (service.scanning.run_full_scan).
         """
-        setup = load_setup()
+        setup = self._parent.manifest.snapshot
         hw = self.get_hardware_status(setup)
         setup["hardware_status"] = hw
         return json.dumps(setup, indent=2, ensure_ascii=False)
@@ -145,10 +144,9 @@ class QueryService:
             return f"Unknown target_action: {target_action}"
         return f"{target_action}: {_ACTION_DESCRIPTIONS[target_action]}"
 
-    def list_datasets(self) -> str:
-        from roboclaw.embodied.setup import ensure_setup
-
-        setup = ensure_setup()
+    def list_datasets(self, setup: dict[str, Any] | None = None) -> str:
+        if setup is None:
+            setup = self._parent.manifest.ensure()
         root = Path(setup.get("datasets", {}).get("root", "")) / "local"
         if not root.exists():
             return "No datasets found."
@@ -171,10 +169,9 @@ class QueryService:
             return "No datasets found."
         return json.dumps(datasets, indent=2, ensure_ascii=False)
 
-    def list_policies(self) -> str:
-        from roboclaw.embodied.setup import ensure_setup
-
-        setup = ensure_setup()
+    def list_policies(self, setup: dict[str, Any] | None = None) -> str:
+        if setup is None:
+            setup = self._parent.manifest.ensure()
         root = Path(setup.get("policies", {}).get("root", ""))
         if not root.exists():
             return "No policies found."
@@ -212,7 +209,7 @@ class QueryService:
 
     def get_hardware_status(self, setup: dict | None = None) -> dict[str, Any]:
         if setup is None:
-            setup = load_setup()
+            setup = self._parent.manifest.snapshot
         arms = setup.get("arms", [])
         cameras = setup.get("cameras", [])
         arm_statuses = [check_arm_status(a) for a in arms]
@@ -230,4 +227,4 @@ class QueryService:
         if self._parent.busy:
             return {"error": "busy", "arms": {}}
         from roboclaw.embodied.hardware.motors import read_servo_positions
-        return read_servo_positions()
+        return read_servo_positions(self._parent.manifest.snapshot)

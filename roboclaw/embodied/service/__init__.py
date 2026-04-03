@@ -12,6 +12,7 @@ from typing import Any
 
 from roboclaw.embodied.events import EventBus
 from roboclaw.embodied.hardware.monitor import HardwareMonitor
+from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.config import ConfigService
 from roboclaw.embodied.service.queries import QueryService
@@ -41,9 +42,11 @@ class EmbodiedService:
         self,
         hardware_monitor: HardwareMonitor | None = None,
         event_bus: EventBus | None = None,
+        manifest: Manifest | None = None,
     ) -> None:
         self._monitor = hardware_monitor
         self._bus = event_bus or EventBus()
+        self.manifest = manifest or Manifest(event_bus=self._bus)
         self._lock = threading.Lock()
         self._embodiment_owner: str = ""
 

@@ -109,8 +109,9 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
 
 
 async def do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    from roboclaw.embodied.manifest.helpers import arm_display_name
     from roboclaw.embodied.runner import LocalLeRobotRunner
-    from roboclaw.embodied.setup import arm_display_name, mark_arm_calibrated
+    from roboclaw.embodied.setup import mark_arm_calibrated
 
     configured = setup.get("arms", [])
     if not configured:
@@ -213,7 +214,7 @@ async def do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
             **policy_kwargs,
         )
         return await _run(LocalLeRobotRunner(), argv)
-    from roboclaw.embodied.setup import ensure_bimanual_cal_dir
+    from roboclaw.embodied.manifest.helpers import ensure_bimanual_cal_dir
     robot_dir = ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
     argv = controller.run_policy_bimanual(
         robot_id=_BIMANUAL_ID,
@@ -280,8 +281,8 @@ async def _replay_bimanual(
     dataset_name: str, dataset_root: Path, episode: int, fps: int,
     tty_handoff: Any,
 ) -> str:
+    from roboclaw.embodied.manifest.helpers import ensure_bimanual_cal_dir
     from roboclaw.embodied.runner import LocalLeRobotRunner
-    from roboclaw.embodied.setup import ensure_bimanual_cal_dir
 
     robot_dir = ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
     argv = controller.replay_bimanual(
@@ -337,8 +338,8 @@ async def do_job_status(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
 
 
 def _resolve_hand(setup: dict[str, Any], hand_name: str) -> dict:
-    from roboclaw.embodied.setup import find_hand
     from roboclaw.embodied.engine.helpers import ActionError
+    from roboclaw.embodied.manifest.helpers import find_hand
 
     hands = setup.get("hands", [])
     if not hands:

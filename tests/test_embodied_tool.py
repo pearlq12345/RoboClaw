@@ -84,7 +84,10 @@ def _find_tool(tools: list[EmbodiedToolGroup], name: str) -> EmbodiedToolGroup:
 @pytest.fixture(autouse=True)
 def calibration_root(tmp_path: Path) -> Path:
     root = tmp_path / "calibration"
-    with std_patch("roboclaw.embodied.setup.get_calibration_root", return_value=root):
+    with (
+        std_patch("roboclaw.embodied.manifest.helpers.get_calibration_root", return_value=root),
+        std_patch("roboclaw.embodied.manifest.state.get_calibration_root", return_value=root),
+    ):
         yield root
 
 
@@ -424,7 +427,7 @@ async def test_replay_bimanual_with_root_fallback() -> None:
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=setup),
-        patch("roboclaw.embodied.setup.ensure_bimanual_cal_dir", return_value="/tmp/bimanual") as mock_cal,
+        patch("roboclaw.embodied.manifest.helpers.ensure_bimanual_cal_dir", return_value="/tmp/bimanual") as mock_cal,
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
         result = await tool.execute(action="replay", dataset_name="test", arms="/dev/a,/dev/b")
@@ -514,7 +517,7 @@ async def test_run_policy_bimanual() -> None:
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=setup),
-        patch("roboclaw.embodied.setup.ensure_bimanual_cal_dir", return_value="/tmp/bimanual"),
+        patch("roboclaw.embodied.manifest.helpers.ensure_bimanual_cal_dir", return_value="/tmp/bimanual"),
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
         result = await tool.execute(action="record", checkpoint_path="/models/act")
@@ -798,7 +801,7 @@ def test_calibration_dir_uses_serial_number(setup_file: Path, calibration_root: 
 def test_set_hand(setup_file: Path) -> None:
     with (
         std_patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_SCANNED_PORTS),
-        std_patch("roboclaw.embodied.setup._probe_hand_slave_id", return_value=1),
+        std_patch("roboclaw.embodied.manifest.state._probe_hand_slave_id", return_value=1),
     ):
         result = set_hand("left_hand", "inspire_rh56", "/dev/ttyACM0", path=setup_file)
     hand = find_hand(result["hands"], "left_hand")
@@ -815,7 +818,7 @@ def test_set_hand(setup_file: Path) -> None:
 def test_set_hand_replaces_existing(setup_file: Path) -> None:
     with (
         std_patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_SCANNED_PORTS),
-        std_patch("roboclaw.embodied.setup._probe_hand_slave_id", return_value=1),
+        std_patch("roboclaw.embodied.manifest.state._probe_hand_slave_id", return_value=1),
     ):
         set_hand("h", "inspire_rh56", "/dev/ttyACM0", path=setup_file)
         result = set_hand("h", "revo2", "/dev/ttyACM1", path=setup_file)
@@ -832,7 +835,7 @@ def test_set_hand_invalid_type(setup_file: Path) -> None:
 def test_remove_hand(setup_file: Path) -> None:
     with (
         std_patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=[]),
-        std_patch("roboclaw.embodied.setup._probe_hand_slave_id", return_value=1),
+        std_patch("roboclaw.embodied.manifest.state._probe_hand_slave_id", return_value=1),
     ):
         set_hand("left_hand", "inspire_rh56", "/dev/ttyUSB0", path=setup_file)
     result = remove_hand("left_hand", path=setup_file)

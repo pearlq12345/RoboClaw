@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from roboclaw.embodied.hardware.monitor import HardwareMonitor
 from roboclaw.embodied.service import EmbodiedService
-from roboclaw.embodied.setup import load_setup
 from roboclaw.http.troubleshooting import generate_fault_snapshot, get_troubleshoot_map_json
 
 
@@ -32,7 +31,7 @@ def register_troubleshoot_routes(app: FastAPI, service: EmbodiedService) -> None
 
     @app.post("/api/dashboard/troubleshoot/snapshot")
     async def troubleshoot_snapshot() -> dict[str, Any]:
-        setup = load_setup()
+        setup = service.manifest.snapshot
         monitor: HardwareMonitor = app.state.hardware_monitor
         faults = monitor.active_faults
         return generate_fault_snapshot(setup, faults, "")

@@ -117,6 +117,7 @@ class WebRuntime:
         """Build HardwareMonitor and EmbodiedService with EventBus."""
         from roboclaw.embodied.events import (
             CalibrationStateChangedEvent,
+            ConfigChangedEvent,
             Event,
             EventBus,
             FaultDetectedEvent,
@@ -124,6 +125,7 @@ class WebRuntime:
             SessionStateChangedEvent,
         )
         from roboclaw.embodied.hardware.monitor import HardwareMonitor
+        from roboclaw.embodied.manifest import Manifest
         from roboclaw.embodied.service import EmbodiedService
 
         event_bus = EventBus()
@@ -134,6 +136,7 @@ class WebRuntime:
             FaultDetectedEvent: "dashboard.fault.detected",
             FaultResolvedEvent: "dashboard.fault.resolved",
             CalibrationStateChangedEvent: "dashboard.calibration.state_changed",
+            ConfigChangedEvent: "dashboard.config.changed",
         }
 
         async def _web_subscriber(event: Event) -> None:
@@ -143,10 +146,12 @@ class WebRuntime:
 
         event_bus.on(None, _web_subscriber)
 
-        self.hw_monitor = HardwareMonitor(event_bus=event_bus)
+        manifest = Manifest(event_bus=event_bus)
+        self.hw_monitor = HardwareMonitor(event_bus=event_bus, manifest=manifest)
         self.embodied_service = EmbodiedService(
             hardware_monitor=self.hw_monitor,
             event_bus=event_bus,
+            manifest=manifest,
         )
 
     # ------------------------------------------------------------------

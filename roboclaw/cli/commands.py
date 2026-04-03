@@ -335,10 +335,11 @@ def run_onboard_core(*, interactive: bool = True, skip_config: bool = False) -> 
         console.print(f"[green]✓[/green] Created workspace at {workspace}")
     sync_workspace_templates(workspace)
 
-    from roboclaw.embodied.setup import create_setup, get_setup_path
-    if not get_setup_path().exists():
+    from roboclaw.embodied.manifest.helpers import get_manifest_path
+    if not get_manifest_path().exists():
         console.print("[dim]Scanning hardware...[/dim]")
-        create_setup()
+        from roboclaw.embodied.manifest import Manifest
+        Manifest().ensure()
         from roboclaw.embodied.hardware.scan import scan_cameras, scan_serial_ports
         n_ports = len(scan_serial_ports())
         n_cameras = len(scan_cameras())

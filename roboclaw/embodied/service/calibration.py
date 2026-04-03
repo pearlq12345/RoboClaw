@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from roboclaw.embodied.engine import CalibrationSession
 from roboclaw.embodied.events import CalibrationStateChangedEvent, EventBus
 from roboclaw.embodied.hardware.port_lock import port_locks
-from roboclaw.embodied.setup import load_setup, mark_arm_calibrated
 
 if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
@@ -34,7 +33,7 @@ class CalibrationService:
     async def start(self, arm_alias: str) -> dict[str, Any]:
         """Start calibrating an arm. Acquires embodiment lock + port lock."""
         self._parent.acquire_embodiment("calibrating")
-        setup = load_setup()
+        setup = self._parent.manifest.snapshot
         arm = _find_arm(setup, arm_alias)
         port = arm.get("port", "")
         if port:
@@ -80,7 +79,7 @@ class CalibrationService:
     async def finish(self) -> dict[str, Any]:
         self._require_session()
         calibration = await asyncio.to_thread(self._session.finish)
-        mark_arm_calibrated(self._arm_alias)
+        self._parent.manifest.mark_arm_calibrated(self._arm_alias)
         arm_alias = self._arm_alias
         await self._cleanup()
         await self._emit_state("done", arm_alias)
