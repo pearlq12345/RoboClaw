@@ -172,8 +172,7 @@ def _prepare_common(
     skip_cameras: bool = False,
 ) -> _PreparedContext:
     """Shared preparation for teleop/record: resolve arms, cameras, display."""
-    from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
-    from roboclaw.embodied.embodiment.arm.registry import get_family
+    from roboclaw.embodied.engine.command_builder import builder_for_arms
     from roboclaw.embodied.sensor.camera import resolve_cameras
 
     kwargs = kwargs or {}
@@ -182,8 +181,7 @@ def _prepare_common(
     if error:
         raise ActionError(error)
     all_arms = grouped["followers"] + grouped["leaders"]
-    family = get_family(all_arms[0]["type"]) if all_arms else None
-    controller = ArmCommandBuilder(family=family)
+    controller = builder_for_arms(all_arms)
     cameras = {} if skip_cameras else resolve_cameras(setup)
     return _PreparedContext(
         controller=controller,
