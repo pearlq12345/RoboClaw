@@ -6,6 +6,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from roboclaw.embodied.engine import CalibrationSession
+from roboclaw.embodied.events import CalibrationStateChangedEvent, EventBus
 from roboclaw.embodied.port_lock import port_locks
 from roboclaw.embodied.setup import load_setup, mark_arm_calibrated
 
@@ -23,8 +24,9 @@ def _find_arm(setup: dict, alias: str) -> dict:
 class CalibrationService:
     """Manages arm calibration sessions with port-lock coordination."""
 
-    def __init__(self, parent: EmbodiedService) -> None:
+    def __init__(self, parent: EmbodiedService, event_bus: EventBus | None = None) -> None:
         self._parent = parent
+        self._event_bus = event_bus
         self._session: CalibrationSession | None = None
         self._arm_alias: str = ""
         self._port_cm: Any = None
@@ -48,7 +50,10 @@ class CalibrationService:
 
         self._session = session
         self._arm_alias = arm_alias
-        return {"state": session.state, "arm_alias": arm_alias}
+        result = {"state": session.state, "arm_alias": arm_alias}
+        if self._event_bus is not None:
+            await self._event_bus.emit(CalibrationStateChangedEvent(state=session.state, arm_alias=arm_alias))
+        return result
 
     def get_status(self) -> dict[str, Any]:
         if self._session is None:
@@ -58,7 +63,10 @@ class CalibrationService:
     async def set_homing(self) -> dict[str, Any]:
         self._require_session()
         offsets = await asyncio.to_thread(self._session.set_homing)
-        return {"state": self._session.state, "homing_offsets": offsets}
+        result = {"state": self._session.state, "homing_offsets": offsets}
+        if self._event_bus is not None:
+            await self._event_bus.emit(CalibrationStateChangedEvent(state=self._session.state, arm_alias=self._arm_alias))
+        return result
 
     async def read_positions(self) -> dict[str, Any]:
         self._require_session()
@@ -75,13 +83,19 @@ class CalibrationService:
         self._require_session()
         calibration = await asyncio.to_thread(self._session.finish)
         mark_arm_calibrated(self._arm_alias)
+        arm_alias = self._arm_alias
         await self._cleanup()
+        if self._event_bus is not None:
+            await self._event_bus.emit(CalibrationStateChangedEvent(state="done", arm_alias=arm_alias))
         return {"state": "done", "calibration": calibration}
 
     async def cancel(self) -> None:
+        arm_alias = self._arm_alias
         if self._session is not None:
             await asyncio.to_thread(self._session.cancel)
         await self._cleanup()
+        if self._event_bus is not None:
+            await self._event_bus.emit(CalibrationStateChangedEvent(state="idle", arm_alias=arm_alias))
 
     @property
     def active(self) -> bool:

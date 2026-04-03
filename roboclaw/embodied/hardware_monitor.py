@@ -1,26 +1,24 @@
 """Background hardware health checker.
 
 Periodically checks that configured arms and cameras are reachable,
-fires callbacks when faults appear or resolve.
+emits events when faults appear or resolve.
 """
 
 from __future__ import annotations
 
 import asyncio
-import inspect
 import time
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from loguru import logger
 
+from roboclaw.embodied.events import EventBus, FaultDetectedEvent, FaultResolvedEvent
 from roboclaw.embodied.setup import load_setup
 
 _CHECK_INTERVAL_SECONDS = 5
-
-FaultCallback = Callable[["HardwareFault"], Awaitable[None] | None]
 
 
 class FaultType(str, Enum):
@@ -103,15 +101,10 @@ def _fault_key(fault: HardwareFault) -> str:
 
 
 class HardwareMonitor:
-    """Periodically checks hardware health and fires fault callbacks."""
+    """Periodically checks hardware health and emits fault events."""
 
-    def __init__(
-        self,
-        on_fault: FaultCallback,
-        on_fault_resolved: FaultCallback,
-    ) -> None:
-        self._on_fault = on_fault
-        self._on_fault_resolved = on_fault_resolved
+    def __init__(self, event_bus: EventBus | None = None) -> None:
+        self._bus = event_bus
         self._active_faults: dict[str, HardwareFault] = {}
         self._recording_active = False
         self._stop_event = asyncio.Event()
@@ -150,14 +143,23 @@ class HardwareMonitor:
             if key not in self._active_faults:
                 self._active_faults[key] = fault
                 logger.warning("Hardware fault detected: {} — {}", key, fault.message)
-                await _emit(self._on_fault, fault)
+                if self._bus is not None:
+                    await self._bus.emit(FaultDetectedEvent(
+                        fault_type=fault.fault_type.value,
+                        device_alias=fault.device_alias,
+                        message=fault.message,
+                    ))
 
         # Detect resolved faults
         resolved_keys = set(self._active_faults.keys()) - set(current_keys.keys())
         for key in resolved_keys:
             resolved_fault = self._active_faults.pop(key)
             logger.info("Hardware fault resolved: {}", key)
-            await _emit(self._on_fault_resolved, resolved_fault)
+            if self._bus is not None:
+                await self._bus.emit(FaultResolvedEvent(
+                    fault_type=resolved_fault.fault_type.value,
+                    device_alias=resolved_fault.device_alias,
+                ))
 
     def check_hardware(self) -> list[HardwareFault]:
         """Check all configured devices and return current faults."""
@@ -212,8 +214,3 @@ def _check_cameras(
             ))
 
 
-async def _emit(callback: FaultCallback, fault: HardwareFault) -> None:
-    """Invoke a callback, awaiting if it returns a coroutine."""
-    result = callback(fault)
-    if inspect.isawaitable(result):
-        await result

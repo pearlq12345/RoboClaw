@@ -8,5 +8,4 @@ __all__ = [
     "CalibrationSession",
     "HardwareScanner",
     "OperationEngine",
-    "StatusCallback",
 ]

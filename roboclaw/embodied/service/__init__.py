@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from roboclaw.embodied.engine import StatusCallback
+from roboclaw.embodied.events import EventBus
 from roboclaw.embodied.hardware_monitor import HardwareMonitor
 from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.config import ConfigService
@@ -40,18 +40,23 @@ class EmbodiedService:
     def __init__(
         self,
         hardware_monitor: HardwareMonitor | None = None,
-        on_state_change: StatusCallback | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._monitor = hardware_monitor
+        self._bus = event_bus or EventBus()
         self._lock = threading.Lock()
         self._embodiment_owner: str = ""
 
         # Sub-services
-        self.session = SessionService(self, external_callback=on_state_change)
-        self.calibration = CalibrationService(self)
+        self.session = SessionService(self, event_bus=self._bus)
+        self.calibration = CalibrationService(self, event_bus=self._bus)
         self.scanning = ScanningService(self)
         self.config = ConfigService(self)
         self.queries = QueryService(self)
+
+    @property
+    def event_bus(self) -> EventBus:
+        return self._bus
 
     # -- Embodiment lock ------------------------------------------------------
 

@@ -114,31 +114,39 @@ class WebRuntime:
         return rt
 
     def _build_embodied(self, web_ch: Any) -> None:
-        """Build HardwareMonitor and EmbodiedService, wiring broadcast callbacks."""
+        """Build HardwareMonitor and EmbodiedService with EventBus."""
+        from roboclaw.embodied.events import (
+            CalibrationStateChangedEvent,
+            Event,
+            EventBus,
+            FaultDetectedEvent,
+            FaultResolvedEvent,
+            SessionStateChangedEvent,
+        )
         from roboclaw.embodied.hardware_monitor import HardwareMonitor
         from roboclaw.embodied.service import EmbodiedService
 
-        async def _on_hw_fault(fault: Any) -> None:
-            await web_ch.broadcast({"type": "dashboard.fault", **fault.to_dict()})
+        event_bus = EventBus()
 
-        async def _on_hw_fault_resolved(fault: Any) -> None:
-            await web_ch.broadcast({
-                "type": "dashboard.fault.resolved",
-                "fault_type": fault.fault_type.value,
-                "device_alias": fault.device_alias,
-            })
+        # Map domain events → WebSocket type strings
+        _WS_TYPE: dict[type[Event], str] = {
+            SessionStateChangedEvent: "dashboard.session.state_changed",
+            FaultDetectedEvent: "dashboard.fault.detected",
+            FaultResolvedEvent: "dashboard.fault.resolved",
+            CalibrationStateChangedEvent: "dashboard.calibration.state_changed",
+        }
 
-        self.hw_monitor = HardwareMonitor(
-            on_fault=_on_hw_fault,
-            on_fault_resolved=_on_hw_fault_resolved,
-        )
+        async def _web_subscriber(event: Event) -> None:
+            ws_type = _WS_TYPE.get(type(event))
+            if ws_type:
+                await web_ch.broadcast({"type": ws_type, **event.to_dict()})
 
-        async def _on_session_state_change(status: Any) -> None:
-            await web_ch.broadcast({"type": "dashboard.session.state_changed", **status})
+        event_bus.on(None, _web_subscriber)
 
+        self.hw_monitor = HardwareMonitor(event_bus=event_bus)
         self.embodied_service = EmbodiedService(
             hardware_monitor=self.hw_monitor,
-            on_state_change=_on_session_state_change,
+            event_bus=event_bus,
         )
 
     # ------------------------------------------------------------------
