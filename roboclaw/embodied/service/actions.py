@@ -33,11 +33,6 @@ from roboclaw.embodied.engine.helpers import (
 from roboclaw.embodied.sensor.camera import resolve_cameras
 
 
-# ---------------------------------------------------------------------------
-# Arm actions (moved from ops/execute.py)
-# ---------------------------------------------------------------------------
-
-
 async def do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
     from roboclaw.embodied.runner import LocalLeRobotRunner
@@ -339,11 +334,6 @@ async def do_job_status(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
     job_id = kwargs.get("job_id", "")
     status = await LocalLeRobotRunner().job_status(job_id=job_id, log_dir=_logs_dir())
     return "\n".join(f"{key}: {value}" for key, value in status.items())
-
-
-# ---------------------------------------------------------------------------
-# Hand actions (moved from hand_actions.py)
-# ---------------------------------------------------------------------------
 
 
 def _resolve_hand(setup: dict[str, Any], hand_name: str) -> dict:
