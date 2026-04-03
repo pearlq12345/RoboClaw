@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import inspect
 from typing import TYPE_CHECKING, Any
 
-from roboclaw.embodied.engine import OperationEngine, StatusCallback
+from roboclaw.embodied.engine import OperationEngine
+from roboclaw.embodied.events import EventBus, SessionStateChangedEvent
 
 if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
@@ -21,11 +21,11 @@ class SessionService:
     def __init__(
         self,
         parent: EmbodiedService,
-        external_callback: StatusCallback | None = None,
+        event_bus: EventBus,
     ) -> None:
         self._parent = parent
         self._engine = OperationEngine(on_state_change=self._on_engine_state_change)
-        self._external_callback = external_callback
+        self._event_bus = event_bus
         self._recording_started = False
 
     @property
@@ -87,7 +87,4 @@ class SessionService:
             if monitor is not None:
                 monitor.set_recording_active(False)
 
-        if self._external_callback is not None:
-            result = self._external_callback(status)
-            if inspect.isawaitable(result):
-                await result
+        await self._event_bus.emit(SessionStateChangedEvent(**status))
