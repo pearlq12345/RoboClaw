@@ -1,40 +1,44 @@
-"""Asynchronous embodied action execution."""
+"""Stateless action dispatch functions for embodied operations.
+
+Each function follows the signature (setup, kwargs, tty_handoff) -> str
+and is called by EmbodiedService methods.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
+from roboclaw.embodied.engine.command_builder import builder_for_arms
 from roboclaw.embodied.engine.helpers import (
     _BIMANUAL_ID,
     _DEFAULT_REPLAY_ROOT,
     _NO_TTY_MSG,
     _arm_id,
-    dataset_path,
     _format_tty_failure,
-    group_arms,
     _is_interrupted,
     _logs_dir,
     _resolve_action_arms,
     _run,
     _run_tty,
     _validate_dataset_name,
+    dataset_path,
+    group_arms,
 )
-from loguru import logger
-
 from roboclaw.embodied.sensor.camera import resolve_cameras
 
 
-def _builder_for_arms(arms: list[dict[str, Any]]) -> Any:
-    """Create an ArmCommandBuilder with the family derived from arm types."""
-    from roboclaw.embodied.engine.command_builder import builder_for_arms
-
-    return builder_for_arms(arms)
+# ---------------------------------------------------------------------------
+# Arm actions (moved from ops/execute.py)
+# ---------------------------------------------------------------------------
 
 
-async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
@@ -42,7 +46,7 @@ async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff:
     return result + f"\n\nCurrent setup:\n{json.dumps(setup, indent=2, ensure_ascii=False)}"
 
 
-async def _do_identify(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_identify(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
     from roboclaw.embodied.hardware.scan import scan_serial_ports
 
@@ -109,7 +113,7 @@ def _sync_calibration_to_motors(arm: dict[str, Any]) -> None:
         bus.disconnect()
 
 
-async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
     from roboclaw.embodied.setup import arm_display_name, mark_arm_calibrated
 
@@ -122,7 +126,7 @@ async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
         return "All arms are already calibrated."
     if not tty_handoff:
         return _NO_TTY_MSG
-    controller = _builder_for_arms(targets)
+    controller = builder_for_arms(targets)
     runner = LocalLeRobotRunner()
     succeeded = 0
     failed = 0
@@ -153,7 +157,6 @@ async def _do_calibrate(setup: dict[str, Any], kwargs: dict[str, Any], tty_hando
 def _resolve_dataset_name(
     kwargs: dict[str, Any], prefix: str,
 ) -> tuple[str, bool] | str:
-    """Resolve dataset name and whether to resume. Used by _do_run_policy."""
     from datetime import datetime
 
     user_specified = "dataset_name" in kwargs
@@ -165,12 +168,10 @@ def _resolve_dataset_name(
 
 
 def _should_resume(user_specified: bool, dataset_root: Path) -> bool:
-    """Resume only when user explicitly named a dataset that already exists."""
     return user_specified and dataset_root.exists()
 
 
-async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    """Run a trained policy - called from record when checkpoint_path is set."""
+async def do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.learning.act import ACTPipeline
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
@@ -195,14 +196,14 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
     dataset_name, user_specified = result
     if user_specified and not dataset_name.startswith("eval_"):
         dataset_name = f"eval_{dataset_name}"
-    dataset_root = dataset_path(setup, dataset_name)
-    resume = _should_resume(user_specified, dataset_root)
-    controller = _builder_for_arms(followers)
+    ds_root = dataset_path(setup, dataset_name)
+    resume = _should_resume(user_specified, ds_root)
+    controller = builder_for_arms(followers)
     policy_kwargs = {
         "cameras": cameras,
         "policy_path": checkpoint,
         "repo_id": f"local/{dataset_name}",
-        "dataset_root": str(dataset_root),
+        "dataset_root": str(ds_root),
         "task": kwargs.get("task", "eval"),
         "num_episodes": kwargs.get("num_episodes", 1),
         "resume": resume,
@@ -229,7 +230,7 @@ async def _do_run_policy(setup: dict[str, Any], kwargs: dict[str, Any], tty_hand
     return await _run(LocalLeRobotRunner(), argv)
 
 
-async def _do_replay(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_replay(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     if not tty_handoff:
         return _NO_TTY_MSG
     selected = _resolve_action_arms(setup, kwargs)
@@ -245,13 +246,13 @@ async def _do_replay(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff:
     error = _validate_dataset_name(dataset_name)
     if error:
         return error
-    dataset_root = dataset_path(setup, dataset_name, fallback=_DEFAULT_REPLAY_ROOT)
+    ds_root = dataset_path(setup, dataset_name, fallback=_DEFAULT_REPLAY_ROOT)
     episode = kwargs.get("episode", 0)
     fps = kwargs.get("fps", 30)
-    controller = _builder_for_arms(followers)
+    controller = builder_for_arms(followers)
     if len(followers) == 1:
-        return await _replay_single(controller, followers[0], dataset_name, dataset_root, episode, fps, tty_handoff)
-    return await _replay_bimanual(controller, followers, dataset_name, dataset_root, episode, fps, tty_handoff)
+        return await _replay_single(controller, followers[0], dataset_name, ds_root, episode, fps, tty_handoff)
+    return await _replay_bimanual(controller, followers, dataset_name, ds_root, episode, fps, tty_handoff)
 
 
 async def _replay_single(
@@ -308,7 +309,7 @@ async def _replay_bimanual(
     return _format_tty_failure("Replay failed", rc, stderr_text)
 
 
-async def _do_train(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_train(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.learning.act import ACTPipeline
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
@@ -316,13 +317,13 @@ async def _do_train(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: 
     error = _validate_dataset_name(dataset_name)
     if error:
         return error
-    dataset_root = dataset_path(setup, dataset_name)
+    ds_root = dataset_path(setup, dataset_name)
     policies_root = setup.get("policies", {}).get("root", "")
     output_dir = Path(policies_root).expanduser() / dataset_name
     resume = output_dir.is_dir()
     argv = ACTPipeline().train(
         repo_id=f"local/{dataset_name}",
-        dataset_root=str(dataset_root),
+        dataset_root=str(ds_root),
         output_dir=str(output_dir),
         steps=kwargs.get("steps", 100_000),
         device=kwargs.get("device", "cuda"),
@@ -332,9 +333,70 @@ async def _do_train(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: 
     return f"Training started. Job ID: {job_id}"
 
 
-async def _do_job_status(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+async def do_job_status(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
     job_id = kwargs.get("job_id", "")
     status = await LocalLeRobotRunner().job_status(job_id=job_id, log_dir=_logs_dir())
     return "\n".join(f"{key}: {value}" for key, value in status.items())
+
+
+# ---------------------------------------------------------------------------
+# Hand actions (moved from hand_actions.py)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_hand(setup: dict[str, Any], hand_name: str) -> dict:
+    from roboclaw.embodied.setup import find_hand
+    from roboclaw.embodied.engine.helpers import ActionError
+
+    hands = setup.get("hands", [])
+    if not hands:
+        raise ActionError("No hand configured. Use set_hand to add one.")
+    if not hand_name:
+        return hands[0]
+    hand = find_hand(hands, hand_name)
+    if hand is None:
+        raise ActionError(f"No hand named '{hand_name}' in setup.")
+    return hand
+
+
+def _get_hand_controller(hand_type: str):
+    from roboclaw.embodied.engine.helpers import ActionError
+
+    if hand_type == "inspire_rh56":
+        from roboclaw.embodied.embodiment.hand.inspire_rh56 import InspireController
+        return InspireController()
+    if hand_type == "revo2":
+        from roboclaw.embodied.embodiment.hand.revo2 import Revo2Controller
+        return Revo2Controller()
+    raise ActionError(f"Unknown hand type: {hand_type}")
+
+
+async def _run_hand_method(method_name: str, setup: dict[str, Any], kwargs: dict[str, Any], extra_args=()):
+    hand = _resolve_hand(setup, kwargs.get("hand_name", ""))
+    slave_id = hand["slave_id"]
+    controller = _get_hand_controller(hand["type"])
+    method = getattr(controller, method_name)
+    if asyncio.iscoroutinefunction(method):
+        return await method(hand["port"], *extra_args, slave_id)
+    return await asyncio.to_thread(method, hand["port"], *extra_args, slave_id)
+
+
+async def do_hand_open(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    return await _run_hand_method("open_hand", setup, kwargs)
+
+
+async def do_hand_close(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    return await _run_hand_method("close_hand", setup, kwargs)
+
+
+async def do_hand_pose(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    positions = kwargs.get("positions")
+    if not positions:
+        return "hand_pose requires positions (6 integers 0-1000)."
+    return await _run_hand_method("set_pose", setup, kwargs, extra_args=(positions,))
+
+
+async def do_hand_status(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    return await _run_hand_method("get_status", setup, kwargs)

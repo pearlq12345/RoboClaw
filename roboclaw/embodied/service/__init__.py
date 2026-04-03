@@ -12,6 +12,19 @@ from typing import Any
 
 from roboclaw.embodied.events import EventBus
 from roboclaw.embodied.hardware.monitor import HardwareMonitor
+from roboclaw.embodied.service.actions import (
+    do_calibrate,
+    do_doctor,
+    do_hand_close,
+    do_hand_open,
+    do_hand_pose,
+    do_hand_status,
+    do_identify,
+    do_job_status,
+    do_replay,
+    do_run_policy,
+    do_train,
+)
 from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.config import ConfigService
 from roboclaw.embodied.service.queries import QueryService
@@ -158,55 +171,44 @@ class EmbodiedService:
     def read_servo_positions(self) -> dict[str, Any]:
         return self.queries.read_servo_positions()
 
-    # -- Async operations (wrap execute.py with embodiment lock) ---------------
+    # -- Async operations (wrap service/actions.py with embodiment lock) -------
 
     async def run_calibrate(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_calibrate
-        return await _do_calibrate(setup, kwargs, tty_handoff)
+        return await do_calibrate(setup, kwargs, tty_handoff)
 
     async def run_identify(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_identify
-        return await _do_identify(setup, kwargs, tty_handoff)
+        return await do_identify(setup, kwargs, tty_handoff)
 
     async def run_replay(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
         self.acquire_embodiment("replaying")
         try:
-            from roboclaw.embodied.ops.execute import _do_replay
-            return await _do_replay(setup, kwargs, tty_handoff)
+            return await do_replay(setup, kwargs, tty_handoff)
         finally:
             self.release_embodiment()
 
     async def run_doctor(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_doctor
-        return await _do_doctor(setup, kwargs, tty_handoff)
+        return await do_doctor(setup, kwargs, tty_handoff)
 
     async def start_training(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_train
-        return await _do_train(setup, kwargs, tty_handoff)
+        return await do_train(setup, kwargs, tty_handoff)
 
     async def get_job_status(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_job_status
-        return await _do_job_status(setup, kwargs, tty_handoff)
+        return await do_job_status(setup, kwargs, tty_handoff)
 
     async def run_policy(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.ops.execute import _do_run_policy
-        return await _do_run_policy(setup, kwargs, tty_handoff)
+        return await do_run_policy(setup, kwargs, tty_handoff)
 
     async def hand_open(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.hand_actions import _do_hand_open
-        return await _do_hand_open(setup, kwargs, tty_handoff)
+        return await do_hand_open(setup, kwargs, tty_handoff)
 
     async def hand_close(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.hand_actions import _do_hand_close
-        return await _do_hand_close(setup, kwargs, tty_handoff)
+        return await do_hand_close(setup, kwargs, tty_handoff)
 
     async def hand_pose(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.hand_actions import _do_hand_pose
-        return await _do_hand_pose(setup, kwargs, tty_handoff)
+        return await do_hand_pose(setup, kwargs, tty_handoff)
 
     async def hand_status(self, setup: dict, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.hand_actions import _do_hand_status
-        return await _do_hand_status(setup, kwargs, tty_handoff)
+        return await do_hand_status(setup, kwargs, tty_handoff)
 
     # -- Shutdown -------------------------------------------------------------
 
