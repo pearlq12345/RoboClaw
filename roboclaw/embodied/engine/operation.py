@@ -26,7 +26,7 @@ from roboclaw.embodied.ops.helpers import (
     prepare_record,
     prepare_teleop,
 )
-from roboclaw.embodied.port_lock import port_locks
+from roboclaw.embodied.hardware.port_lock import port_locks
 from roboclaw.embodied.runner import LocalLeRobotRunner
 from roboclaw.embodied.setup import load_setup
 

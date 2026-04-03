@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from roboclaw.embodied.port_lock import PortLockRegistry
+from roboclaw.embodied.hardware.port_lock import PortLockRegistry
 
 
 @pytest.fixture

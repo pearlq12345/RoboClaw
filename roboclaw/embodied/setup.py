@@ -193,7 +193,7 @@ def set_arm(
         raise ValueError("Arm port is required.")
     if not alias:
         raise ValueError("Arm alias is required.")
-    from roboclaw.embodied.scan import scan_serial_ports
+    from roboclaw.embodied.hardware.scan import scan_serial_ports
     path = path or get_setup_path()
     setup = load_setup(path)
     port = _resolve_port(port, scan_serial_ports())
@@ -261,7 +261,7 @@ def set_hand(alias: str, hand_type: str, port: str, *, path: Path | None = None)
         raise ValueError("Hand port is required.")
     if not alias:
         raise ValueError("Hand alias is required.")
-    from roboclaw.embodied.scan import scan_serial_ports
+    from roboclaw.embodied.hardware.scan import scan_serial_ports
     path = path or get_setup_path()
     setup = load_setup(path)
     port = _resolve_port(port, scan_serial_ports())
@@ -311,7 +311,7 @@ def find_hand(hands: list[dict], alias: str) -> dict | None:
 
 def set_camera(name: str, camera_index: int, path: Path | None = None) -> dict[str, Any]:
     """Add or update a camera by picking from live-scanned cameras by index."""
-    from roboclaw.embodied.scan import scan_cameras
+    from roboclaw.embodied.hardware.scan import scan_cameras
 
     path = path or get_setup_path()
     if not name:

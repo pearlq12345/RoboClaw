@@ -123,7 +123,7 @@ class WebRuntime:
             FaultResolvedEvent,
             SessionStateChangedEvent,
         )
-        from roboclaw.embodied.hardware_monitor import HardwareMonitor
+        from roboclaw.embodied.hardware.monitor import HardwareMonitor
         from roboclaw.embodied.service import EmbodiedService
 
         event_bus = EventBus()

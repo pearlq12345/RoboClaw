@@ -40,7 +40,7 @@ async def test_identify_no_ports() -> None:
     tool = _hw_tool(tty_handoff=AsyncMock())
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.scan.scan_serial_ports", return_value=[]),
+        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=[]),
     ):
         result = await tool.execute(action="identify")
     assert result == "No serial ports detected."
@@ -56,7 +56,7 @@ async def test_identify_success() -> None:
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.scan.scan_serial_ports", return_value=_MOCK_PORTS),
+        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_PORTS),
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
         result = await tool.execute(action="identify")
@@ -76,7 +76,7 @@ async def test_identify_failure() -> None:
 
     with (
         patch("roboclaw.embodied.setup.ensure_setup", return_value=_MOCK_SETUP),
-        patch("roboclaw.embodied.scan.scan_serial_ports", return_value=_MOCK_PORTS),
+        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_PORTS),
         patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
     ):
         result = await tool.execute(action="identify")
@@ -113,7 +113,7 @@ def test_detect_motion_missing_ids() -> None:
 
 
 def test_port_candidates_adds_cu_variant_on_macos() -> None:
-    import roboclaw.embodied.scan as scan_module
+    import roboclaw.embodied.hardware.scan as scan_module
     with patch.object(scan_module.sys, "platform", "darwin"):
         assert _port_candidates("/dev/tty.usbmodem123") == [
             "/dev/tty.usbmodem123",

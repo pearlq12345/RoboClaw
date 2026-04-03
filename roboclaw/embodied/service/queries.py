@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from roboclaw.embodied.hardware_monitor import (
+from roboclaw.embodied.hardware.monitor import (
     ArmStatus,
     CameraStatus,
     check_arm_status,
@@ -200,7 +200,7 @@ class QueryService:
         return json.dumps(policies, indent=2, ensure_ascii=False)
 
     def preview_cameras(self) -> str | list:
-        from roboclaw.embodied.scan import capture_camera_frames, scan_cameras
+        from roboclaw.embodied.hardware.scan import capture_camera_frames, scan_cameras
 
         scanned_cameras = scan_cameras()
         if not scanned_cameras:
@@ -229,5 +229,5 @@ class QueryService:
     def read_servo_positions(self) -> dict[str, Any]:
         if self._parent.busy:
             return {"error": "busy", "arms": {}}
-        from roboclaw.embodied.motors import read_servo_positions
+        from roboclaw.embodied.hardware.motors import read_servo_positions
         return read_servo_positions()

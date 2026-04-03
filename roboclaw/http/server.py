@@ -294,7 +294,7 @@ def _check_device_permissions() -> None:
 
     if sys.platform != "linux":
         return
-    from roboclaw.embodied.scan import list_serial_device_paths
+    from roboclaw.embodied.hardware.scan import list_serial_device_paths
     devices = list_serial_device_paths()
     if not devices:
         return

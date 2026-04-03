@@ -20,7 +20,7 @@ from roboclaw.embodied.identify import (
     detect_motion,
     read_positions,
 )
-from roboclaw.embodied.scan import (
+from roboclaw.embodied.hardware.scan import (
     capture_camera_frames,
     list_serial_device_paths,
     scan_cameras,

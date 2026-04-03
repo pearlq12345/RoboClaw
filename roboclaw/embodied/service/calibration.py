@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from roboclaw.embodied.engine import CalibrationSession
 from roboclaw.embodied.events import CalibrationStateChangedEvent, EventBus
-from roboclaw.embodied.port_lock import port_locks
+from roboclaw.embodied.hardware.port_lock import port_locks
 from roboclaw.embodied.setup import load_setup, mark_arm_calibrated
 
 if TYPE_CHECKING:

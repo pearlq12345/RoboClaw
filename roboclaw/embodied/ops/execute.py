@@ -48,7 +48,7 @@ async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff:
 
 async def _do_identify(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
     from roboclaw.embodied.runner import LocalLeRobotRunner
-    from roboclaw.embodied.scan import scan_serial_ports
+    from roboclaw.embodied.hardware.scan import scan_serial_ports
 
     if not tty_handoff:
         return _NO_TTY_MSG

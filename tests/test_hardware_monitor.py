@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from roboclaw.embodied.hardware_monitor import (
+from roboclaw.embodied.hardware.monitor import (
     FaultType,
     HardwareFault,
     _check_arms,

@@ -9,7 +9,7 @@ import json
 import sys
 
 from roboclaw.embodied.embodiment.arm.registry import all_arm_types
-from roboclaw.embodied.scan import restore_stderr, suppress_stderr
+from roboclaw.embodied.hardware.scan import restore_stderr, suppress_stderr
 
 MOTOR_IDS = list(range(1, 7))
 DEFAULT_BAUDRATE = 1_000_000

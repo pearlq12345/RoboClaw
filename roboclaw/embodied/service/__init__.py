@@ -11,7 +11,7 @@ import threading
 from typing import Any
 
 from roboclaw.embodied.events import EventBus
-from roboclaw.embodied.hardware_monitor import HardwareMonitor
+from roboclaw.embodied.hardware.monitor import HardwareMonitor
 from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.config import ConfigService
 from roboclaw.embodied.service.queries import QueryService

@@ -22,7 +22,7 @@ def app():
             pass
 
     from roboclaw.embodied.events import EventBus
-    from roboclaw.embodied.hardware_monitor import HardwareMonitor
+    from roboclaw.embodied.hardware.monitor import HardwareMonitor
     event_bus = EventBus()
     hw_monitor = HardwareMonitor(event_bus=event_bus)
     app.state.hardware_monitor = hw_monitor
@@ -138,7 +138,7 @@ class TestDatasets:
 class TestServoPositions:
     def test_servo_when_idle(self, client, monkeypatch):
         monkeypatch.setattr(
-            "roboclaw.embodied.motors.load_setup",
+            "roboclaw.embodied.hardware.motors.load_setup",
             lambda: {"arms": []},
         )
         resp = client.get("/api/dashboard/servo-positions")

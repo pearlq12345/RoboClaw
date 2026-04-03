@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from roboclaw.embodied.scan import _list_serial_ports, scan_serial_ports
+from roboclaw.embodied.hardware.scan import _list_serial_ports, scan_serial_ports
 
 
 class _FakePort:
@@ -30,7 +30,7 @@ def test_list_serial_ports_uses_pyserial_devices_on_windows() -> None:
             _FakePort("/dev/cu.usbmodemB", description="USB Serial", hwid="USB VID:PID=1A86:55D3", vid=0x1A86, pid=0x55D3),
             _FakePort("/dev/cu.usbmodemA", description="USB Serial", hwid="USB VID:PID=1A86:55D3", vid=0x1A86, pid=0x55D3),
         ],
-    ), patch("roboclaw.embodied.scan.os.name", "nt"):
+    ), patch("roboclaw.embodied.hardware.scan.os.name", "nt"):
         ports = _list_serial_ports()
 
     assert ports == ["/dev/cu.debug-console", "/dev/cu.usbmodemA", "/dev/cu.usbmodemB"]
@@ -47,7 +47,7 @@ def test_list_serial_ports_matches_lerobot_range_on_unix() -> None:
     with patch(
         "pathlib.Path.glob",
         return_value=[_FakePath("/dev/tty.usbmodemA"), _FakePath("/dev/ttys001"), _FakePath("/dev/tty.debug-console")],
-    ), patch("roboclaw.embodied.scan.os.name", "posix"):
+    ), patch("roboclaw.embodied.hardware.scan.os.name", "posix"):
         ports = _list_serial_ports()
 
     assert ports == ["/dev/tty.debug-console", "/dev/tty.usbmodemA", "/dev/ttys001"]
@@ -55,15 +55,15 @@ def test_list_serial_ports_matches_lerobot_range_on_unix() -> None:
 
 def test_scan_serial_ports_merges_port_list_with_linux_symlink_aliases() -> None:
     with (
-        patch("roboclaw.embodied.scan._list_serial_ports", return_value=["/dev/ttyACM0"]),
+        patch("roboclaw.embodied.hardware.scan._list_serial_ports", return_value=["/dev/ttyACM0"]),
         patch(
-            "roboclaw.embodied.scan._read_symlink_map",
+            "roboclaw.embodied.hardware.scan._read_symlink_map",
             side_effect=[
                 {"/dev/ttyACM0": "/dev/serial/by-path/pci-0:2.1"},
                 {"/dev/ttyACM0": "/dev/serial/by-id/usb-ABC-if00"},
             ],
         ),
-        patch("roboclaw.embodied.scan.os.path.exists", return_value=True),
+        patch("roboclaw.embodied.hardware.scan.os.path.exists", return_value=True),
     ):
         ports = scan_serial_ports()
 
@@ -74,9 +74,9 @@ def test_scan_serial_ports_merges_port_list_with_linux_symlink_aliases() -> None
 
 def test_scan_serial_ports_uses_lerobot_compatible_range() -> None:
     with (
-        patch("roboclaw.embodied.scan._list_serial_ports", return_value=["/dev/tty.usbmodemA"]),
-        patch("roboclaw.embodied.scan._read_symlink_map", return_value={}),
-        patch("roboclaw.embodied.scan.os.path.exists", return_value=True),
+        patch("roboclaw.embodied.hardware.scan._list_serial_ports", return_value=["/dev/tty.usbmodemA"]),
+        patch("roboclaw.embodied.hardware.scan._read_symlink_map", return_value={}),
+        patch("roboclaw.embodied.hardware.scan.os.path.exists", return_value=True),
     ):
         ports = scan_serial_ports()
 

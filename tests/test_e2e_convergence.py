@@ -60,7 +60,7 @@ def service(monkeypatch):
         lambda *_a, **_kw: MOCK_SETUP.copy(),
     )
     monkeypatch.setattr(
-        "roboclaw.embodied.hardware_monitor.load_setup",
+        "roboclaw.embodied.hardware.monitor.load_setup",
         lambda *_a, **_kw: MOCK_SETUP.copy(),
     )
 
@@ -79,7 +79,7 @@ def service(monkeypatch):
 @pytest.fixture()
 def app_and_service(service):
     """FastAPI app with dashboard routes wired to the same service instance."""
-    from roboclaw.embodied.hardware_monitor import HardwareMonitor
+    from roboclaw.embodied.hardware.monitor import HardwareMonitor
 
     app = FastAPI()
     hw = HardwareMonitor()

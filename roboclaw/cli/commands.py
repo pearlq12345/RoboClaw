@@ -339,7 +339,7 @@ def run_onboard_core(*, interactive: bool = True, skip_config: bool = False) -> 
     if not get_setup_path().exists():
         console.print("[dim]Scanning hardware...[/dim]")
         create_setup()
-        from roboclaw.embodied.scan import scan_cameras, scan_serial_ports
+        from roboclaw.embodied.hardware.scan import scan_cameras, scan_serial_ports
         n_ports = len(scan_serial_ports())
         n_cameras = len(scan_cameras())
         console.print(f"[green]✓[/green] Embodied setup created ({n_ports} serial port(s), {n_cameras} camera(s) detected)")
