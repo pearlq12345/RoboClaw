@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from typing import Any
 
 from roboclaw.embodied.embodiment.arm.registry import ArmFamily, get_family
 
@@ -357,5 +358,10 @@ class ArmCommandBuilder:
         return args
 
 
-# Backward-compatible alias
-SO101Controller = ArmCommandBuilder
+
+def builder_for_arms(arms: list[dict[str, Any]]) -> ArmCommandBuilder:
+    """Create an ArmCommandBuilder with the family derived from arm types."""
+    if not arms:
+        return ArmCommandBuilder()
+    family = get_family(arms[0]["type"])
+    return ArmCommandBuilder(family=family)

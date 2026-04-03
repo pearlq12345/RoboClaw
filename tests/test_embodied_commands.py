@@ -2,7 +2,7 @@
 
 import sys
 
-from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
 from roboclaw.embodied.embodiment.arm.registry import SO101
 from roboclaw.embodied.learning.act import ACTPipeline
 

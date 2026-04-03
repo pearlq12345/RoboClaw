@@ -172,7 +172,7 @@ def _prepare_common(
     skip_cameras: bool = False,
 ) -> _PreparedContext:
     """Shared preparation for teleop/record: resolve arms, cameras, display."""
-    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+    from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
     from roboclaw.embodied.embodiment.arm.registry import get_family
     from roboclaw.embodied.sensor.camera import resolve_cameras
 

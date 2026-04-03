@@ -24,22 +24,18 @@ from roboclaw.embodied.ops.helpers import (
 )
 from loguru import logger
 
-from roboclaw.embodied.embodiment.arm.registry import get_family
 from roboclaw.embodied.sensor.camera import resolve_cameras
 
 
 def _builder_for_arms(arms: list[dict[str, Any]]) -> Any:
     """Create an ArmCommandBuilder with the family derived from arm types."""
-    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+    from roboclaw.embodied.engine.command_builder import builder_for_arms
 
-    if not arms:
-        return ArmCommandBuilder()
-    family = get_family(arms[0]["type"])
-    return ArmCommandBuilder(family=family)
+    return builder_for_arms(arms)
 
 
 async def _do_doctor(setup: dict[str, Any], kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
+    from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
     from roboclaw.embodied.runner import LocalLeRobotRunner
 
     result = await _run(LocalLeRobotRunner(), ArmCommandBuilder().doctor())
