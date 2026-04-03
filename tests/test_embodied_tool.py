@@ -27,7 +27,7 @@ from roboclaw.embodied.setup import (
     set_camera,
     set_hand,
 )
-from roboclaw.embodied.ops.helpers import dataset_path, group_arms, _resolve_arms
+from roboclaw.embodied.engine.helpers import dataset_path, group_arms, _resolve_arms
 from roboclaw.embodied.sensor.camera import resolve_cameras as _resolve_cameras
 from roboclaw.embodied.tool import EmbodiedToolGroup, create_embodied_tools
 

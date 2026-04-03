@@ -13,7 +13,7 @@ from roboclaw.embodied.hardware.monitor import (
     check_arm_status,
     check_camera_status,
 )
-from roboclaw.embodied.ops.helpers import _camera_previews_dir, group_arms
+from roboclaw.embodied.engine.helpers import _camera_previews_dir, group_arms
 from roboclaw.embodied.setup import load_setup
 
 if TYPE_CHECKING:

@@ -13,7 +13,7 @@ from roboclaw.http.dashboard_datasets import delete_dataset, get_dataset_info, l
 
 
 def _datasets_root() -> Path:
-    from roboclaw.embodied.ops.helpers import dataset_root
+    from roboclaw.embodied.engine.helpers import dataset_root
     return dataset_root(load_setup())
 
 

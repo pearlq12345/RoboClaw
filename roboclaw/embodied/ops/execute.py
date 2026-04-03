@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from roboclaw.embodied.ops.helpers import (
+from roboclaw.embodied.engine.helpers import (
     _BIMANUAL_ID,
     _DEFAULT_REPLAY_ROOT,
     _NO_TTY_MSG,

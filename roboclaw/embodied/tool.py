@@ -343,7 +343,7 @@ async def _dispatch(
 async def _dispatch_with_setup(
     action: str, kwargs: dict[str, Any], tty_handoff: Any, svc: Any,
 ) -> str | list:
-    from roboclaw.embodied.ops.helpers import ActionError
+    from roboclaw.embodied.engine.helpers import ActionError
     from roboclaw.embodied.setup import ensure_setup
 
     setup = ensure_setup()
@@ -368,7 +368,7 @@ async def _run_action(
     if action == "record":
         dataset_name = kwargs.get("dataset_name")
         if dataset_name:
-            from roboclaw.embodied.ops.helpers import _validate_dataset_name
+            from roboclaw.embodied.engine.helpers import _validate_dataset_name
             error = _validate_dataset_name(dataset_name)
             if error:
                 return error
