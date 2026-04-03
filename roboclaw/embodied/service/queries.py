@@ -31,7 +31,7 @@ _ACTION_DESCRIPTIONS = {
     "train": "Start ACT training for a recorded dataset as a detached job.",
     "run_policy": "Run a trained policy: use embodied_control(action='record', checkpoint_path='...') with one follower arm.",
     "job_status": "Inspect the status and recent logs for a detached training job.",
-    "setup_show": "Show the embodied setup JSON with configured arms, cameras, and roots.",
+    "status": "Show hardware status: configured arms/cameras, connectivity, calibration, readiness.",
     "set_arm": "Create or update one configured arm alias.",
     "rename_arm": "Rename an existing configured arm alias.",
     "remove_arm": "Remove one configured arm alias.",
