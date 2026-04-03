@@ -7,7 +7,6 @@ bus and maps events to its own wire format.
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import time
 from dataclasses import asdict, dataclass, field
@@ -27,7 +26,9 @@ class Event:
     ts: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in asdict(self).items() if k != "ts"}
+        d = asdict(self)
+        d["timestamp"] = d.pop("ts")
+        return d
 
 
 # -- Session -----------------------------------------------------------------
@@ -115,8 +116,3 @@ class EventBus:
                     await result
             except Exception:
                 logger.exception("EventBus handler error for {}", type(event).__name__)
-
-    def emit_sync(self, event: Event) -> None:
-        """Schedule *emit* from a non-async context (requires a running loop)."""
-        loop = asyncio.get_running_loop()
-        loop.create_task(self.emit(event))

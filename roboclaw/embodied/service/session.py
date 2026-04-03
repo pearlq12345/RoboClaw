@@ -21,7 +21,7 @@ class SessionService:
     def __init__(
         self,
         parent: EmbodiedService,
-        event_bus: EventBus | None = None,
+        event_bus: EventBus,
     ) -> None:
         self._parent = parent
         self._engine = OperationEngine(on_state_change=self._on_engine_state_change)
@@ -87,5 +87,4 @@ class SessionService:
             if monitor is not None:
                 monitor.set_recording_active(False)
 
-        if self._event_bus is not None:
-            await self._event_bus.emit(SessionStateChangedEvent(**status))
+        await self._event_bus.emit(SessionStateChangedEvent(**status))

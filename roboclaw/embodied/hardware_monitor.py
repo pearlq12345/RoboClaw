@@ -134,7 +134,7 @@ class HardwareMonitor:
         logger.info("Hardware monitor stopped")
 
     async def _tick(self) -> None:
-        """Run one check cycle, diff against active faults, fire callbacks."""
+        """Run one check cycle, diff against active faults, emit events."""
         current_faults = self.check_hardware()
         current_keys = {_fault_key(f): f for f in current_faults}
 

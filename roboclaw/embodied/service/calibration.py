@@ -24,7 +24,7 @@ def _find_arm(setup: dict, alias: str) -> dict:
 class CalibrationService:
     """Manages arm calibration sessions with port-lock coordination."""
 
-    def __init__(self, parent: EmbodiedService, event_bus: EventBus | None = None) -> None:
+    def __init__(self, parent: EmbodiedService, event_bus: EventBus) -> None:
         self._parent = parent
         self._event_bus = event_bus
         self._session: CalibrationSession | None = None
@@ -51,8 +51,7 @@ class CalibrationService:
         self._session = session
         self._arm_alias = arm_alias
         result = {"state": session.state, "arm_alias": arm_alias}
-        if self._event_bus is not None:
-            await self._event_bus.emit(CalibrationStateChangedEvent(state=session.state, arm_alias=arm_alias))
+        await self._emit_state(session.state, arm_alias)
         return result
 
     def get_status(self) -> dict[str, Any]:
@@ -64,8 +63,7 @@ class CalibrationService:
         self._require_session()
         offsets = await asyncio.to_thread(self._session.set_homing)
         result = {"state": self._session.state, "homing_offsets": offsets}
-        if self._event_bus is not None:
-            await self._event_bus.emit(CalibrationStateChangedEvent(state=self._session.state, arm_alias=self._arm_alias))
+        await self._emit_state(self._session.state, self._arm_alias)
         return result
 
     async def read_positions(self) -> dict[str, Any]:
@@ -85,8 +83,7 @@ class CalibrationService:
         mark_arm_calibrated(self._arm_alias)
         arm_alias = self._arm_alias
         await self._cleanup()
-        if self._event_bus is not None:
-            await self._event_bus.emit(CalibrationStateChangedEvent(state="done", arm_alias=arm_alias))
+        await self._emit_state("done", arm_alias)
         return {"state": "done", "calibration": calibration}
 
     async def cancel(self) -> None:
@@ -94,12 +91,14 @@ class CalibrationService:
         if self._session is not None:
             await asyncio.to_thread(self._session.cancel)
         await self._cleanup()
-        if self._event_bus is not None:
-            await self._event_bus.emit(CalibrationStateChangedEvent(state="idle", arm_alias=arm_alias))
+        await self._emit_state("idle", arm_alias)
 
     @property
     def active(self) -> bool:
         return self._session is not None
+
+    async def _emit_state(self, state: str, arm_alias: str) -> None:
+        await self._event_bus.emit(CalibrationStateChangedEvent(state=state, arm_alias=arm_alias))
 
     def _require_session(self) -> None:
         if self._session is None:
