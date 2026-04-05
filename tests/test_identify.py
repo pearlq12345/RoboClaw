@@ -26,7 +26,7 @@ _MOCK_PORTS = [
 
 def _hw_tool(tty_handoff=None) -> EmbodiedToolGroup:
     tools = create_embodied_tools(tty_handoff=tty_handoff)
-    return next(t for t in tools if t.name == "embodied_hardware")
+    return next(t for t in tools if t.name == "setup")
 
 
 def _manifest_from_data(tmp_path: Path, data: dict) -> Manifest:

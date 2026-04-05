@@ -33,14 +33,14 @@ class StubProvider(LLMProvider):
 
         user_text = _last_user_text(messages).lower()
         if "identify" in user_text:
-            return _tool_call("embodied_hardware", {"action": "identify"})
+            return _tool_call("setup", {"action": "identify"})
         if "calibrate" in user_text:
-            return _tool_call("embodied_hardware", {"action": "calibrate"})
+            return _tool_call("calibration", {"action": "calibrate"})
         if "teleoperate" in user_text:
-            return _tool_call("embodied_control", {"action": "teleoperate"})
+            return _tool_call("teleop", {"action": "teleoperate"})
         if "replay" in user_text:
             return _tool_call(
-                "embodied_replay",
+                "replay",
                 {"action": "replay", "dataset_name": "demo"},
             )
         return LLMResponse(content=f"Echo: {_last_user_text(messages)}")

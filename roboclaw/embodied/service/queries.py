@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 _ACTION_DESCRIPTIONS = {
     "scan": "Scan for serial ports with motors and available cameras.",
-    "doctor": "Check LeRobot availability and show the current embodied setup.",
+    "check": "Check LeRobot availability and show the current embodied setup.",
     "identify": "Launch the interactive arm-identification flow for detected serial ports.",
     "describe": "Explain adjustable parameters for a target embodied action.",
     "calibrate": "Calibrate one or more configured arms. If arms is omitted, calibrate every uncalibrated arm.",
@@ -30,17 +30,19 @@ _ACTION_DESCRIPTIONS = {
     "record": "Record a dataset with one follower/leader pair or two pairs for bimanual capture.",
     "replay": "Replay a recorded dataset episode on one or two follower arms.",
     "train": "Start ACT training for a recorded dataset as a detached job.",
-    "run_policy": "Run a trained policy: use embodied_control(action='record', checkpoint_path='...') with one follower arm.",
+    "run_policy": "Run a trained policy rollout with one or two follower arms.",
     "job_status": "Inspect the status and recent logs for a detached training job.",
-    "hardware_status": "Show hardware status: configured arms/cameras, connectivity, calibration, readiness.",
-    "set_arm": "Create or update one configured arm alias.",
+    "status": "Show hardware status: configured arms/cameras, connectivity, calibration, readiness.",
+    "bind_arm": "Create or update one configured arm alias.",
     "rename_arm": "Rename an existing configured arm alias.",
-    "remove_arm": "Remove one configured arm alias.",
-    "set_camera": "Assign a scanned camera to a stable camera name.",
+    "unbind_arm": "Remove one configured arm alias.",
+    "bind_camera": "Assign a scanned camera to a stable camera name.",
+    "rename_camera": "Rename an existing configured camera alias.",
     "preview_cameras": "Capture one preview image for each scanned camera.",
-    "remove_camera": "Remove a configured camera.",
-    "set_hand": "Create or update one configured hand alias.",
-    "remove_hand": "Remove a configured hand alias.",
+    "unbind_camera": "Remove a configured camera.",
+    "bind_hand": "Create or update one configured hand alias.",
+    "unbind_hand": "Remove a configured hand alias.",
+    "rename_hand": "Rename an existing configured hand alias.",
     "hand_open": "Open all fingers of a dexterous hand.",
     "hand_close": "Close all fingers of a dexterous hand.",
     "hand_pose": "Set individual finger positions on a dexterous hand.",
@@ -137,7 +139,7 @@ class QueryService:
         ``scan`` action (service.setup.run_full_scan).
         """
         snapshot = self._parent.manifest.snapshot
-        snapshot["hardware_status"] = self.get_hardware_status(self._parent.manifest)
+        snapshot["status"] = self.get_hardware_status(self._parent.manifest)
         return json.dumps(snapshot, indent=2, ensure_ascii=False)
 
     def describe_actions(self, target_action: str = "") -> str:
