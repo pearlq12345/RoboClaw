@@ -15,7 +15,12 @@ class EmbodimentSpec:
     """
 
     name: str  # Unique identifier, e.g. "so101", "inspire_rh56", "opencv"
+    roles: tuple[str, ...] = ()  # e.g. ("follower", "leader") for paired devices
     device_patterns: dict[str, tuple[str, ...]] = field(default_factory=lambda: {
         "linux": ("ttyACM*", "ttyUSB*"),
         "darwin": ("tty.usb*", "tty.usbserial*", "cu.usb*", "cu.usbserial*"),
     })
+
+    def spec_name_for(self, role: str) -> str:
+        """Construct full spec name for a given role (e.g. 'so101' + 'follower' → 'so101_follower')."""
+        return f"{self.name}_{role}" if role else self.name

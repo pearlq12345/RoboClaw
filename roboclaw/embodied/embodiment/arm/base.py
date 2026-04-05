@@ -11,6 +11,7 @@ from roboclaw.embodied.embodiment.base import EmbodimentSpec
 class ArmSpec(EmbodimentSpec):
     """Base class for all robot arm specifications."""
 
+    roles: tuple[str, ...] = ("follower", "leader")
     motor_names: tuple[str, ...] = ()
     supports_bimanual: bool = False
     bimanual_follower_type: str = ""

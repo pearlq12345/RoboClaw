@@ -66,6 +66,17 @@ class SetupSession:
         return self._phase
 
     @property
+    def _current_spec(self):
+        """Look up the EmbodimentSpec for the current model."""
+        if not self._model:
+            return None
+        from roboclaw.embodied.embodiment.catalog import get_spec
+        try:
+            return get_spec(self._model)
+        except ValueError:
+            return None
+
+    @property
     def motion_active(self) -> bool:
         return self._phase == SetupPhase.IDENTIFYING
 
@@ -293,16 +304,12 @@ class SetupSession:
 
         if self._awaiting_alias_for:
             lang = self._language
-            if not self._pending_role:
-                return PromptStep(
-                    "role",
-                    t("selectRole", lang),
-                    options=[t("followerRole", lang), t("leaderRole", lang)],
-                )
-            return PromptStep(
-                "alias",
-                t("aliasPrompt", lang),
-            )
+            spec = self._current_spec
+            roles = spec.roles if spec else ()
+            if roles and not self._pending_role:
+                options = [t(f"role_{r}", lang) for r in roles]
+                return PromptStep("role", t("selectRole", lang), options=options)
+            return PromptStep("alias", t("aliasPrompt", lang))
 
         if self._phase in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
             return self._next_step_assigning()
@@ -320,7 +327,13 @@ class SetupSession:
             port_short = answer.rsplit("/", 1)[-1] if "/" in answer else answer
             print(t("detectedMotion", self._language, port=port_short))
         elif prompt_id == "role":
-            self._pending_role = "leader" if answer == "2" else "follower"
+            spec = self._current_spec
+            roles = spec.roles if spec else ("follower", "leader")
+            try:
+                idx = int(answer) - 1
+                self._pending_role = roles[idx] if 0 <= idx < len(roles) else roles[0]
+            except (ValueError, IndexError):
+                self._pending_role = roles[0]
         elif prompt_id == "alias":
             self._submit_alias(answer)
         elif prompt_id == "confirm":
@@ -459,14 +472,15 @@ class SetupSession:
     def _submit_alias(self, answer: str) -> None:
         lang = self._language
         stable_id = self._awaiting_alias_for
-        role = self._pending_role or "follower"
+        role = self._pending_role
         self._awaiting_alias_for = ""
         self._pending_role = ""
         if not answer:
             print(t("skipped", lang))
             return
-        alias = f"{answer}_{role}"
-        spec_name = f"{self._model}_{role}"
+        spec = self._current_spec
+        alias = f"{answer}_{role}" if role else answer
+        spec_name = spec.spec_name_for(role) if spec else f"{self._model}_{role}"
         try:
             self.assign(stable_id, alias, spec_name)
             print(t("assigned", lang, alias=alias, spec=spec_name))

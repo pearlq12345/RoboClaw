@@ -16,6 +16,7 @@ class HandSpec(EmbodimentSpec):
     is referenced by module path for lazy import.
     """
 
+    roles: tuple[str, ...] = ("follower", "leader")
     finger_labels: tuple[str, ...] = ()
     num_fingers: int = 0
     baudrate: int = 0

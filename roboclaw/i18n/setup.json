@@ -43,12 +43,12 @@
     "zh": "选择角色:",
     "en": "Select role:"
   },
-  "followerRole": {
-    "zh": "跟随臂 (follower)",
+  "role_follower": {
+    "zh": "从 (follower)",
     "en": "Follower"
   },
-  "leaderRole": {
-    "zh": "主臂 (leader)",
+  "role_leader": {
+    "zh": "主 (leader)",
     "en": "Leader"
   },
   "aliasPrompt": {
