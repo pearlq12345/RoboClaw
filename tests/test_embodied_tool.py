@@ -357,7 +357,7 @@ async def test_embodiment_control_action(tmp_path: Path) -> None:
 
     with (
         patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.service.actions._get_hand_controller") as mock_controller,
+        patch("roboclaw.embodied.service.hand_session.HandSession._get_hand_controller") as mock_controller,
     ):
         mock_controller.return_value.open_hand = AsyncMock(return_value="opened")
         result = await tool.execute(action="hand_open", hand_name="left_hand")

@@ -428,7 +428,7 @@ class EmbodiedToolGroup(Tool):
             result = await asyncio.to_thread(svc.setup.run_full_scan, kwargs.get("model", ""))
             return _format_scan(result)
         if action == "preview_cameras":
-            return svc.queries.preview_cameras()
+            return svc.setup.preview_cameras()
         return await _run_with_manifest(
             svc,
             lambda manifest: svc.setup.identify(manifest, kwargs, self._tty_handoff),
@@ -474,7 +474,7 @@ class EmbodiedToolGroup(Tool):
         action = kwargs["action"]
         return await _run_with_manifest(
             svc,
-            lambda manifest: _run_train_action(svc, action, manifest, kwargs, self._tty_handoff),
+            lambda manifest: _run_train_action(svc.train, action, manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_infer(self, kwargs: dict[str, Any]) -> str | list:
@@ -489,7 +489,7 @@ class EmbodiedToolGroup(Tool):
         action = kwargs["action"]
         return await _run_with_manifest(
             svc,
-            lambda manifest: _run_hand_action(svc, action, manifest, kwargs, self._tty_handoff),
+            lambda manifest: _run_hand_action(svc.hand, action, manifest, kwargs, self._tty_handoff),
         )
 
 
@@ -535,32 +535,32 @@ async def _run_with_manifest(service: Any, func: Any) -> str | list:
 
 
 async def _run_train_action(
-    service: Any,
+    train: Any,
     action: str,
     manifest: Any,
     kwargs: dict[str, Any],
     tty_handoff: Any,
 ) -> str:
     if action == "train":
-        return await service.train.train(manifest, kwargs, tty_handoff)
+        return await train.train(manifest, kwargs, tty_handoff)
     if action == "job_status":
-        return await service.train.job_status(manifest, kwargs, tty_handoff)
+        return await train.job_status(manifest, kwargs, tty_handoff)
     if action == "list_datasets":
-        return service.queries.list_datasets(manifest)
-    return service.queries.list_policies(manifest)
+        return train.list_datasets(manifest)
+    return train.list_policies(manifest)
 
 
 async def _run_hand_action(
-    service: Any,
+    hand: Any,
     action: str,
     manifest: Any,
     kwargs: dict[str, Any],
     tty_handoff: Any,
 ) -> str:
     if action == "hand_open":
-        return await service.hand_open(manifest, kwargs, tty_handoff)
+        return await hand.open_hand(manifest, kwargs, tty_handoff)
     if action == "hand_close":
-        return await service.hand_close(manifest, kwargs, tty_handoff)
+        return await hand.close_hand(manifest, kwargs, tty_handoff)
     if action == "hand_pose":
-        return await service.hand_pose(manifest, kwargs, tty_handoff)
-    return await service.hand_status(manifest, kwargs, tty_handoff)
+        return await hand.set_pose(manifest, kwargs, tty_handoff)
+    return await hand.get_status(manifest, kwargs, tty_handoff)

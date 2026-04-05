@@ -17,6 +17,7 @@ from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.calibration_session import CalibrationSession as CalibrationCLI
 from roboclaw.embodied.service.config import ConfigService
 from roboclaw.embodied.service.doctor_service import DoctorService
+from roboclaw.embodied.service.hand_session import HandSession
 from roboclaw.embodied.service.infer_session import InferSession
 from roboclaw.embodied.service.queries import QueryService
 from roboclaw.embodied.service.record_session import RecordSession
@@ -68,6 +69,7 @@ class EmbodiedService:
         self.replay = ReplaySession(self)
         self.train = TrainSession(self)
         self.infer = InferSession(self)
+        self.hand = HandSession(self)
         self.doctor = DoctorService(self)
         self.calibration_session = CalibrationCLI(self)
 
@@ -173,49 +175,6 @@ class EmbodiedService:
 
     def read_servo_positions(self) -> dict[str, Any]:
         return self.queries.read_servo_positions()
-
-    # -- Async operations (wrap service/actions.py with embodiment lock) -------
-
-    async def run_calibrate(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_calibrate
-
-        result = await do_calibrate(manifest, kwargs, tty_handoff)
-        self.manifest.reload()  # actions.py writes disk via free function
-        return result
-
-    async def run_identify(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.setup.identify(manifest, kwargs, tty_handoff)
-
-    async def run_replay(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.replay.replay(manifest, kwargs, tty_handoff)
-
-    async def run_doctor(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.doctor.check(manifest, kwargs, tty_handoff)
-
-    async def start_training(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.train.train(manifest, kwargs, tty_handoff)
-
-    async def get_job_status(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.train.job_status(manifest, kwargs, tty_handoff)
-
-    async def run_policy(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        return await self.infer.run_policy(manifest, kwargs, tty_handoff)
-
-    async def hand_open(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_hand_open
-        return await do_hand_open(manifest, kwargs, tty_handoff)
-
-    async def hand_close(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_hand_close
-        return await do_hand_close(manifest, kwargs, tty_handoff)
-
-    async def hand_pose(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_hand_pose
-        return await do_hand_pose(manifest, kwargs, tty_handoff)
-
-    async def hand_status(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_hand_status
-        return await do_hand_status(manifest, kwargs, tty_handoff)
 
     # -- Shutdown -------------------------------------------------------------
 

@@ -6,15 +6,21 @@ Shared by CLI agent and Web UI.
 """
 from __future__ import annotations
 
+import base64
+import json
+import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from roboclaw.embodied.engine.helpers import _NO_TTY_MSG, _camera_previews_dir, _format_tty_failure, _run_tty
 from roboclaw.embodied.hardware.discovery import HardwareDiscovery
 from roboclaw.embodied.hardware.scan import restore_stderr, suppress_stderr
 from roboclaw.embodied.interface import Interface, SerialInterface, VideoInterface
 
 if TYPE_CHECKING:
+    from roboclaw.embodied.manifest import Manifest
     from roboclaw.embodied.service import EmbodiedService
 
 
@@ -114,11 +120,39 @@ class SetupSession:
             self._parent.release_embodiment()
 
     async def identify(self, manifest: Any, kwargs: dict[str, Any], tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_identify
+        from roboclaw.embodied.runner import LocalLeRobotRunner
+        from roboclaw.embodied.hardware import scan as scan_module
 
-        result = await do_identify(manifest, kwargs, tty_handoff)
+        if not tty_handoff:
+            return _NO_TTY_MSG
+        ports = scan_module.scan_serial_ports()
+        if not ports:
+            return "No serial ports detected."
+        ports_json = json.dumps([port.to_dict() for port in ports])
+        argv = [sys.executable, "-m", "roboclaw.embodied.identify", ports_json]
+        rc, stderr_text = await _run_tty(
+            tty_handoff,
+            LocalLeRobotRunner(),
+            argv,
+            "identify-arms",
+        )
+        if rc == 0:
+            result = "Arm identification complete."
+        else:
+            result = _format_tty_failure("Arm identification failed", rc, stderr_text)
         self._parent.manifest.reload()
         return result
+
+    def preview_cameras(self) -> str | list[dict[str, Any]]:
+        from roboclaw.embodied.hardware.scan import capture_camera_frames, scan_cameras
+
+        scanned_cameras = scan_cameras()
+        if not scanned_cameras:
+            return "No cameras detected."
+        previews = capture_camera_frames(scanned_cameras, _camera_previews_dir())
+        if not previews:
+            return "No camera previews captured."
+        return self._previews_to_multimodal(previews, scanned_cameras)
 
     # -- Identify (motion detection) -----------------------------------------
 
@@ -259,6 +293,44 @@ class SetupSession:
         self._discovery = None
         self._candidates = []
         self._assignments = []
+
+    @staticmethod
+    def _previews_to_multimodal(
+        previews: list[dict[str, str]],
+        scanned: list[VideoInterface],
+    ) -> list[dict[str, Any]]:
+        cam_by_source: dict[str, VideoInterface] = {}
+        for cam in scanned:
+            for value in (cam.by_path, cam.by_id, cam.dev):
+                if value:
+                    cam_by_source[value] = cam
+
+        blocks: list[dict[str, Any]] = []
+        summary_lines = [
+            f"Detected {len(scanned)} camera(s). Preview images below — "
+            "suggest a descriptive name for each based on what you see "
+            "(e.g. top, left_wrist, right_wrist, front, side)."
+        ]
+        empty_cam = VideoInterface()
+        for index, preview in enumerate(previews):
+            cam_info = cam_by_source.get(preview.get("camera", ""), empty_cam)
+            summary_lines.append(
+                f"\nCamera {index}: dev={cam_info.dev or '?'} "
+                f"({cam_info.width}x{cam_info.height} @ {cam_info.fps}fps)"
+            )
+            img_path = Path(preview.get("image_path", ""))
+            if not img_path.is_file():
+                continue
+            raw = img_path.read_bytes()
+            b64 = base64.b64encode(raw).decode()
+            blocks.append({"type": "text", "text": f"Camera {index}:"})
+            blocks.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+            })
+
+        blocks.insert(0, {"type": "text", "text": "\n".join(summary_lines)})
+        return blocks
 
     @staticmethod
     def _commit_one(manifest: Any, assignment: Assignment) -> None:

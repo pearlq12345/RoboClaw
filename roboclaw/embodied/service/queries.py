@@ -1,10 +1,8 @@
-"""Query sub-service: read-only status, listings, and previews."""
+"""Query sub-service: read-only status and action descriptions."""
 
 from __future__ import annotations
 
-import base64
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from roboclaw.embodied.hardware.monitor import (
@@ -13,7 +11,7 @@ from roboclaw.embodied.hardware.monitor import (
     check_arm_status,
     check_camera_status,
 )
-from roboclaw.embodied.engine.helpers import _camera_previews_dir, group_arms
+from roboclaw.embodied.engine.helpers import group_arms
 from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.manifest.binding import Binding
 
@@ -77,46 +75,6 @@ def _compute_readiness(
     return len(missing) == 0, missing
 
 
-def _previews_to_multimodal(
-    previews: list[dict[str, str]], scanned: list,
-) -> list[dict]:
-    """Convert camera previews to multimodal content blocks with embedded images."""
-    from roboclaw.embodied.interface.video import VideoInterface
-
-    cam_by_source: dict[str, VideoInterface] = {}
-    for cam in scanned:
-        for val in (cam.by_path, cam.by_id, cam.dev):
-            if val:
-                cam_by_source[val] = cam
-
-    blocks: list[dict] = []
-    summary_lines = [
-        f"Detected {len(scanned)} camera(s). Preview images below — "
-        "suggest a descriptive name for each based on what you see "
-        "(e.g. top, left_wrist, right_wrist, front, side)."
-    ]
-    _empty_cam = VideoInterface()
-    for i, preview in enumerate(previews):
-        cam_info = cam_by_source.get(preview.get("camera", ""), _empty_cam)
-        summary_lines.append(
-            f"\nCamera {i}: dev={cam_info.dev or '?'} "
-            f"({cam_info.width}x{cam_info.height} "
-            f"@ {cam_info.fps}fps)"
-        )
-        img_path = Path(preview.get("image_path", ""))
-        if img_path.is_file():
-            raw = img_path.read_bytes()
-            b64 = base64.b64encode(raw).decode()
-            blocks.append({"type": "text", "text": f"Camera {i}:"})
-            blocks.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-            })
-
-    blocks.insert(0, {"type": "text", "text": "\n".join(summary_lines)})
-    return blocks
-
-
 class QueryService:
     """Read-only queries: manifest, hardware status, datasets, policies, previews."""
 
@@ -148,71 +106,6 @@ class QueryService:
         if target_action not in _ACTION_DESCRIPTIONS:
             return f"Unknown target_action: {target_action}"
         return f"{target_action}: {_ACTION_DESCRIPTIONS[target_action]}"
-
-    def list_datasets(self, manifest: Manifest | None = None) -> str:
-        if manifest is None:
-            manifest = self._parent.manifest
-            manifest.ensure()
-        root = Path(manifest.snapshot.get("datasets", {}).get("root", "")) / "local"
-        if not root.exists():
-            return "No datasets found."
-        datasets = []
-        for d in sorted(root.iterdir()):
-            info_path = d / "meta" / "info.json"
-            if not info_path.exists():
-                continue
-            try:
-                info = json.loads(info_path.read_text())
-            except (json.JSONDecodeError, OSError):
-                continue
-            datasets.append({
-                "name": d.name,
-                "episodes": info.get("total_episodes", 0),
-                "frames": info.get("total_frames", 0),
-                "fps": info.get("fps", 0),
-            })
-        if not datasets:
-            return "No datasets found."
-        return json.dumps(datasets, indent=2, ensure_ascii=False)
-
-    def list_policies(self, manifest: Manifest | None = None) -> str:
-        if manifest is None:
-            manifest = self._parent.manifest
-            manifest.ensure()
-        root = Path(manifest.snapshot.get("policies", {}).get("root", ""))
-        if not root.exists():
-            return "No policies found."
-        policies = []
-        for d in sorted(root.iterdir()):
-            if not d.is_dir():
-                continue
-            last = d / "checkpoints" / "last" / "pretrained_model"
-            if not last.exists():
-                continue
-            entry = {"name": d.name, "checkpoint": str(last)}
-            tcfg = last / "train_config.json"
-            if tcfg.exists():
-                try:
-                    cfg = json.loads(tcfg.read_text())
-                except (json.JSONDecodeError, OSError):
-                    cfg = {}
-                entry["dataset"] = cfg.get("dataset", {}).get("repo_id", "")
-                entry["steps"] = cfg.get("steps", 0)
-            policies.append(entry)
-        if not policies:
-            return "No policies found."
-        return json.dumps(policies, indent=2, ensure_ascii=False)
-
-    def preview_cameras(self) -> str | list:
-        from roboclaw.embodied.hardware.scan import capture_camera_frames, scan_cameras
-
-        scanned_cameras = scan_cameras()
-        if not scanned_cameras:
-            return "No cameras detected."
-        previews = capture_camera_frames(scanned_cameras, _camera_previews_dir())
-        if not previews:
-            return "No camera previews captured."
-        return _previews_to_multimodal(previews, scanned_cameras)
 
     def get_hardware_status(self, manifest: Manifest | None = None) -> dict[str, Any]:
         if manifest is None:
