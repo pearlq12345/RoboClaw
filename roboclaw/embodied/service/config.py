@@ -23,7 +23,7 @@ class ConfigService:
 
     def set_arm(self, alias: str, arm_type: str, port: str) -> str:
         if not all([alias, arm_type, port]):
-            return "set_arm requires alias, arm_type, and port."
+            return "bind_arm requires alias, arm_type, and port."
         interface = _resolve_serial_interface(port)
         self._parent.manifest.set_arm(alias, arm_type, interface)
         arm = self._parent.manifest.find_arm(alias)
@@ -42,7 +42,7 @@ class ConfigService:
 
     def remove_arm(self, alias: str) -> str:
         if not alias:
-            return "remove_arm requires alias."
+            return "unbind_arm requires alias."
         if self._parent.embodiment_busy:
             return f"Cannot remove arm while embodiment is busy: {self._parent.busy_reason}"
         self._parent.manifest.remove_arm(alias)
@@ -50,7 +50,7 @@ class ConfigService:
 
     def set_camera(self, camera_name: str, camera_index: int) -> str:
         if not camera_name or camera_index is None:
-            return "set_camera requires camera_name and camera_index."
+            return "bind_camera requires camera_name and camera_index."
         from roboclaw.embodied.hardware.scan import scan_cameras
 
         scanned = scan_cameras()
@@ -68,15 +68,31 @@ class ConfigService:
 
     def remove_camera(self, camera_name: str) -> str:
         if not camera_name:
-            return "remove_camera requires camera_name."
+            return "unbind_camera requires camera_name."
         if self._parent.embodiment_busy:
             return f"Cannot remove camera while embodiment is busy: {self._parent.busy_reason}"
         self._parent.manifest.remove_camera(camera_name)
         return f"Camera '{camera_name}' removed."
 
+    def rename_camera(self, old_name: str, new_name: str) -> str:
+        if not old_name or not new_name:
+            return "rename_camera requires camera_name and new_alias."
+        camera = self._parent.manifest.find_camera(old_name)
+        if camera is None:
+            return f"No camera with alias '{old_name}'."
+        if self._parent.manifest.find_camera(new_name) is not None:
+            return f"Camera alias '{new_name}' already exists."
+        self._parent.manifest.remove_camera(old_name)
+        self._parent.manifest.set_camera(new_name, camera.interface)
+        camera = self._parent.manifest.find_camera(new_name)
+        return (
+            f"Camera renamed from '{old_name}' to '{new_name}'.\n"
+            f"{json.dumps(camera.to_dict(), indent=2)}"
+        )
+
     def set_hand(self, alias: str, hand_type: str, port: str) -> str:
         if not all([alias, hand_type, port]):
-            return "set_hand requires alias, hand_type, and port."
+            return "bind_hand requires alias, hand_type, and port."
         interface = _resolve_serial_interface(port)
         slave_id = _probe_hand_slave_id(hand_type, interface.address)
         self._parent.manifest.set_hand(alias, hand_type, interface, slave_id)
@@ -85,6 +101,27 @@ class ConfigService:
 
     def remove_hand(self, alias: str) -> str:
         if not alias:
-            return "remove_hand requires alias."
+            return "unbind_hand requires alias."
         self._parent.manifest.remove_hand(alias)
         return f"Hand '{alias}' removed."
+
+    def rename_hand(self, old_alias: str, new_alias: str) -> str:
+        if not old_alias or not new_alias:
+            return "rename_hand requires alias and new_alias."
+        hand = self._parent.manifest.find_hand(old_alias)
+        if hand is None:
+            return f"No hand with alias '{old_alias}'."
+        if self._parent.manifest.find_hand(new_alias) is not None:
+            return f"Hand alias '{new_alias}' already exists."
+        self._parent.manifest.remove_hand(old_alias)
+        self._parent.manifest.set_hand(
+            new_alias,
+            hand.type_name,
+            hand.interface,
+            hand.slave_id,
+        )
+        hand = self._parent.manifest.find_hand(new_alias)
+        return (
+            f"Hand renamed from '{old_alias}' to '{new_alias}'.\n"
+            f"{json.dumps(hand.to_dict(), indent=2)}"
+        )

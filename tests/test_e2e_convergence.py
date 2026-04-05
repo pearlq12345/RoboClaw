@@ -106,10 +106,10 @@ class TestConvergence:
     """CLI and Web paths converge on the same service data."""
 
     def test_hardware_status_data_matches(self, service):
-        """CLI get_manifest() embeds the same hardware_status as the direct query."""
+        """CLI get_manifest() embeds the same status payload as the direct query."""
         cli_json = service.queries.get_manifest()
         cli_data = json.loads(cli_json)
-        cli_hw = cli_data["hardware_status"]
+        cli_hw = cli_data["status"]
 
         web_hw = service.queries.get_hardware_status()
 

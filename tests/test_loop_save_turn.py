@@ -50,7 +50,7 @@ def test_save_turn_strips_images_from_multimodal_tool_result() -> None:
         [{
             "role": "tool",
             "tool_call_id": "call_mm",
-            "name": "embodied_setup",
+            "name": "manifest",
             "content": [
                 {"type": "text", "text": "Detected 1 camera(s)."},
                 {"type": "text", "text": "Camera 0:"},

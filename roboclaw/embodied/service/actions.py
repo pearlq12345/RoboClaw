@@ -344,7 +344,7 @@ def _resolve_hand(manifest: Manifest, hand_name: str) -> Binding:
 
     hands = manifest.hands
     if not hands:
-        raise ActionError("No hand configured. Use set_hand to add one.")
+        raise ActionError("No hand configured. Use bind_hand to add one.")
     if not hand_name:
         return hands[0]
     hand = manifest.find_hand(hand_name)

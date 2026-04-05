@@ -14,10 +14,17 @@ from roboclaw.embodied.events import EventBus
 from roboclaw.embodied.hardware.monitor import HardwareMonitor
 from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.service.calibration import CalibrationService
+from roboclaw.embodied.service.calibration_session import CalibrationSession as CalibrationCLI
 from roboclaw.embodied.service.config import ConfigService
+from roboclaw.embodied.service.doctor_service import DoctorService
+from roboclaw.embodied.service.infer_session import InferSession
 from roboclaw.embodied.service.queries import QueryService
+from roboclaw.embodied.service.record_session import RecordSession
+from roboclaw.embodied.service.replay_session import ReplaySession
 from roboclaw.embodied.service.session import SessionService
 from roboclaw.embodied.service.setup_session import SetupSession
+from roboclaw.embodied.service.teleop_session import TeleopSession
+from roboclaw.embodied.service.train_session import TrainSession
 
 
 class EmbodimentBusyError(RuntimeError):
@@ -56,6 +63,13 @@ class EmbodiedService:
         self.setup = SetupSession(self)
         self.config = ConfigService(self)
         self.queries = QueryService(self)
+        self.teleop = TeleopSession(self)
+        self.record = RecordSession(self)
+        self.replay = ReplaySession(self)
+        self.train = TrainSession(self)
+        self.infer = InferSession(self)
+        self.doctor = DoctorService(self)
+        self.calibration_session = CalibrationCLI(self)
 
     @property
     def event_bus(self) -> EventBus:
@@ -164,39 +178,28 @@ class EmbodiedService:
 
     async def run_calibrate(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
         from roboclaw.embodied.service.actions import do_calibrate
+
         result = await do_calibrate(manifest, kwargs, tty_handoff)
         self.manifest.reload()  # actions.py writes disk via free function
         return result
 
     async def run_identify(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_identify
-        result = await do_identify(manifest, kwargs, tty_handoff)
-        self.manifest.reload()  # identify subprocess writes disk directly
-        return result
+        return await self.setup.identify(manifest, kwargs, tty_handoff)
 
     async def run_replay(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_replay
-        self.acquire_embodiment("replaying")
-        try:
-            return await do_replay(manifest, kwargs, tty_handoff)
-        finally:
-            self.release_embodiment()
+        return await self.replay.replay(manifest, kwargs, tty_handoff)
 
     async def run_doctor(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_doctor
-        return await do_doctor(manifest, kwargs, tty_handoff)
+        return await self.doctor.check(manifest, kwargs, tty_handoff)
 
     async def start_training(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_train
-        return await do_train(manifest, kwargs, tty_handoff)
+        return await self.train.train(manifest, kwargs, tty_handoff)
 
     async def get_job_status(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_job_status
-        return await do_job_status(manifest, kwargs, tty_handoff)
+        return await self.train.job_status(manifest, kwargs, tty_handoff)
 
     async def run_policy(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
-        from roboclaw.embodied.service.actions import do_run_policy
-        return await do_run_policy(manifest, kwargs, tty_handoff)
+        return await self.infer.run_policy(manifest, kwargs, tty_handoff)
 
     async def hand_open(self, manifest: Manifest, kwargs: dict, tty_handoff: Any) -> str:
         from roboclaw.embodied.service.actions import do_hand_open

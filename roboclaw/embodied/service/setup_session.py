@@ -113,6 +113,13 @@ class SetupSession:
         finally:
             self._parent.release_embodiment()
 
+    async def identify(self, manifest: Any, kwargs: dict[str, Any], tty_handoff: Any) -> str:
+        from roboclaw.embodied.service.actions import do_identify
+
+        result = await do_identify(manifest, kwargs, tty_handoff)
+        self._parent.manifest.reload()
+        return result
+
     # -- Identify (motion detection) -----------------------------------------
 
     def start_motion_detection(self) -> int:
