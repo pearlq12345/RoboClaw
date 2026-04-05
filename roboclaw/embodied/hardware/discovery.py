@@ -1,6 +1,8 @@
 """Hardware discovery orchestrator."""
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import replace
 
 from roboclaw.embodied.hardware.probers import _REGISTRY, get_prober
@@ -13,6 +15,29 @@ from roboclaw.embodied.hardware.scan import (
 )
 from roboclaw.embodied.interface.serial import SerialInterface
 from roboclaw.embodied.interface.video import VideoInterface
+
+
+def _save_tty() -> list | None:
+    """Save stdin terminal attributes (guard against pyserial corrupting them)."""
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        if os.isatty(fd):
+            return termios.tcgetattr(fd)
+    except Exception:
+        pass
+    return None
+
+
+def _restore_tty(saved: list | None) -> None:
+    """Restore stdin terminal attributes if they were saved."""
+    if saved is None:
+        return
+    try:
+        import termios
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
+    except Exception:
+        pass
 
 
 class HardwareDiscovery:
@@ -124,6 +149,7 @@ class HardwareDiscovery:
         from roboclaw.embodied.hardware.scan import fix_serial_permissions
 
         saved = suppress_stderr()
+        tty_saved = _save_tty()
         try:
             try:
                 return self._do_probe(ports, prober, protocol)
@@ -136,6 +162,7 @@ class HardwareDiscovery:
                     "Serial port permission denied. Run: bash scripts/setup-udev.sh"
                 ) from exc
         finally:
+            _restore_tty(tty_saved)
             restore_stderr(saved)
 
     @staticmethod
