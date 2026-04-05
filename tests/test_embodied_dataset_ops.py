@@ -84,16 +84,15 @@ async def test_record_auto_generates_timestamp_name(tmp_path: Path) -> None:
     """When dataset_name is omitted, record goes through CLI adapter without error."""
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "record")
 
-    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
-        assert action == "record"
-        assert "dataset_name" not in kwargs  # auto-generated inside engine
+    async def fake_tty_run(self, session):
+        assert "dataset_name" not in session._kwargs  # auto-generated inside engine
         return "Recording finished."
 
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
-    ):
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(
             action="record",
             task="grasp",
@@ -112,15 +111,14 @@ async def test_record_resumes_existing_named_dataset(tmp_path: Path) -> None:
 
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "record")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    async def fake_cli_session(service, action, setup_arg, kwargs, tty_handoff):
-        assert kwargs.get("dataset_name") == "my_dataset"
+    async def fake_tty_run(self, session):
+        assert session._kwargs.get("dataset_name") == "my_dataset"
         return "Recording finished."
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
-    ):
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(
             action="record",
             dataset_name="my_dataset",
@@ -136,15 +134,15 @@ async def test_record_no_resume_for_new_named_dataset(tmp_path: Path) -> None:
     """When user specifies a new dataset_name, it is passed to CLI adapter."""
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "record")
 
-    async def fake_cli_session(service, action, setup, kwargs, tty_handoff):
-        assert kwargs.get("dataset_name") == "brand_new"
+    async def fake_tty_run(self, session):
+        assert session._kwargs.get("dataset_name") == "brand_new"
         return "Recording finished."
 
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
-    ):
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(
             action="record",
             dataset_name="brand_new",
@@ -163,9 +161,10 @@ async def test_list_datasets_empty(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "datasets": {"root": "/nonexistent"}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_datasets")
+    result = await tool.execute(action="list_datasets")
 
     assert result == "No datasets found."
 
@@ -180,9 +179,10 @@ async def test_list_datasets_with_entries(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "datasets": {"root": str(tmp_path)}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_datasets")
+    result = await tool.execute(action="list_datasets")
 
     datasets = json.loads(result)
     assert len(datasets) == 1
@@ -198,9 +198,10 @@ async def test_list_datasets_skips_corrupt_json(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "datasets": {"root": str(tmp_path)}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_datasets")
+    result = await tool.execute(action="list_datasets")
 
     assert result == "No datasets found."
 
@@ -210,9 +211,10 @@ async def test_list_policies_empty(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "policies": {"root": "/nonexistent"}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_policies")
+    result = await tool.execute(action="list_policies")
 
     assert result == "No policies found."
 
@@ -227,9 +229,10 @@ async def test_list_policies_with_entries(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "policies": {"root": str(tmp_path)}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_policies")
+    result = await tool.execute(action="list_policies")
 
     policies = json.loads(result)
     assert len(policies) == 1
@@ -246,9 +249,10 @@ async def test_list_policies_skips_corrupt_config(tmp_path: Path) -> None:
     setup = {**_MOCK_SETUP, "policies": {"root": str(tmp_path)}}
     tool = _find_tool(create_embodied_tools(), "train")
     manifest = _manifest_from_data(tmp_path, setup)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="list_policies")
+    result = await tool.execute(action="list_policies")
 
     policies = json.loads(result)
     assert len(policies) == 1

@@ -23,7 +23,6 @@ from roboclaw.embodied.hardware.monitor import (
 )
 from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.manifest.binding import Binding
-from roboclaw.embodied.manifest.binding import Binding
 from roboclaw.embodied.service.calibration import CalibrationService
 from roboclaw.embodied.service.calibration_session import CalibrationSession as CalibrationCLI
 from roboclaw.embodied.service.doctor_service import DoctorService
@@ -89,6 +88,7 @@ class EmbodiedService:
         self._monitor = hardware_monitor
         self._bus = event_bus or EventBus()
         self.manifest = manifest or Manifest(event_bus=self._bus)
+        self.manifest.ensure()
         self._lock = threading.Lock()
         self._embodiment_owner: str = ""
         self._engine = OperationEngine(on_state_change=self._on_engine_state_change)

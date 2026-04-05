@@ -152,8 +152,7 @@ async def test_doctor_check_action(tmp_path: Path) -> None:
     svc = EmbodiedService(manifest=manifest)
     tool.embodied_service = svc
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="check")
+    result = await tool.execute(action="check")
 
     payload = json.loads(result)
     assert "environment" in payload
@@ -167,11 +166,10 @@ async def test_calibration_action(tmp_path: Path) -> None:
     mock_runner = AsyncMock()
     mock_runner.run_interactive.return_value = (0, "")
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    with patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner):
         result = await tool.execute(action="calibrate")
 
     assert "2 succeeded" in result
@@ -182,16 +180,14 @@ async def test_calibration_action(tmp_path: Path) -> None:
 async def test_teleop_action(tmp_path: Path) -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "teleop")
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    async def fake_cli_session(service, action, setup_arg, kwargs, tty_handoff):
-        assert action == "teleoperate"
-        assert kwargs["fps"] == 20
+    async def fake_tty_run(self, session):
+        assert session._kwargs["fps"] == 20
         return "Teleoperation finished."
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
-    ):
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(action="teleoperate", fps=20, arms=f"{_FOLLOWER_PORT},{_LEADER_PORT}")
 
     assert result == "Teleoperation finished."
@@ -201,16 +197,14 @@ async def test_teleop_action(tmp_path: Path) -> None:
 async def test_record_action(tmp_path: Path) -> None:
     tool = _find_tool(create_embodied_tools(tty_handoff=AsyncMock()), "record")
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    async def fake_cli_session(service, action, setup_arg, kwargs, tty_handoff):
-        assert action == "record"
-        assert kwargs["dataset_name"] == "test"
+    async def fake_tty_run(self, session):
+        assert session._kwargs["dataset_name"] == "test"
         return "Recording finished."
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.adapters.cli.run_cli_session", side_effect=fake_cli_session),
-    ):
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(
             action="record",
             dataset_name="test",
@@ -228,11 +222,10 @@ async def test_replay_action(tmp_path: Path) -> None:
     mock_runner = AsyncMock()
     mock_runner.run_interactive.return_value = (0, "")
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    with patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner):
         result = await tool.execute(action="replay", dataset_name="test", episode=2)
 
     assert result == "Replay finished."
@@ -247,11 +240,10 @@ async def test_train_action(tmp_path: Path) -> None:
     mock_runner = AsyncMock()
     mock_runner.run_detached.return_value = "job-abc-123"
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    with patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner):
         result = await tool.execute(action="train", dataset_name="test", steps=5000)
 
     assert "job-abc-123" in result
@@ -263,11 +255,10 @@ async def test_infer_action(tmp_path: Path) -> None:
     mock_runner = AsyncMock()
     mock_runner.run = AsyncMock(return_value=(0, "ok", ""))
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    with patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner):
         await tool.execute(action="run_policy", checkpoint_path="/models/act")
 
     argv = mock_runner.run.call_args[0][0]
@@ -289,11 +280,10 @@ async def test_setup_modify_rename_arm(tmp_path: Path) -> None:
     svc = EmbodiedService(manifest=manifest)
     tool.embodied_service = svc
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(
-            action="modify", target="arm", operation="rename",
-            alias="right_follower", new_alias="my_follower",
-        )
+    result = await tool.execute(
+        action="modify", target="arm", operation="rename",
+        alias="right_follower", new_alias="my_follower",
+    )
 
     assert "renamed" in result.lower()
     assert "my_follower" in result
@@ -307,10 +297,9 @@ async def test_setup_modify_unbind_arm(tmp_path: Path) -> None:
     svc = EmbodiedService(manifest=manifest)
     tool.embodied_service = svc
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(
-            action="modify", target="arm", operation="unbind", alias="right_follower",
-        )
+    result = await tool.execute(
+        action="modify", target="arm", operation="unbind", alias="right_follower",
+    )
 
     assert "removed" in result.lower()
 
@@ -323,8 +312,7 @@ async def test_setup_modify_requires_params(tmp_path: Path) -> None:
     svc = EmbodiedService(manifest=manifest)
     tool.embodied_service = svc
 
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="modify")
+    result = await tool.execute(action="modify")
     assert "requires" in result.lower()
 
 

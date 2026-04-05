@@ -50,6 +50,11 @@ class SetupSession:
         self._discovery: HardwareDiscovery | None = None
         self._candidates: list[SerialInterface | VideoInterface] = []
         self._assignments: list[Assignment] = []
+        # Prompting protocol state
+        self._awaiting_alias_for: str = ""
+        self._pending_kwargs: dict[str, Any] = {}
+        self._result: str = ""
+        self._camera_index: int = 0
 
     @property
     def phase(self) -> SetupPhase:
@@ -244,6 +249,221 @@ class SetupSession:
             "unassigned": [c.stable_id for c in self.unassigned],
         }
 
+    # -- Prompting protocol (used by TtySession) ----------------------------
+
+    def interaction_spec(self):
+        from roboclaw.embodied.adapters.protocol import PromptingSpec
+
+        return PromptingSpec(label="setup-identify")
+
+    async def run_identify(self, kwargs: dict[str, Any], tty_handoff: Any) -> str:
+        """Entry point for the identify flow with TtySession."""
+        self.reset()
+        self._pending_kwargs = kwargs
+        if tty_handoff:
+            from roboclaw.embodied.adapters.tty import TtySession
+
+            try:
+                return await TtySession(tty_handoff).run(self)
+            except Exception:
+                self._cleanup_motion()
+                raise
+        return self._conversational_identify(kwargs)
+
+    def _cleanup_motion(self) -> None:
+        """Release motion detection lock if active."""
+        if self._phase == SetupPhase.IDENTIFYING:
+            self.stop_motion_detection()
+
+    def next_step(self):
+        """Return the next interaction step, or None when done."""
+        from roboclaw.embodied.adapters.protocol import PollStep, PromptStep
+
+        if self._result:
+            return None
+
+        if self._phase == SetupPhase.IDLE:
+            return self._next_step_idle()
+
+        if self._awaiting_alias_for:
+            stable_id = self._awaiting_alias_for
+            return PromptStep(
+                "alias",
+                f"Detected motion on: {stable_id[:40]}\n  Alias (e.g. left_follower, right_leader):",
+            )
+
+        if self._phase in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
+            return self._next_step_assigning()
+
+        return None
+
+    def submit_answer(self, prompt_id: str, answer: str) -> None:
+        """Process user answer for the current step."""
+        if prompt_id == "model":
+            self._submit_model(answer)
+        elif prompt_id == "motion":
+            self._awaiting_alias_for = answer
+        elif prompt_id == "alias":
+            self._submit_alias(answer)
+        elif prompt_id == "confirm":
+            self._submit_confirm(answer)
+        elif prompt_id.startswith("camera_"):
+            self._handle_camera_answer(prompt_id, answer)
+
+    def result(self) -> str:
+        return self._result or "No assignments made."
+
+    # -- Prompting helpers (private) -----------------------------------------
+
+    def _next_step_idle(self):
+        from roboclaw.embodied.adapters.protocol import PromptStep
+
+        model = self._pending_kwargs.get("model", "")
+        if model:
+            self._do_scan(model)
+            return self.next_step()
+        return PromptStep("model", "Select (1/2):", options=["SO-101", "Koch"])
+
+    def _next_step_assigning(self):
+        from roboclaw.embodied.adapters.protocol import PollStep, PromptStep
+
+        serial_unassigned = [u for u in self.unassigned if isinstance(u, SerialInterface)]
+
+        # Start motion detection if serial ports remain
+        if serial_unassigned and not self.motion_active:
+            self.start_motion_detection()
+
+        if self.motion_active and serial_unassigned:
+            return PollStep(
+                "motion",
+                f"{len(serial_unassigned)} unassigned port(s). Move an arm...",
+                poll_fn=self._poll_one_motion,
+                timeout_s=30.0,
+            )
+
+        # Stop motion detection when all serial ports are done
+        if self.motion_active:
+            self.stop_motion_detection()
+
+        # Camera naming
+        camera_step = self._next_camera_step()
+        if camera_step:
+            return camera_step
+
+        # Confirmation
+        if self._assignments:
+            self._show_assignments()
+            return PromptStep("confirm", "Commit these assignments? (y/n):")
+
+        return None
+
+    def _do_scan(self, model: str) -> None:
+        """Run full scan and print summary."""
+        print(f"\nScanning for {model} hardware...")
+        result = self.run_full_scan(model)
+        ports = result["ports"]
+        cameras = result["cameras"]
+        print(f"Found {len(ports)} serial port(s) and {len(cameras)} camera(s).")
+        for i, port in enumerate(ports):
+            port_id = port.by_id or port.dev or "?"
+            print(f"  [{i}] {port_id}  ({len(port.motor_ids)} motors)")
+
+    def _poll_one_motion(self) -> str | None:
+        """Poll motion; return stable_id of first moved port, or None."""
+        results = self.poll_motion()
+        for r in results:
+            if r["moved"]:
+                return r["stable_id"]
+        return None
+
+    def _submit_model(self, answer: str) -> None:
+        model = "so101" if answer == "1" else "koch" if answer == "2" else answer
+        self._do_scan(model)
+
+    def _submit_alias(self, answer: str) -> None:
+        stable_id = self._awaiting_alias_for
+        self._awaiting_alias_for = ""
+        if not answer:
+            print("  Skipped.")
+            return
+        spec_name = _derive_spec(self._model, answer)
+        try:
+            self.assign(stable_id, answer, spec_name)
+            print(f"  Assigned: {answer} -> {spec_name}")
+        except ValueError as exc:
+            print(f"  Error: {exc}")
+
+    def _submit_confirm(self, answer: str) -> None:
+        if answer.lower() == "y":
+            count = self.commit()
+            self._result = f"Setup complete. {count} binding(s) committed to manifest."
+        else:
+            self.reset()
+            self._result = "Setup cancelled."
+
+    @property
+    def _video_candidates(self) -> list[VideoInterface]:
+        """All video candidates (stable order, not affected by assignments)."""
+        return [c for c in self._candidates if isinstance(c, VideoInterface)]
+
+    def _next_camera_step(self):
+        from roboclaw.embodied.adapters.protocol import PromptStep
+
+        all_video = self._video_candidates
+        if not all_video:
+            return None
+        if self._camera_index == 0:
+            print("\n--- Camera Naming ---")
+        if self._camera_index >= len(all_video):
+            return None
+        cam = all_video[self._camera_index]
+        # Skip already-assigned cameras
+        assigned_ids = {a.interface.stable_id for a in self._assignments}
+        if cam.stable_id in assigned_ids:
+            self._camera_index += 1
+            return self._next_camera_step()
+        dev = cam.dev or "?"
+        res = f"{cam.width}x{cam.height}" if cam.width else "?"
+        print(f"  [{self._camera_index}] {dev} ({res} @ {cam.fps}fps)")
+        return PromptStep(
+            f"camera_{self._camera_index}",
+            f"  Name for camera {self._camera_index} (or Enter to skip):",
+        )
+
+    def _handle_camera_answer(self, prompt_id: str, answer: str) -> None:
+        all_video = self._video_candidates
+        idx = int(prompt_id.split("_", 1)[1])
+        if idx < len(all_video) and answer:
+            cam = all_video[idx]
+            try:
+                self.assign(cam.stable_id, answer, "opencv")
+                print(f"  Assigned: {answer}")
+            except ValueError as exc:
+                print(f"  Error: {exc}")
+        self._camera_index = idx + 1
+
+    def _show_assignments(self) -> None:
+        print(f"\n{len(self._assignments)} assignment(s):")
+        for a in self._assignments:
+            sid = a.interface.stable_id[:30]
+            print(f"  {a.alias} -> {a.spec_name} ({sid}...)")
+
+    def _conversational_identify(self, kwargs: dict[str, Any]) -> str:
+        """Return session state as JSON for conversational agents (no TTY)."""
+        import asyncio
+        import json
+
+        if self._phase == SetupPhase.IDLE:
+            model = kwargs.get("model", "")
+            if not model:
+                return json.dumps({
+                    "phase": "idle",
+                    "message": "What robot model do you have?",
+                    "options": ["so101", "koch"],
+                }, ensure_ascii=False)
+            asyncio.get_event_loop().run_in_executor(None, self.run_full_scan, model)
+        return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
+
     # -- Internal ------------------------------------------------------------
 
     def reset(self) -> None:
@@ -253,6 +473,10 @@ class SetupSession:
         self._discovery = None
         self._candidates = []
         self._assignments = []
+        self._awaiting_alias_for = ""
+        self._pending_kwargs = {}
+        self._result = ""
+        self._camera_index = 0
 
     @staticmethod
     def _commit_one(manifest: Any, assignment: Assignment) -> None:
@@ -270,3 +494,13 @@ class SetupSession:
             manifest.set_camera(assignment.alias, assignment.interface)
         else:
             raise ValueError(f"Unknown spec type: {assignment.spec_name}")
+
+
+def _derive_spec(model: str, alias: str) -> str:
+    """Derive spec_name from model + alias role hint."""
+    if "leader" in alias:
+        return f"{model}_leader"
+    if "follower" in alias:
+        return f"{model}_follower"
+    print(f"  (defaulting to {model}_follower)")
+    return f"{model}_follower"

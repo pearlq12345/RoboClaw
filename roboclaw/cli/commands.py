@@ -687,6 +687,11 @@ def agent(
 
     if logs:
         logger.enable("roboclaw")
+        try:
+            logger.remove(0)  # remove default stderr handler only
+        except ValueError:
+            pass
+        logger.add(sys.stdout, format="<dim>{time:HH:mm:ss}</dim> | {level} | {message}", colorize=True)
     else:
         logger.disable("roboclaw")
 

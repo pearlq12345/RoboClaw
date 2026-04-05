@@ -324,52 +324,47 @@ class EmbodiedToolGroup(Tool):
         svc = _get_service(self.embodied_service)
         action = kwargs["action"]
         if action == "identify":
-            if self._tty_handoff:
-                return await _run_with_manifest(
-                    svc,
-                    lambda manifest: _run_cli_identify(svc, manifest, kwargs, self._tty_handoff),
-                )
-            return await _run_with_manifest(
+            return await _run_with_service(
                 svc,
-                lambda _: _run_conversational_identify(svc, kwargs),
+                lambda _: svc.setup.run_identify(kwargs, self._tty_handoff),
             )
         # modify
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda _: _run_modify(svc, kwargs),
         )
 
     async def _execute_doctor(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.doctor.check(manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_calibration(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.calibration_session.calibrate(manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_teleop(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.teleop.teleoperate(manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_record(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.record.record(manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_replay(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.replay.replay(manifest, kwargs, self._tty_handoff),
         )
@@ -377,14 +372,14 @@ class EmbodiedToolGroup(Tool):
     async def _execute_train(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
         action = kwargs["action"]
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: _run_train_action(svc.train, action, manifest, kwargs, self._tty_handoff),
         )
 
     async def _execute_infer(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
-        return await _run_with_manifest(
+        return await _run_with_service(
             svc,
             lambda manifest: svc.infer.run_policy(manifest, kwargs, self._tty_handoff),
         )
@@ -429,30 +424,6 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
     return f"{target.title()} renamed '{alias}' → '{new_alias}'.\n{json.dumps(data, indent=2)}"
 
 
-async def _run_cli_identify(svc: Any, manifest: Any, kwargs: dict[str, Any], tty_handoff: Any) -> str:
-    from roboclaw.embodied.adapters.cli_setup import run_cli_setup
-
-    return await run_cli_setup(svc, manifest, kwargs, tty_handoff)
-
-
-async def _run_conversational_identify(svc: Any, kwargs: dict[str, Any]) -> str:
-    """Return SetupSession state as JSON for conversational agents."""
-    import asyncio
-
-    from roboclaw.embodied.service.setup_session import SetupPhase
-
-    if svc.setup.phase == SetupPhase.IDLE:
-        model = kwargs.get("model", "")
-        if not model:
-            return json.dumps({
-                "phase": "idle",
-                "message": "What robot model do you have?",
-                "options": ["so101", "koch"],
-            }, ensure_ascii=False)
-        await asyncio.to_thread(svc.setup.run_full_scan, model)
-    return json.dumps(svc.setup.to_dict(), indent=2, ensure_ascii=False)
-
-
 def _get_service(service: Any) -> Any:
     if service is not None:
         return service
@@ -461,14 +432,11 @@ def _get_service(service: Any) -> Any:
     return EmbodiedService()
 
 
-async def _run_with_manifest(service: Any, func: Any) -> str | list:
+async def _run_with_service(service: Any, func: Any) -> str | list:
     from roboclaw.embodied.engine.helpers import ActionError
-    from roboclaw.embodied.manifest.helpers import ensure_manifest
 
-    manifest = ensure_manifest()
-    service.manifest = manifest
     try:
-        return await func(manifest)
+        return await func(service.manifest)
     except ActionError as exc:
         return str(exc)
 

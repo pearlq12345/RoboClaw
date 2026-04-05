@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from roboclaw.embodied.interface.serial import SerialInterface
 from roboclaw.embodied.manifest import Manifest
 from roboclaw.embodied.manifest.helpers import save_manifest
 from roboclaw.embodied.tool import create_embodied_tools, EmbodiedToolGroup
@@ -18,10 +17,6 @@ _MOCK_SETUP = {
     "datasets": {"root": "/data"},
     "policies": {"root": "/policies"},
 }
-
-_MOCK_PORTS = [
-    SerialInterface(by_path="/dev/serial/by-path/pci-0:2.1", by_id="/dev/serial/by-id/usb-ABC-if00", dev="/dev/ttyACM0"),
-]
 
 
 def _hw_tool(tty_handoff=None) -> EmbodiedToolGroup:
@@ -36,67 +31,33 @@ def _manifest_from_data(tmp_path: Path, data: dict) -> Manifest:
 
 
 @pytest.mark.asyncio
-async def test_identify_no_tty(tmp_path: Path) -> None:
-    """Identify without TTY handoff should return the no-TTY message."""
+async def test_identify_no_tty_returns_json(tmp_path: Path) -> None:
+    """Identify without TTY should return JSON for conversational agents."""
     tool = _hw_tool()  # no tty_handoff
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
-        result = await tool.execute(action="identify")
-    assert "local terminal" in result.lower()
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    result = await tool.execute(action="identify")
+    # Conversational mode returns JSON with model options
+    assert "so101" in result or "koch" in result
 
 
 @pytest.mark.asyncio
-async def test_identify_no_ports(tmp_path: Path) -> None:
-    """Identify with empty scanned_ports should return an error message."""
-    tool = _hw_tool(tty_handoff=AsyncMock())
-    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=[]),
-    ):
-        result = await tool.execute(action="identify")
-    assert result == "No serial ports detected."
-
-
-@pytest.mark.asyncio
-async def test_identify_success(tmp_path: Path) -> None:
-    """Identify with TTY and ports should run the subprocess and report success."""
+async def test_identify_with_tty_uses_tty_session(tmp_path: Path) -> None:
+    """Identify with TTY should delegate to TtySession."""
     mock_handoff = AsyncMock()
     tool = _hw_tool(tty_handoff=mock_handoff)
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (0, "")
-
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_PORTS),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    async def fake_tty_run(self, session):
+        return "Setup complete. 2 binding(s) committed to manifest."
+
+    with patch("roboclaw.embodied.adapters.tty.TtySession.run", fake_tty_run):
         result = await tool.execute(action="identify")
-
-    assert result == "Arm identification complete."
-    assert mock_handoff.call_count == 2  # start + stop
-    argv = mock_runner.run_interactive.call_args[0][0]
-    assert "roboclaw.embodied.identify" in " ".join(argv)
-
-
-@pytest.mark.asyncio
-async def test_identify_failure(tmp_path: Path) -> None:
-    """Identify subprocess failure should report the exit code."""
-    tool = _hw_tool(tty_handoff=AsyncMock())
-    mock_runner = AsyncMock()
-    mock_runner.run_interactive.return_value = (1, "identify subprocess error")
-
-    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.hardware.scan.scan_serial_ports", return_value=_MOCK_PORTS),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
-        result = await tool.execute(action="identify")
-
-    assert "failed" in result.lower()
-    assert "exit 1" in result
+    assert "Setup complete" in result
 
 
 # ── Unit tests for hardware module helpers ─────────────────────────────
