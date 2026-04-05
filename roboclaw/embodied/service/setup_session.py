@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from roboclaw.embodied.hardware.discovery import HardwareDiscovery
 from roboclaw.embodied.hardware.scan import restore_stderr, suppress_stderr
 from roboclaw.embodied.interface import Interface, SerialInterface, VideoInterface
+from roboclaw.i18n import t
 
 if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
@@ -55,6 +56,8 @@ class SetupSession:
         self._pending_kwargs: dict[str, Any] = {}
         self._result: str = ""
         self._camera_index: int = 0
+        self._embodiment_category: str = ""
+        self._language: str = "en"
 
     @property
     def phase(self) -> SetupPhase:
@@ -260,6 +263,7 @@ class SetupSession:
         """Entry point for the identify flow with TtySession."""
         self.reset()
         self._pending_kwargs = kwargs
+        self._language = kwargs.get("language", "en")
         if tty_handoff:
             from roboclaw.embodied.adapters.tty import TtySession
 
@@ -289,7 +293,7 @@ class SetupSession:
             stable_id = self._awaiting_alias_for
             return PromptStep(
                 "alias",
-                f"Detected motion on: {stable_id[:40]}\n  Alias (e.g. left_follower, right_leader):",
+                t("detectedMotion", self._language, port=stable_id[:40]),
             )
 
         if self._phase in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
@@ -299,7 +303,9 @@ class SetupSession:
 
     def submit_answer(self, prompt_id: str, answer: str) -> None:
         """Process user answer for the current step."""
-        if prompt_id == "model":
+        if prompt_id == "embodiment_type":
+            self._submit_embodiment_type(answer)
+        elif prompt_id == "model":
             self._submit_model(answer)
         elif prompt_id == "motion":
             self._awaiting_alias_for = answer
@@ -311,18 +317,55 @@ class SetupSession:
             self._handle_camera_answer(prompt_id, answer)
 
     def result(self) -> str:
-        return self._result or "No assignments made."
+        import json as _json
+        if self._result:
+            return self._result
+        return _json.dumps({
+            "status": "no_assignments",
+            "message": t("noAssignments", self._language),
+            "bindings": 0,
+        }, ensure_ascii=False)
 
     # -- Prompting helpers (private) -----------------------------------------
 
     def _next_step_idle(self):
         from roboclaw.embodied.adapters.protocol import PromptStep
+        from roboclaw.embodied.embodiment.catalog import (
+            EmbodimentCategory, models_for,
+        )
+        lang = self._language
 
         model = self._pending_kwargs.get("model", "")
         if model:
             self._do_scan(model)
             return self.next_step()
-        return PromptStep("model", "Select (1/2):", options=["SO-101", "Koch"])
+
+        # Step 1: embodiment type selection (if not yet chosen)
+        if not self._embodiment_category:
+            return PromptStep(
+                "embodiment_type",
+                t("selectEmbodimentType", lang) + ":",
+                options=[
+                    t("arm", lang),
+                    t("hand", lang),
+                    t("humanoidSoon", lang),
+                    t("mobileSoon", lang),
+                ],
+            )
+
+        # Step 2: model selection within the chosen category
+        category = EmbodimentCategory(self._embodiment_category)
+        specs = models_for(category)
+        if not specs:
+            self._set_result("not_supported")
+            return None
+        options = [s.name.upper().replace("_", " ") for s in specs]
+        n = len(options)
+        return PromptStep(
+            "model",
+            t("selectModel", lang, n=f"1/{n}"),
+            options=options,
+        )
 
     def _next_step_assigning(self):
         from roboclaw.embodied.adapters.protocol import PollStep, PromptStep
@@ -336,9 +379,11 @@ class SetupSession:
         if self.motion_active and serial_unassigned:
             return PollStep(
                 "motion",
-                f"{len(serial_unassigned)} unassigned port(s). Move an arm...",
+                t("unassignedPorts", self._language, n=len(serial_unassigned)),
                 poll_fn=self._poll_one_motion,
                 timeout_s=30.0,
+                timeout_message=t("timeout", self._language),
+                retry_prompt=t("retryPrompt", self._language),
             )
 
         # Stop motion detection when all serial ports are done
@@ -353,20 +398,21 @@ class SetupSession:
         # Confirmation
         if self._assignments:
             self._show_assignments()
-            return PromptStep("confirm", "Commit these assignments? (y/n):")
+            return PromptStep("confirm", t("commitPrompt", self._language))
 
         return None
 
     def _do_scan(self, model: str) -> None:
         """Run full scan and print summary."""
-        print(f"\nScanning for {model} hardware...")
+        lang = self._language
+        print(t("scanningModel", lang, model=model))
         result = self.run_full_scan(model)
         ports = result["ports"]
         cameras = result["cameras"]
-        print(f"Found {len(ports)} serial port(s) and {len(cameras)} camera(s).")
+        print(t("foundPorts", lang, ports=len(ports), cameras=len(cameras)))
         for i, port in enumerate(ports):
             port_id = port.by_id or port.dev or "?"
-            print(f"  [{i}] {port_id}  ({len(port.motor_ids)} motors)")
+            print(f"  [{i}] {port_id}  ({len(port.motor_ids)} {t('motorsFound', lang)})")
 
     def _poll_one_motion(self) -> str | None:
         """Poll motion; return stable_id of first moved port, or None."""
@@ -377,29 +423,41 @@ class SetupSession:
         return None
 
     def _submit_model(self, answer: str) -> None:
-        model = "so101" if answer == "1" else "koch" if answer == "2" else answer
+        from roboclaw.embodied.embodiment.catalog import EmbodimentCategory, models_for
+        category = EmbodimentCategory(self._embodiment_category) if self._embodiment_category else EmbodimentCategory.ARM
+        specs = models_for(category)
+        # Map numeric answer to spec name
+        try:
+            idx = int(answer) - 1
+            if 0 <= idx < len(specs):
+                model = specs[idx].name
+            else:
+                model = answer.lower()
+        except ValueError:
+            model = answer.lower()
         self._do_scan(model)
 
     def _submit_alias(self, answer: str) -> None:
+        lang = self._language
         stable_id = self._awaiting_alias_for
         self._awaiting_alias_for = ""
         if not answer:
-            print("  Skipped.")
+            print(t("skipped", lang))
             return
-        spec_name = _derive_spec(self._model, answer)
+        spec_name = _derive_spec(self._model, answer, lang)
         try:
             self.assign(stable_id, answer, spec_name)
-            print(f"  Assigned: {answer} -> {spec_name}")
+            print(t("assigned", lang, alias=answer, spec=spec_name))
         except ValueError as exc:
             print(f"  Error: {exc}")
 
     def _submit_confirm(self, answer: str) -> None:
         if answer.lower() == "y":
             count = self.commit()
-            self._result = f"Setup complete. {count} binding(s) committed to manifest."
+            self._set_result("committed", count=count)
         else:
             self.reset()
-            self._result = "Setup cancelled."
+            self._set_result("cancelled")
 
     @property
     def _video_candidates(self) -> list[VideoInterface]:
@@ -409,11 +467,12 @@ class SetupSession:
     def _next_camera_step(self):
         from roboclaw.embodied.adapters.protocol import PromptStep
 
+        lang = self._language
         all_video = self._video_candidates
         if not all_video:
             return None
         if self._camera_index == 0:
-            print("\n--- Camera Naming ---")
+            print(t("cameraNaming", lang))
         if self._camera_index >= len(all_video):
             return None
         cam = all_video[self._camera_index]
@@ -427,7 +486,7 @@ class SetupSession:
         print(f"  [{self._camera_index}] {dev} ({res} @ {cam.fps}fps)")
         return PromptStep(
             f"camera_{self._camera_index}",
-            f"  Name for camera {self._camera_index} (or Enter to skip):",
+            t("cameraNamePrompt", lang, index=self._camera_index),
         )
 
     def _handle_camera_answer(self, prompt_id: str, answer: str) -> None:
@@ -443,10 +502,46 @@ class SetupSession:
         self._camera_index = idx + 1
 
     def _show_assignments(self) -> None:
-        print(f"\n{len(self._assignments)} assignment(s):")
+        lang = self._language
+        print(t("assignments", lang, count=len(self._assignments)))
         for a in self._assignments:
             sid = a.interface.stable_id[:30]
             print(f"  {a.alias} -> {a.spec_name} ({sid}...)")
+
+    def _submit_embodiment_type(self, answer: str) -> None:
+        from roboclaw.embodied.embodiment.catalog import EmbodimentCategory
+        mapping = {"1": "arm", "2": "hand", "3": "humanoid", "4": "mobile"}
+        category = mapping.get(answer, answer.lower())
+        try:
+            EmbodimentCategory(category)
+        except ValueError:
+            return
+        self._embodiment_category = category
+
+    def on_timeout(self) -> None:
+        """Called when motion detection times out and user declines retry."""
+        ports = [c for c in self._candidates if isinstance(c, SerialInterface)]
+        cameras = [c for c in self._candidates if isinstance(c, VideoInterface)]
+        self._set_result("timeout_declined", ports=len(ports), cameras=len(cameras))
+
+    def _set_result(self, status: str, **kwargs: Any) -> None:
+        """Set structured result message."""
+        import json
+        lang = self._language
+        message_keys = {
+            "committed": "resultCommitted",
+            "cancelled": "resultCancelled",
+            "timeout_declined": "resultTimeout",
+            "no_hardware": "resultNoHardware",
+            "not_supported": "resultNotSupported",
+        }
+        key = message_keys.get(status, "noAssignments")
+        message = t(key, lang, **kwargs)
+        self._result = json.dumps({
+            "status": status,
+            "message": message,
+            "bindings": kwargs.get("count", 0),
+        }, ensure_ascii=False)
 
     def _conversational_identify(self, kwargs: dict[str, Any]) -> str:
         """Return session state as JSON for conversational agents (no TTY)."""
@@ -477,6 +572,8 @@ class SetupSession:
         self._pending_kwargs = {}
         self._result = ""
         self._camera_index = 0
+        self._embodiment_category = ""
+        # Note: do NOT reset self._language here — it persists through reset
 
     @staticmethod
     def _commit_one(manifest: Any, assignment: Assignment) -> None:
@@ -496,11 +593,11 @@ class SetupSession:
             raise ValueError(f"Unknown spec type: {assignment.spec_name}")
 
 
-def _derive_spec(model: str, alias: str) -> str:
+def _derive_spec(model: str, alias: str, lang: str = "en") -> str:
     """Derive spec_name from model + alias role hint."""
     if "leader" in alias:
         return f"{model}_leader"
     if "follower" in alias:
         return f"{model}_follower"
-    print(f"  (defaulting to {model}_follower)")
+    print(t("defaultingFollower", lang, model=model))
     return f"{model}_follower"

@@ -1,15 +1,35 @@
 import { create } from 'zustand'
+import setupStrings from '../../../roboclaw/i18n/setup.json'
+import commonStrings from '../../../roboclaw/i18n/common.json'
 
 export type Locale = 'zh' | 'en'
 
+type SharedKey = keyof typeof setupStrings | keyof typeof commonStrings
+
+function transposeJson(
+  ...sources: Record<string, Record<string, string>>[]
+): { zh: Record<string, string>; en: Record<string, string> } {
+  const zh: Record<string, string> = {}
+  const en: Record<string, string> = {}
+  for (const source of sources) {
+    for (const [key, val] of Object.entries(source)) {
+      if (val.zh) zh[key] = val.zh
+      if (val.en) en[key] = val.en
+    }
+  }
+  return { zh, en }
+}
+
+const shared = transposeJson(setupStrings, commonStrings)
+
 const translations = {
   zh: {
+    ...shared.zh,
+
     // Header
     chat: '对话',
     dataCollection: '数据采集',
     settings: '设置',
-    connected: '已连接',
-    disconnected: '未连接',
 
     // Chat
     startChat: '开始与 RoboClaw 对话',
@@ -76,15 +96,11 @@ const translations = {
     hwReady: '硬件就绪',
     hwNotReady: '硬件未就绪',
     hwUncalibrated: '未校准',
-    arms: '机械臂',
-    cameras: '摄像头',
     hwConnected: '已连接',
     hwDisconnected: '未连接',
     hwCalibrated: '已校准',
     noArms: '未检测到机械臂',
     noCameras: '未检测到摄像头',
-    leader: '主动臂',
-    follower: '从动臂',
     enablePreview: '开启预览',
     disablePreview: '关闭预览',
     camerasDisabled: '摄像头预览已关闭',
@@ -102,7 +118,6 @@ const translations = {
     setup: '硬件设置',
     setupWizard: '硬件设置向导',
     scanDevices: '扫描设备',
-    scanning: '扫描中...',
     detectMotion: '检测运动',
     stopDetection: '停止检测',
     saveAndClose: '保存并关闭',
@@ -112,13 +127,9 @@ const translations = {
     moveArmPrompt: '晃动机械臂来识别它',
     dragToSetup: '拖拽到配置区域',
     dragOut: '拖出配置区域来移除',
-    portLabel: '端口',
-    motorsFound: '个电机',
     assignAlias: '设备名称',
     assignType: '设备类型',
     sessionBusy: '遥操作/录制进行中，请先停止',
-    noPortsFound: '未发现串口设备',
-    noCamerasFound: '未发现摄像头',
 
     // Troubleshooting
     troubleshootArmDisconnectedTitle: '机械臂断开连接',
@@ -155,12 +166,12 @@ const translations = {
     troubleshootRecordCrashedStep2: '如反复崩溃，点击「联系技术支持」生成故障报告',
   },
   en: {
+    ...shared.en,
+
     // Header
     chat: 'Chat',
     dataCollection: 'Data Collection',
     settings: 'Settings',
-    connected: 'Connected',
-    disconnected: 'Disconnected',
 
     // Chat
     startChat: 'Start chatting with RoboClaw',
@@ -227,15 +238,11 @@ const translations = {
     hwReady: 'Hardware Ready',
     hwNotReady: 'Hardware Not Ready',
     hwUncalibrated: 'Uncalibrated',
-    arms: 'Arms',
-    cameras: 'Cameras',
     hwConnected: 'Connected',
     hwDisconnected: 'Disconnected',
     hwCalibrated: 'Calibrated',
     noArms: 'No arms detected',
     noCameras: 'No cameras detected',
-    leader: 'Leader',
-    follower: 'Follower',
     enablePreview: 'Enable Preview',
     disablePreview: 'Disable Preview',
     camerasDisabled: 'Camera preview disabled',
@@ -253,7 +260,6 @@ const translations = {
     setup: 'Setup',
     setupWizard: 'Hardware Setup',
     scanDevices: 'Scan Devices',
-    scanning: 'Scanning...',
     detectMotion: 'Detect Motion',
     stopDetection: 'Stop Detection',
     saveAndClose: 'Save & Close',
@@ -263,13 +269,9 @@ const translations = {
     moveArmPrompt: 'Move an arm to identify it',
     dragToSetup: 'Drag to setup zone',
     dragOut: 'Drag out to remove',
-    portLabel: 'Port',
-    motorsFound: 'motors',
     assignAlias: 'Device name',
     assignType: 'Device type',
     sessionBusy: 'Teleop/recording active, stop first',
-    noPortsFound: 'No serial ports found',
-    noCamerasFound: 'No cameras found',
 
     // Troubleshooting
     troubleshootArmDisconnectedTitle: 'Arm Disconnected',
@@ -307,7 +309,8 @@ const translations = {
   },
 } as const
 
-type TranslationKey = keyof typeof translations.zh
+type InlineKey = keyof typeof translations.zh
+type TranslationKey = InlineKey | SharedKey
 
 interface I18nStore {
   locale: Locale
@@ -318,5 +321,9 @@ interface I18nStore {
 export const useI18n = create<I18nStore>((set, get) => ({
   locale: 'zh',
   setLocale: (locale) => set({ locale }),
-  t: (key) => translations[get().locale][key] || key,
+  t: (key) => {
+    const locale = get().locale
+    const table = translations[locale] as Record<string, string>
+    return table[key] || key
+  },
 }))

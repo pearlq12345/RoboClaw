@@ -13,14 +13,15 @@ _FEETECH_POS_ADDR = 56
 class FeetechProber:
     """Probe and read Feetech servo motors on a serial port."""
 
-    def probe(self, port_path: str, baudrate: int = DEFAULT_BAUDRATE) -> list[int]:
-        """Try reading Present_Position for Feetech motor IDs 1-6."""
+    def probe(self, port_path: str, baudrate: int = DEFAULT_BAUDRATE, motor_ids: list[int] | None = None) -> list[int]:
+        """Try reading Present_Position for Feetech motor IDs."""
         from roboclaw.embodied.stub import is_stub_mode, stub_motor_ids
 
         if is_stub_mode():
             return stub_motor_ids(port_path)
         import scservo_sdk as scs
 
+        ids = motor_ids or MOTOR_IDS
         handler = scs.PortHandler(port_path)
         try:
             if not handler.openPort():
@@ -31,7 +32,7 @@ class FeetechProber:
             handler.setBaudRate(baudrate)
             packet = scs.PacketHandler(0)
             found = []
-            for mid in MOTOR_IDS:
+            for mid in ids:
                 val, result, _ = packet.read2ByteTxRx(handler, mid, _FEETECH_POS_ADDR)
                 if result == scs.COMM_SUCCESS:
                     found.append(mid)

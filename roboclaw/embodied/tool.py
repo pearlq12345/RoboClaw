@@ -28,10 +28,13 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "enum": _SETUP_ACTIONS,
                     "description": "The setup action to perform.",
                 },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
+                },
                 "model": {
                     "type": "string",
-                    "enum": ["so101", "koch"],
-                    "description": "Robot model name — determines scan protocol. Used internally by identify.",
+                    "description": "Embodiment model name (e.g. so101, koch, inspire_rh56). Optional — the interactive flow handles selection.",
                 },
                 "target": {
                     "type": "string",
@@ -67,6 +70,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "enum": _DOCTOR_ACTIONS,
                     "description": "The doctor action to perform.",
                 },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
+                },
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -82,6 +89,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "enum": _CALIBRATION_ACTIONS,
                     "description": "The calibration action to perform.",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
                 },
                 "arms": {
                     "type": "string",
@@ -102,6 +113,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "enum": _TELEOP_ACTIONS,
                     "description": "The teleop action to perform.",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
                 },
                 "arms": {
                     "type": "string",
@@ -126,6 +141,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "enum": _RECORD_ACTIONS,
                     "description": "The recording action to perform.",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
                 },
                 "arms": {
                     "type": "string",
@@ -176,6 +195,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "enum": _REPLAY_ACTIONS,
                     "description": "The replay action to perform.",
                 },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
+                },
                 "arms": {
                     "type": "string",
                     "description": "Comma-separated arm port paths (by-id from status).",
@@ -208,6 +231,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "enum": _TRAIN_ACTIONS,
                     "description": "The training action to perform.",
                 },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
+                },
                 "dataset_name": {
                     "type": "string",
                     "description": "Dataset slug for training.",
@@ -239,6 +266,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "enum": _INFER_ACTIONS,
                     "description": "The inference action to perform.",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "User's language code (en, zh).",
                 },
                 "arms": {
                     "type": "string",

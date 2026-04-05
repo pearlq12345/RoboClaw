@@ -93,8 +93,10 @@ class TtySession:
             if isinstance(step, PollStep):
                 answer = _run_poll_step(step)
                 if answer is None:
-                    retry = input("  Retry? (y/n): ").strip().lower()
+                    retry = input(step.retry_prompt).strip().lower()
                     if retry != "y":
+                        if hasattr(session, 'on_timeout'):
+                            session.on_timeout()
                         return session.result()
                     continue
                 session.submit_answer(step.prompt_id, answer)
@@ -120,5 +122,5 @@ def _run_poll_step(step: PollStep) -> str | None:
         if result is not None:
             return result
         time.sleep(0.1)
-    print("  Timeout -- no event detected.")
+    print(step.timeout_message)
     return None

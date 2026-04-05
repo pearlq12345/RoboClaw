@@ -1,0 +1,102 @@
+{
+  "selectEmbodimentType": {
+    "zh": "选择具身类型",
+    "en": "Select embodiment type"
+  },
+  "arm": {
+    "zh": "机械臂",
+    "en": "Robot Arm"
+  },
+  "hand": {
+    "zh": "灵巧手",
+    "en": "Dexterous Hand"
+  },
+  "humanoidSoon": {
+    "zh": "人形（即将支持）",
+    "en": "Humanoid (coming soon)"
+  },
+  "mobileSoon": {
+    "zh": "移动底盘（即将支持）",
+    "en": "Mobile Base (coming soon)"
+  },
+  "selectModel": {
+    "zh": "选择型号 ({n}):",
+    "en": "Select model ({n}):"
+  },
+  "scanningModel": {
+    "zh": "\n正在扫描 {model} 硬件...",
+    "en": "\nScanning for {model} hardware..."
+  },
+  "foundPorts": {
+    "zh": "发现 {ports} 个串口和 {cameras} 个摄像头。",
+    "en": "Found {ports} serial port(s) and {cameras} camera(s)."
+  },
+  "unassignedPorts": {
+    "zh": "{n} 个未分配端口，晃动一个机械臂...",
+    "en": "{n} unassigned port(s). Move an arm..."
+  },
+  "detectedMotion": {
+    "zh": "检测到动作: {port}\n  别名 (如 left_follower, right_leader):",
+    "en": "Detected motion on: {port}\n  Alias (e.g. left_follower, right_leader):"
+  },
+  "retryPrompt": {
+    "zh": "  重试? (y/n): ",
+    "en": "  Retry? (y/n): "
+  },
+  "timeout": {
+    "zh": "  超时，未检测到动作。",
+    "en": "  Timeout -- no event detected."
+  },
+  "skipped": {
+    "zh": "  已跳过。",
+    "en": "  Skipped."
+  },
+  "assigned": {
+    "zh": "  已分配: {alias} -> {spec}",
+    "en": "  Assigned: {alias} -> {spec}"
+  },
+  "defaultingFollower": {
+    "zh": "  (默认为 {model}_follower)",
+    "en": "  (defaulting to {model}_follower)"
+  },
+  "cameraNaming": {
+    "zh": "\n--- 摄像头命名 ---",
+    "en": "\n--- Camera Naming ---"
+  },
+  "cameraNamePrompt": {
+    "zh": "  摄像头 {index} 的名称 (回车跳过):",
+    "en": "  Name for camera {index} (or Enter to skip):"
+  },
+  "commitPrompt": {
+    "zh": "提交这些分配? (y/n):",
+    "en": "Commit these assignments? (y/n):"
+  },
+  "assignments": {
+    "zh": "\n{count} 个分配:",
+    "en": "\n{count} assignment(s):"
+  },
+  "resultCommitted": {
+    "zh": "配置完成。{count} 个绑定已写入配置。",
+    "en": "Setup complete. {count} binding(s) committed to manifest."
+  },
+  "resultCancelled": {
+    "zh": "用户取消了配置。",
+    "en": "Setup cancelled."
+  },
+  "resultTimeout": {
+    "zh": "动臂识别超时。发现 {ports} 个串口和 {cameras} 个摄像头，但未完成分配。",
+    "en": "Motion detection timed out. Found {ports} serial port(s) and {cameras} camera(s), but no assignments were made."
+  },
+  "resultNoHardware": {
+    "zh": "未发现匹配的硬件设备。",
+    "en": "No matching hardware found."
+  },
+  "resultNotSupported": {
+    "zh": "该具身类型暂未支持。",
+    "en": "This embodiment type is not yet supported."
+  },
+  "noAssignments": {
+    "zh": "未做任何分配。",
+    "en": "No assignments made."
+  }
+}

@@ -43,6 +43,8 @@ class PollStep:
     message: str
     poll_fn: Callable[[], str | None]
     timeout_s: float = 30.0
+    timeout_message: str = "  Timeout -- no event detected."
+    retry_prompt: str = "  Retry? (y/n): "
 
 
 @dataclass(frozen=True)
