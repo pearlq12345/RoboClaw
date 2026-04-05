@@ -7,7 +7,7 @@ from typing import Protocol
 class PortProber(Protocol):
     """Interface for protocol-specific port probing."""
 
-    def probe(self, port_path: str, baudrate: int = 1_000_000) -> list[int]:
+    def probe(self, port_path: str, baudrate: int = 1_000_000, motor_ids: list[int] | None = None) -> list[int]:
         """Probe port, return responding motor IDs. Empty list = no match."""
         ...
 

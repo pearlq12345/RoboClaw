@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -15,3 +15,7 @@ class EmbodimentSpec:
     """
 
     name: str  # Unique identifier, e.g. "so101", "inspire_rh56", "opencv"
+    device_patterns: dict[str, tuple[str, ...]] = field(default_factory=lambda: {
+        "linux": ("ttyACM*", "ttyUSB*"),
+        "darwin": ("tty.usb*", "tty.usbserial*", "cu.usb*", "cu.usbserial*"),
+    })

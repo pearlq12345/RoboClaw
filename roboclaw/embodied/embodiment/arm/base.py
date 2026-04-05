@@ -30,6 +30,8 @@ class ServoArmSpec(ArmSpec):
     leader_motor_models: dict[str, str] = field(default_factory=dict)
     full_turn_motors: tuple[str, ...] = ()
     probe_protocol: str = "feetech"
+    probe_motor_ids: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
+    probe_baudrate: int = 1_000_000
 
     def motor_models(self, role: str) -> dict[str, str]:
         """Return motor models for 'follower' or 'leader'."""

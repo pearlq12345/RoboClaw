@@ -26,6 +26,8 @@ SO101 = ServoArmSpec(
     leader_motor_models={m: _SO101_MODEL for m in _SO101_MOTORS},
     full_turn_motors=("wrist_roll",),
     probe_protocol="feetech",
+    probe_motor_ids=(1, 2, 3, 4, 5, 6),
+    probe_baudrate=1_000_000,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,6 +56,8 @@ KOCH = ServoArmSpec(
     leader_motor_models={m: "xl330-m077" for m in _KOCH_MOTORS},
     full_turn_motors=("wrist_roll",),
     probe_protocol="dynamixel",
+    probe_motor_ids=(1, 2, 3, 4, 5, 6),
+    probe_baudrate=1_000_000,
 )
 
 # ---------------------------------------------------------------------------

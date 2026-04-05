@@ -28,8 +28,8 @@ def _read_symlink_map(directory: str) -> dict[str, str]:
     return result
 
 
-def _list_serial_ports() -> list[str]:
-    """Return hardware serial ports (ttyACM*, ttyUSB*, cu.* etc).
+def _list_serial_ports(device_patterns: dict[str, tuple[str, ...]] | None = None) -> list[str]:
+    """Return hardware serial ports, optionally filtered by patterns from a spec.
 
     Only scans actual USB/hardware serial devices — never virtual consoles
     (/dev/tty, /dev/tty0-63) or pseudo-terminals, since opening those with
@@ -49,25 +49,20 @@ def _list_serial_ports() -> list[str]:
             if getattr(port, "device", "")
         )
 
-    if sys.platform == "darwin":
-        return sorted(
-            {
-                *(str(p) for p in Path("/dev").glob("tty.usb*")),
-                *(str(p) for p in Path("/dev").glob("tty.usbserial*")),
-                *(str(p) for p in Path("/dev").glob("cu.usb*")),
-                *(str(p) for p in Path("/dev").glob("cu.usbserial*")),
-            }
+    if device_patterns:
+        platform_key = "darwin" if sys.platform == "darwin" else "linux"
+        patterns = device_patterns.get(platform_key, ())
+    else:
+        patterns = (
+            ("tty.usb*", "tty.usbserial*", "cu.usb*", "cu.usbserial*")
+            if sys.platform == "darwin"
+            else ("ttyACM*", "ttyUSB*")
         )
 
-    return sorted(
-        {
-            *(str(p) for p in Path("/dev").glob("ttyACM*")),
-            *(str(p) for p in Path("/dev").glob("ttyUSB*")),
-        }
-    )
+    return sorted({str(p) for pat in patterns for p in Path("/dev").glob(pat)})
 
 
-def scan_serial_ports() -> list[SerialInterface]:
+def scan_serial_ports(device_patterns: dict[str, tuple[str, ...]] | None = None) -> list[SerialInterface]:
     """Scan serial devices, return list of SerialInterface objects.
 
     Discovery scope is intentionally aligned with `lerobot-find-port`, while
@@ -81,7 +76,7 @@ def scan_serial_ports() -> list[SerialInterface]:
 
     by_path = _read_symlink_map("/dev/serial/by-path")
     by_id = _read_symlink_map("/dev/serial/by-id")
-    all_devs = set(_list_serial_ports()) | set(by_path.keys()) | set(by_id.keys())
+    all_devs = set(_list_serial_ports(device_patterns)) | set(by_path.keys()) | set(by_id.keys())
     ports: list[SerialInterface] = []
     for dev in sorted(all_devs):
         if not os.path.exists(dev):

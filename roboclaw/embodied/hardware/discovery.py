@@ -66,8 +66,12 @@ class HardwareDiscovery:
 
         spec = get_arm_spec_by_name(model)
         prober = get_prober(spec.probe_protocol)
-        ports = scan_serial_ports()
-        result = self._probe_ports(ports, prober, spec.probe_protocol)
+        ports = scan_serial_ports(spec.device_patterns or None)
+        result = self._probe_ports(
+            ports, prober, spec.probe_protocol,
+            motor_ids=list(spec.probe_motor_ids),
+            baudrate=spec.probe_baudrate,
+        )
         self._scanned_ports = result
         return result
 
@@ -144,6 +148,7 @@ class HardwareDiscovery:
 
     def _probe_ports(
         self, ports: list[SerialInterface], prober, protocol: str = "",
+        motor_ids: list[int] | None = None, baudrate: int = 1_000_000,
     ) -> list[SerialInterface]:
         """Probe ports with a single prober, handling permission errors."""
         from roboclaw.embodied.hardware.scan import fix_serial_permissions
@@ -152,12 +157,12 @@ class HardwareDiscovery:
         tty_saved = _save_tty()
         try:
             try:
-                return self._do_probe(ports, prober, protocol)
+                return self._do_probe(ports, prober, protocol, motor_ids=motor_ids, baudrate=baudrate)
             except Exception as exc:
                 if "Permission denied" not in str(exc) and "Errno 13" not in str(exc):
                     raise
                 if fix_serial_permissions():
-                    return self._do_probe(ports, prober, protocol)
+                    return self._do_probe(ports, prober, protocol, motor_ids=motor_ids, baudrate=baudrate)
                 raise PermissionError(
                     "Serial port permission denied. Run: bash scripts/setup-udev.sh"
                 ) from exc
@@ -168,6 +173,7 @@ class HardwareDiscovery:
     @staticmethod
     def _do_probe(
         ports: list[SerialInterface], prober, protocol: str = "",
+        motor_ids: list[int] | None = None, baudrate: int = 1_000_000,
     ) -> list[SerialInterface]:
         """Run the prober on each port, return those with motors."""
         result: list[SerialInterface] = []
@@ -175,7 +181,7 @@ class HardwareDiscovery:
             path = port.dev or port.by_id or port.by_path
             if not path:
                 continue
-            ids = prober.probe(path)
+            ids = prober.probe(path, baudrate=baudrate, motor_ids=motor_ids)
             if ids:
                 result.append(replace(port, motor_ids=tuple(ids), bus_type=protocol))
         return result
