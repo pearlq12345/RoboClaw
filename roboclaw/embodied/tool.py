@@ -2,33 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
 from roboclaw.agent.tools.base import Tool
-from roboclaw.embodied.embodiment.arm.registry import all_arm_types
-from roboclaw.embodied.embodiment.hand.registry import all_hand_types
-from roboclaw.embodied.manifest.helpers import (
-    _probe_hand_slave_id,
-    _resolve_serial_interface,
-    arm_display_name,
-)
 
-_MANIFEST_ACTIONS = [
-    "status",
-    "bind_arm",
-    "unbind_arm",
-    "rename_arm",
-    "bind_camera",
-    "unbind_camera",
-    "rename_camera",
-    "bind_hand",
-    "unbind_hand",
-    "rename_hand",
-    "describe",
-]
-_SETUP_ACTIONS = ["scan", "identify", "preview_cameras"]
+_SETUP_ACTIONS = ["identify", "modify"]
 _DOCTOR_ACTIONS = ["check"]
 _CALIBRATION_ACTIONS = ["calibrate"]
 _TELEOP_ACTIONS = ["teleoperate"]
@@ -36,61 +15,10 @@ _RECORD_ACTIONS = ["record"]
 _REPLAY_ACTIONS = ["replay"]
 _TRAIN_ACTIONS = ["train", "job_status", "list_datasets", "list_policies"]
 _INFER_ACTIONS = ["run_policy"]
-_EMBODIMENT_CONTROL_ACTIONS = ["hand_open", "hand_close", "hand_pose", "hand_status"]
 
 _TOOL_GROUPS: dict[str, dict[str, Any]] = {
-    "manifest": {
-        "description": "Inspect and edit the embodied hardware manifest.",
-        "actions": _MANIFEST_ACTIONS,
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": _MANIFEST_ACTIONS,
-                    "description": "The manifest action to perform.",
-                },
-                "alias": {
-                    "type": "string",
-                    "description": "Existing arm or hand alias to update or remove.",
-                },
-                "arm_type": {
-                    "type": "string",
-                    "enum": list(all_arm_types()),
-                    "description": "Arm hardware type for bind_arm.",
-                },
-                "port": {
-                    "type": "string",
-                    "description": "Serial port path for bind_arm or bind_hand.",
-                },
-                "new_alias": {
-                    "type": "string",
-                    "description": "New alias for rename_arm, rename_camera, or rename_hand.",
-                },
-                "camera_name": {
-                    "type": "string",
-                    "description": "Camera alias for bind_camera, unbind_camera, or rename_camera.",
-                },
-                "camera_index": {
-                    "type": "integer",
-                    "description": "Index into the detected camera list for bind_camera.",
-                },
-                "target_action": {
-                    "type": "string",
-                    "description": "Action name to describe.",
-                },
-                "hand_type": {
-                    "type": "string",
-                    "enum": list(all_hand_types()),
-                    "description": "Hand hardware type for bind_hand.",
-                },
-            },
-            "required": ["action"],
-            "additionalProperties": False,
-        },
-    },
     "setup": {
-        "description": "Scan hardware, identify arms, and preview cameras.",
+        "description": "Hardware discovery, identification, and configuration management.",
         "actions": _SETUP_ACTIONS,
         "parameters": {
             "type": "object",
@@ -103,7 +31,25 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 "model": {
                     "type": "string",
                     "enum": ["so101", "koch"],
-                    "description": "Robot model name — determines scan protocol. REQUIRED for scan.",
+                    "description": "Robot model name — determines scan protocol. Used internally by identify.",
+                },
+                "target": {
+                    "type": "string",
+                    "enum": ["arm", "camera", "hand"],
+                    "description": "Target type for modify.",
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": ["rename", "unbind"],
+                    "description": "Operation to perform for modify.",
+                },
+                "alias": {
+                    "type": "string",
+                    "description": "Existing alias to modify.",
+                },
+                "new_alias": {
+                    "type": "string",
+                    "description": "New alias for rename operation.",
                 },
             },
             "required": ["action"],
@@ -328,62 +274,6 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
-    "embodiment_control": {
-        "description": "Control a dexterous hand: open, close, pose, and query status.",
-        "actions": _EMBODIMENT_CONTROL_ACTIONS,
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": _EMBODIMENT_CONTROL_ACTIONS,
-                    "description": "The embodiment-control action to perform.",
-                },
-                "hand_name": {
-                    "type": "string",
-                    "description": "Hand alias. Uses first configured hand if omitted.",
-                },
-                "positions": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "6 finger positions 0-1000 for hand_pose.",
-                },
-            },
-            "required": ["action"],
-            "additionalProperties": False,
-        },
-    },
-}
-
-_ACTION_DESCRIPTIONS = {
-    "scan": "Scan for serial ports with motors and available cameras.",
-    "check": "Check LeRobot availability and show the current embodied setup.",
-    "identify": "Launch the interactive arm-identification flow for detected serial ports.",
-    "describe": "Explain adjustable parameters for a target embodied action.",
-    "calibrate": "Calibrate one or more configured arms. If arms is omitted, calibrate every uncalibrated arm.",
-    "teleoperate": "Run live teleoperation. Select arms with a comma-separated port list.",
-    "record": "Record a dataset with one follower/leader pair or two pairs for bimanual capture.",
-    "replay": "Replay a recorded dataset episode on one or two follower arms.",
-    "train": "Start ACT training for a recorded dataset as a detached job.",
-    "run_policy": "Run a trained policy rollout with one or two follower arms.",
-    "job_status": "Inspect the status and recent logs for a detached training job.",
-    "status": "Show hardware status: configured arms/cameras, connectivity, calibration, readiness.",
-    "bind_arm": "Create or update one configured arm alias.",
-    "rename_arm": "Rename an existing configured arm alias.",
-    "unbind_arm": "Remove one configured arm alias.",
-    "bind_camera": "Assign a scanned camera to a stable camera name.",
-    "rename_camera": "Rename an existing configured camera alias.",
-    "preview_cameras": "Capture one preview image for each scanned camera.",
-    "unbind_camera": "Remove a configured camera.",
-    "bind_hand": "Create or update one configured hand alias.",
-    "unbind_hand": "Remove a configured hand alias.",
-    "rename_hand": "Rename an existing configured hand alias.",
-    "hand_open": "Open all fingers of a dexterous hand.",
-    "hand_close": "Close all fingers of a dexterous hand.",
-    "hand_pose": "Set individual finger positions on a dexterous hand.",
-    "hand_status": "Read current finger angles and forces from a dexterous hand.",
-    "list_datasets": "List recorded datasets with episode counts.",
-    "list_policies": "List trained policy checkpoints.",
 }
 
 
@@ -412,8 +302,6 @@ class EmbodiedToolGroup(Tool):
         action = kwargs.get("action", "")
         if action not in self._spec["actions"]:
             return f"Unknown action '{action}' for tool {self._group_name}."
-        if self._group_name == "manifest":
-            return await self._execute_manifest(kwargs)
         if self._group_name == "setup":
             return await self._execute_setup(kwargs)
         if self._group_name == "doctor":
@@ -430,120 +318,25 @@ class EmbodiedToolGroup(Tool):
             return await self._execute_train(kwargs)
         if self._group_name == "infer":
             return await self._execute_infer(kwargs)
-        if self._group_name == "embodiment_control":
-            return await self._execute_embodiment_control(kwargs)
         return f"Unknown tool group: {self._group_name}"
-
-    async def _execute_manifest(self, kwargs: dict[str, Any]) -> str | list:
-        svc = _get_service(self.embodied_service)
-        action = kwargs["action"]
-        if action == "status":
-            return svc.get_manifest_summary()
-        if action == "describe":
-            target_action = kwargs.get("target_action", "")
-            if not target_action:
-                return json.dumps(_ACTION_DESCRIPTIONS, indent=2, ensure_ascii=False)
-            if target_action not in _ACTION_DESCRIPTIONS:
-                return f"Unknown target_action: {target_action}"
-            return f"{target_action}: {_ACTION_DESCRIPTIONS[target_action]}"
-        if action == "bind_arm":
-            alias = kwargs.get("alias", "")
-            arm_type = kwargs.get("arm_type", "")
-            port = kwargs.get("port", "")
-            if not all([alias, arm_type, port]):
-                return "bind_arm requires alias, arm_type, and port."
-            interface = _resolve_serial_interface(port)
-            binding = svc.bind_arm(alias, arm_type, interface)
-            display = arm_display_name(binding)
-            return f"Arm '{display}' configured.\n{json.dumps(binding.to_dict(), indent=2)}"
-        if action == "unbind_arm":
-            alias = kwargs.get("alias", "")
-            if not alias:
-                return "unbind_arm requires alias."
-            svc.unbind_arm(alias)
-            return f"Arm '{alias}' removed."
-        if action == "rename_arm":
-            alias = kwargs.get("alias", "")
-            new_alias = kwargs.get("new_alias", "")
-            if not alias or not new_alias:
-                return "rename_arm requires alias and new_alias."
-            binding = svc.rename_arm(alias, new_alias)
-            return (
-                f"Arm renamed from '{alias}' to '{new_alias}'.\n"
-                f"{json.dumps(binding.to_dict(), indent=2)}"
-            )
-        if action == "bind_camera":
-            camera_name = kwargs.get("camera_name", "")
-            camera_index = kwargs.get("camera_index")
-            if not camera_name or camera_index is None:
-                return "bind_camera requires camera_name and camera_index."
-            from roboclaw.embodied.hardware.scan import scan_cameras
-
-            scanned = scan_cameras()
-            if camera_index < 0 or camera_index >= len(scanned):
-                return f"camera_index {camera_index} out of range. Found {len(scanned)} camera(s)."
-            interface = scanned[camera_index]
-            if not interface.address:
-                return f"Scanned camera at index {camera_index} has no usable path."
-            binding = svc.bind_camera(camera_name, interface)
-            return f"Camera '{camera_name}' configured.\n{json.dumps(binding.to_dict(), indent=2)}"
-        if action == "unbind_camera":
-            camera_name = kwargs.get("camera_name", "")
-            if not camera_name:
-                return "unbind_camera requires camera_name."
-            svc.unbind_camera(camera_name)
-            return f"Camera '{camera_name}' removed."
-        if action == "rename_camera":
-            camera_name = kwargs.get("camera_name", "")
-            new_alias = kwargs.get("new_alias", "")
-            if not camera_name or not new_alias:
-                return "rename_camera requires camera_name and new_alias."
-            binding = svc.rename_camera(camera_name, new_alias)
-            return (
-                f"Camera renamed from '{camera_name}' to '{new_alias}'.\n"
-                f"{json.dumps(binding.to_dict(), indent=2)}"
-            )
-        if action == "bind_hand":
-            alias = kwargs.get("alias", "")
-            hand_type = kwargs.get("hand_type", "")
-            port = kwargs.get("port", "")
-            if not all([alias, hand_type, port]):
-                return "bind_hand requires alias, hand_type, and port."
-            interface = _resolve_serial_interface(port)
-            slave_id = _probe_hand_slave_id(hand_type, interface.address)
-            binding = svc.bind_hand(alias, hand_type, interface, slave_id)
-            return f"Hand '{alias}' configured.\n{json.dumps(binding.to_dict(), indent=2)}"
-        if action == "unbind_hand":
-            alias = kwargs.get("alias", "")
-            if not alias:
-                return "unbind_hand requires alias."
-            svc.unbind_hand(alias)
-            return f"Hand '{alias}' removed."
-        # rename_hand (final action in manifest group)
-        alias = kwargs.get("alias", "")
-        new_alias = kwargs.get("new_alias", "")
-        if not alias or not new_alias:
-            return "rename_hand requires alias and new_alias."
-        binding = svc.rename_hand(alias, new_alias)
-        return (
-            f"Hand renamed from '{alias}' to '{new_alias}'.\n"
-            f"{json.dumps(binding.to_dict(), indent=2)}"
-        )
 
     async def _execute_setup(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)
         action = kwargs["action"]
-        if action == "scan":
-            model = kwargs.get("model", "")
-            if not model:
-                return "scan requires model parameter. Ask the user what robot model they have (e.g. so101, koch)."
-            result = await asyncio.to_thread(svc.setup.run_full_scan, model)
-            return _format_scan(result)
-        if action == "preview_cameras":
-            return svc.setup.preview_cameras()
+        if action == "identify":
+            if self._tty_handoff:
+                return await _run_with_manifest(
+                    svc,
+                    lambda manifest: _run_cli_identify(svc, manifest, kwargs, self._tty_handoff),
+                )
+            return await _run_with_manifest(
+                svc,
+                lambda _: _run_conversational_identify(svc, kwargs),
+            )
+        # modify
         return await _run_with_manifest(
             svc,
-            lambda manifest: svc.setup.identify(manifest, kwargs, self._tty_handoff),
+            lambda _: _run_modify(svc, kwargs),
         )
 
     async def _execute_doctor(self, kwargs: dict[str, Any]) -> str | list:
@@ -596,34 +389,68 @@ class EmbodiedToolGroup(Tool):
             lambda manifest: svc.infer.run_policy(manifest, kwargs, self._tty_handoff),
         )
 
-    async def _execute_embodiment_control(self, kwargs: dict[str, Any]) -> str | list:
-        svc = _get_service(self.embodied_service)
-        action = kwargs["action"]
-        return await _run_with_manifest(
-            svc,
-            lambda manifest: _run_hand_action(svc.hand, action, manifest, kwargs, self._tty_handoff),
-        )
-
 
 def create_embodied_tools(tty_handoff: Any = None) -> list[EmbodiedToolGroup]:
     """Return a list of EmbodiedToolGroup instances for all tool groups."""
     return [EmbodiedToolGroup(name, spec, tty_handoff=tty_handoff) for name, spec in _TOOL_GROUPS.items()]
 
 
-def _format_scan(result: dict[str, Any]) -> str:
-    ports = result["ports"]
-    cameras = result["cameras"]
-    lines = [f"Found {len(ports)} serial port(s) and {len(cameras)} camera(s)."]
-    if ports:
-        lines.append("\nPorts:")
-        for port in ports:
-            port_id = port.by_id or port.dev or "?"
-            lines.append(f"  - {port_id}  ({len(port.motor_ids)} motors)")
-    if cameras:
-        lines.append("\nCameras:")
-        for camera in cameras:
-            lines.append(f"  - {camera.dev or '?'}  ({camera.width}x{camera.height} @ {camera.fps}fps)")
-    return "\n".join(lines)
+_MODIFY_DISPATCH = {
+    ("unbind", "arm"): "unbind_arm",
+    ("unbind", "camera"): "unbind_camera",
+    ("unbind", "hand"): "unbind_hand",
+    ("rename", "arm"): "rename_arm",
+    ("rename", "camera"): "rename_camera",
+    ("rename", "hand"): "rename_hand",
+}
+
+
+async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
+    target = kwargs.get("target", "")
+    operation = kwargs.get("operation", "")
+    alias = kwargs.get("alias", "")
+    if not all([target, operation, alias]):
+        return "modify requires target, operation, and alias."
+
+    method_name = _MODIFY_DISPATCH.get((operation, target))
+    if method_name is None:
+        return f"Unknown operation/target: {operation}/{target}"
+
+    if operation == "unbind":
+        getattr(svc, method_name)(alias)
+        return f"{target.title()} '{alias}' removed."
+
+    # rename
+    new_alias = kwargs.get("new_alias", "")
+    if not new_alias:
+        return "rename requires new_alias."
+    result = getattr(svc, method_name)(alias, new_alias)
+    data = result.to_dict() if hasattr(result, "to_dict") else result
+    return f"{target.title()} renamed '{alias}' → '{new_alias}'.\n{json.dumps(data, indent=2)}"
+
+
+async def _run_cli_identify(svc: Any, manifest: Any, kwargs: dict[str, Any], tty_handoff: Any) -> str:
+    from roboclaw.embodied.adapters.cli_setup import run_cli_setup
+
+    return await run_cli_setup(svc, manifest, kwargs, tty_handoff)
+
+
+async def _run_conversational_identify(svc: Any, kwargs: dict[str, Any]) -> str:
+    """Return SetupSession state as JSON for conversational agents."""
+    import asyncio
+
+    from roboclaw.embodied.service.setup_session import SetupPhase
+
+    if svc.setup.phase == SetupPhase.IDLE:
+        model = kwargs.get("model", "")
+        if not model:
+            return json.dumps({
+                "phase": "idle",
+                "message": "What robot model do you have?",
+                "options": ["so101", "koch"],
+            }, ensure_ascii=False)
+        await asyncio.to_thread(svc.setup.run_full_scan, model)
+    return json.dumps(svc.setup.to_dict(), indent=2, ensure_ascii=False)
 
 
 def _get_service(service: Any) -> Any:
@@ -660,19 +487,3 @@ async def _run_train_action(
     if action == "list_datasets":
         return train.list_datasets(manifest)
     return train.list_policies(manifest)
-
-
-async def _run_hand_action(
-    hand: Any,
-    action: str,
-    manifest: Any,
-    kwargs: dict[str, Any],
-    tty_handoff: Any,
-) -> str:
-    if action == "hand_open":
-        return await hand.open_hand(manifest, kwargs, tty_handoff)
-    if action == "hand_close":
-        return await hand.close_hand(manifest, kwargs, tty_handoff)
-    if action == "hand_pose":
-        return await hand.set_pose(manifest, kwargs, tty_handoff)
-    return await hand.get_status(manifest, kwargs, tty_handoff)

@@ -7,24 +7,21 @@ Communicate at a high level — never expose serial port paths, protocol details
 
 | Tool | Purpose | Actions |
 |------|---------|---------|
-| `manifest` | Query and manage robot hardware configuration | status, bind_arm, unbind_arm, rename_arm, bind_camera, unbind_camera, rename_camera, bind_hand, unbind_hand, rename_hand, describe |
-| `setup` | Hardware discovery and identification workflow | scan, identify, preview_cameras |
-| `doctor` | Environment health check | check |
+| `setup` | Hardware discovery, identification, and configuration management | identify, modify |
+| `doctor` | Environment health check + hardware status | check |
 | `calibration` | Arm calibration | calibrate |
 | `teleop` | Live teleoperation | teleoperate |
 | `record` | Dataset recording | record |
 | `replay` | Dataset episode replay | replay |
 | `train` | Policy training and dataset/policy management | train, job_status, list_datasets, list_policies |
 | `infer` | Policy inference rollout | run_policy |
-| `embodiment_control` | Direct hand control | hand_open, hand_close, hand_pose, hand_status |
 
 ## Hard Rules
 
-- ALWAYS start hardware questions by calling `manifest(action="status")`.
-- Before scanning, ALWAYS ask the user what robot model they have (so101, koch, etc.). Then call `setup(action="scan", model="<model>")` with the confirmed model. NEVER scan without a model.
-- ALWAYS use `setup(action="identify")` when the user wants to connect or name arms.
+- ALWAYS start hardware questions by calling `doctor(action="check")`.
+- To configure new hardware: `setup(action="identify")` — the state machine guides the entire flow (model selection → scan → motion detection → assign → commit).
+- To modify existing config (rename/unbind): `setup(action="modify", target="arm|camera|hand", operation="rename|unbind", alias="...", new_alias="...")`.
 - NEVER auto-execute calibrate, teleoperate, or record without explicit user request.
-- ALWAYS use structured manifest actions (`bind_arm`, `unbind_arm`, `rename_arm`, etc.) to change config. NEVER suggest manual editing.
 - NEVER ask the user to type raw serial device paths. Only identify can determine which arm is on which port.
 - When arms list is empty and serial ports are detected, recommend identify. NEVER suggest manual port assignment.
 - ALWAYS pass arm port (by-id path) for `arms` param, NOT aliases.
@@ -34,17 +31,15 @@ Communicate at a high level — never expose serial port paths, protocol details
 
 When a user wants to set up their robot for the first time:
 
-1. Ask what robot model they have (so101, koch, etc.)
-2. `setup(action="scan", model="<model>")` — discover connected hardware
-3. `setup(action="identify")` — interactive arm identification (user moves each arm)
-4. `manifest(action="status")` — confirm configuration
-5. `calibration(action="calibrate")` — calibrate all arms before first use
+1. `setup(action="identify")` — interactive hardware discovery and identification (scan is internal)
+2. `doctor(action="check")` — confirm configuration and environment
+3. `calibration(action="calibrate")` — calibrate all arms before first use
 
 ## Operation Workflow
 
 After setup is complete:
 
-1. `manifest(action="status")` — check readiness
+1. `doctor(action="check")` — check readiness
 2. `teleop(action="teleoperate")` — verify control before recording
 3. `record(action="record")` — collect dataset
 4. `train(action="train")` — train policy

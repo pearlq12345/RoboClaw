@@ -22,14 +22,14 @@ def reset(
     api_key: Optional[str] = typer.Option(None, help="API key to set."),
     keep_calibration: bool = typer.Option(False, "--keep-calibration", help="Preserve calibration files."),
     keep_manifest: bool = typer.Option(False, "--keep-manifest", help="Preserve manifest.json (arms, cameras)."),
-    workspace_only: bool = typer.Option(False, "--workspace-only", help="Only reset workspace, keep config.json."),
+    keep_config: bool = typer.Option(False, "--keep-config", help="Keep config.json, only reset workspace."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
     """Delete workspace and re-run onboard non-interactively.
 
     Useful for returning to a clean state during development.
     Optionally patches config.json with --model / --provider / --api-base / --api-key.
-    Use --keep-calibration and/or --keep-setup to preserve hardware state.
+    Use --keep-calibration and/or --keep-manifest to preserve hardware state.
     """
     from roboclaw.config.loader import get_config_path
     from roboclaw.config.paths import get_workspace_path
@@ -40,13 +40,13 @@ def reset(
     if not yes:
         _console.print(f"[yellow]This will delete:[/yellow]")
         _console.print(f"  - {workspace}")
-        if not workspace_only:
+        if not keep_config:
             _console.print(f"  - {config_path}")
         if keep_calibration:
             _console.print(f"  [dim](keeping calibration files)[/dim]")
         if keep_manifest:
             _console.print("  [dim](keeping manifest.json)[/dim]")
-        if workspace_only:
+        if keep_config:
             _console.print(f"  [dim](keeping config.json)[/dim]")
         if not typer.confirm("Continue?"):
             raise typer.Abort()
@@ -55,14 +55,14 @@ def reset(
     if workspace.exists():
         _clean_workspace(workspace, keep_calibration=keep_calibration, keep_manifest=keep_manifest)
         _console.print(f"[green]✓[/green] Cleaned {workspace}")
-    if not workspace_only and config_path.exists():
+    if not keep_config and config_path.exists():
         config_path.unlink()
         _console.print(f"[green]✓[/green] Deleted {config_path}")
 
     # 2. Re-run onboard (non-interactive: always creates fresh config)
     from roboclaw.cli.commands import run_onboard_core
 
-    run_onboard_core(interactive=False, skip_config=workspace_only)
+    run_onboard_core(interactive=False, skip_config=keep_config)
 
     # 3. Patch config.json if model params given
     _patch_config(config_path, model=model, provider=provider, api_base=api_base, api_key=api_key)

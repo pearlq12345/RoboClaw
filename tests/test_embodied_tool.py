@@ -101,33 +101,20 @@ def calibration_root(tmp_path: Path) -> Path:
         yield root
 
 
-def test_create_embodied_tools_returns_ten_groups() -> None:
+def test_create_embodied_tools_returns_eight_groups() -> None:
     tools = create_embodied_tools()
-    assert len(tools) == 10
+    assert len(tools) == 8
     names = {t.name for t in tools}
     assert names == {
-        "manifest",
-        "setup",
-        "doctor",
-        "calibration",
-        "teleop",
-        "record",
-        "replay",
-        "train",
-        "infer",
-        "embodiment_control",
+        "setup", "doctor", "calibration", "teleop",
+        "record", "replay", "train", "infer",
     }
 
 
 @pytest.mark.parametrize(
     ("tool_name", "expected_actions", "included", "excluded"),
     [
-        ("manifest", _MANIFEST_ACTIONS := {
-            "status", "bind_arm", "unbind_arm", "rename_arm", "bind_camera",
-            "unbind_camera", "rename_camera", "bind_hand", "unbind_hand",
-            "rename_hand", "describe",
-        }, {"alias", "arm_type", "port", "camera_name", "camera_index", "hand_type", "target_action", "new_alias"}, {"arms", "dataset_name", "positions"}),
-        ("setup", {"scan", "identify", "preview_cameras"}, {"model"}, {"alias", "arms", "dataset_name"}),
+        ("setup", {"identify", "modify"}, {"model", "target", "operation", "alias", "new_alias"}, {"arms", "dataset_name", "positions"}),
         ("doctor", {"check"}, set(), {"alias", "arms", "dataset_name"}),
         ("calibration", {"calibrate"}, {"arms"}, {"port", "dataset_name", "positions"}),
         ("teleop", {"teleoperate"}, {"arms", "fps"}, {"dataset_name", "checkpoint_path", "positions"}),
@@ -135,7 +122,6 @@ def test_create_embodied_tools_returns_ten_groups() -> None:
         ("replay", {"replay"}, {"arms", "dataset_name", "episode", "fps"}, {"checkpoint_path", "positions"}),
         ("train", {"train", "job_status", "list_datasets", "list_policies"}, {"dataset_name", "steps", "device", "job_id"}, {"positions", "port"}),
         ("infer", {"run_policy"}, {"arms", "dataset_name", "source_dataset", "checkpoint_path", "task", "num_episodes", "use_cameras"}, {"positions", "port"}),
-        ("embodiment_control", {"hand_open", "hand_close", "hand_pose", "hand_status"}, {"hand_name", "positions"}, {"dataset_name", "arms", "port"}),
     ],
 )
 def test_tool_group_schemas(
@@ -159,83 +145,20 @@ def test_tool_group_schemas(
 
 
 @pytest.mark.asyncio
-async def test_manifest_describe_action() -> None:
-    tool = _find_tool(create_embodied_tools(), "manifest")
-    result = await tool.execute(action="describe", target_action="record")
-    assert "record" in result
-    assert "dataset" in result.lower()
-
-
-@pytest.mark.asyncio
-async def test_manifest_status_action(tmp_path: Path) -> None:
-    tool = _find_tool(create_embodied_tools(), "manifest")
-    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
-    from roboclaw.embodied.service import EmbodiedService
-
-    tool.embodied_service = EmbodiedService(manifest=manifest)
-    result = await tool.execute(action="status")
-
-    payload = json.loads(result)
-    assert "status" in payload
-    assert payload["status"]["arms"][0]["alias"] == "right_follower"
-
-
-@pytest.mark.asyncio
 async def test_doctor_check_action(tmp_path: Path) -> None:
     tool = _find_tool(create_embodied_tools(), "doctor")
-    mock_runner = AsyncMock()
-    mock_runner.run.return_value = (0, "lerobot 0.5.0", "")
     manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    svc = EmbodiedService(manifest=manifest)
+    tool.embodied_service = svc
 
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.runner.LocalLeRobotRunner", return_value=mock_runner),
-    ):
+    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
         result = await tool.execute(action="check")
 
-    assert "lerobot 0.5.0" in result
-    assert "current setup" in result.lower()
-
-
-@pytest.mark.asyncio
-async def test_setup_scan_requires_model() -> None:
-    tool = _find_tool(create_embodied_tools(), "setup")
-    result = await tool.execute(action="scan")
-    assert "requires model" in result
-
-
-@pytest.mark.asyncio
-async def test_setup_scan_action() -> None:
-    tool = _find_tool(create_embodied_tools(), "setup")
-    with patch(
-        "roboclaw.embodied.service.setup_session.HardwareDiscovery.discover",
-        return_value=_MOCK_SCANNED_PORTS,
-    ), patch(
-        "roboclaw.embodied.service.setup_session.HardwareDiscovery.discover_cameras",
-        return_value=[VideoInterface(dev="/dev/video0", width=640, height=480, fps=30)],
-    ):
-        result = await tool.execute(action="scan", model="so101")
-
-    assert "Found 2 serial port(s) and 1 camera(s)." in result
-
-
-@pytest.mark.asyncio
-async def test_setup_preview_cameras_action() -> None:
-    previews = [{"camera": "/dev/v4l/by-path/cam0", "image_path": "/tmp/front.jpg"}]
-    tool = _find_tool(create_embodied_tools(), "setup")
-
-    with (
-        patch("roboclaw.embodied.hardware.scan.scan_cameras", return_value=[VideoInterface(dev="/dev/video0", width=640, height=480, fps=30)]),
-        patch("roboclaw.embodied.hardware.scan.capture_camera_frames", return_value=previews) as mock_capture,
-        patch("pathlib.Path.is_file", return_value=False),
-    ):
-        result = await tool.execute(action="preview_cameras")
-
-    assert isinstance(result, list)
-    text_blocks = [block for block in result if block.get("type") == "text"]
-    assert any("Detected 1 camera" in block["text"] for block in text_blocks)
-    output_dir = mock_capture.call_args.args[1]
-    assert output_dir == Path("~/.roboclaw").expanduser() / "workspace" / "embodied" / "camera_previews"
+    payload = json.loads(result)
+    assert "environment" in payload
+    assert "manifest" in payload
+    assert "hardware_status" in payload
 
 
 @pytest.mark.asyncio
@@ -352,31 +275,57 @@ async def test_infer_action(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_embodiment_control_action(tmp_path: Path) -> None:
-    tool = _find_tool(create_embodied_tools(), "embodiment_control")
-    manifest = _manifest_from_data(
-        tmp_path,
-        {
-            **_MOCK_SETUP,
-            "hands": [{"alias": "left_hand", "type": "inspire_rh56", "port": _FOLLOWER_PORT, "slave_id": 1}],
-        },
-    )
-
-    with (
-        patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest),
-        patch("roboclaw.embodied.service.hand_session.HandSession._get_hand_controller") as mock_controller,
-    ):
-        mock_controller.return_value.open_hand = AsyncMock(return_value="opened")
-        result = await tool.execute(action="hand_open", hand_name="left_hand")
-
-    assert result == "opened"
+async def test_unknown_action_in_group() -> None:
+    tool = _find_tool(create_embodied_tools(), "setup")
+    result = await tool.execute(action="fly_to_moon")
+    assert "Unknown action" in result
 
 
 @pytest.mark.asyncio
-async def test_unknown_action_in_group() -> None:
-    tool = _find_tool(create_embodied_tools(), "manifest")
-    result = await tool.execute(action="fly_to_moon")
-    assert "Unknown action" in result
+async def test_setup_modify_rename_arm(tmp_path: Path) -> None:
+    tool = _find_tool(create_embodied_tools(), "setup")
+    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    svc = EmbodiedService(manifest=manifest)
+    tool.embodied_service = svc
+
+    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
+        result = await tool.execute(
+            action="modify", target="arm", operation="rename",
+            alias="right_follower", new_alias="my_follower",
+        )
+
+    assert "renamed" in result.lower()
+    assert "my_follower" in result
+
+
+@pytest.mark.asyncio
+async def test_setup_modify_unbind_arm(tmp_path: Path) -> None:
+    tool = _find_tool(create_embodied_tools(), "setup")
+    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    svc = EmbodiedService(manifest=manifest)
+    tool.embodied_service = svc
+
+    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
+        result = await tool.execute(
+            action="modify", target="arm", operation="unbind", alias="right_follower",
+        )
+
+    assert "removed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_setup_modify_requires_params(tmp_path: Path) -> None:
+    tool = _find_tool(create_embodied_tools(), "setup")
+    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    svc = EmbodiedService(manifest=manifest)
+    tool.embodied_service = svc
+
+    with patch("roboclaw.embodied.manifest.helpers.ensure_manifest", return_value=manifest):
+        result = await tool.execute(action="modify")
+    assert "requires" in result.lower()
 
 
 @pytest.fixture()
@@ -525,26 +474,6 @@ def test_set_camera(manifest_file: Path) -> None:
     assert cam["width"] == 640
     assert cam["height"] == 480
     assert cam["fps"] == 30
-
-
-@pytest.mark.asyncio
-async def test_preview_cameras_action() -> None:
-    previews = [{"camera": "/dev/v4l/by-path/cam0", "image_path": "/tmp/front.jpg"}]
-    tool = _find_tool(create_embodied_tools(), "setup")
-
-    with (
-        patch("roboclaw.embodied.hardware.scan.scan_cameras", return_value=[VideoInterface(dev="/dev/video0", width=640, height=480, fps=30)]),
-        patch("roboclaw.embodied.hardware.scan.capture_camera_frames", return_value=previews) as mock_capture,
-        patch("pathlib.Path.is_file", return_value=False),
-    ):
-        result = await tool.execute(action="preview_cameras")
-
-    # Returns multimodal content blocks (list) with text summary
-    assert isinstance(result, list)
-    text_blocks = [b for b in result if b.get("type") == "text"]
-    assert any("Detected 1 camera" in b["text"] for b in text_blocks)
-    output_dir = mock_capture.call_args.args[1]
-    assert output_dir == Path("~/.roboclaw").expanduser() / "workspace" / "embodied" / "camera_previews"
 
 
 def test_set_camera_bad_index(manifest_file: Path) -> None:
@@ -711,26 +640,6 @@ def test_set_arm_rejects_revo2(manifest_file: Path) -> None:
             set_arm("h", "revo2", "/dev/ttyUSB0", path=manifest_file)
 
 
-# ── embodiment_control tool group tests ───────────────────────────────
-
-
-def test_hand_tool_schema() -> None:
-    tool = _find_tool(create_embodied_tools(), "embodiment_control")
-    params = tool.parameters
-
-    assert params["type"] == "object"
-    assert params["required"] == ["action"]
-    assert params["additionalProperties"] is False
-    assert set(params["properties"]["action"]["enum"]) == {
-        "hand_open", "hand_close", "hand_pose", "hand_status",
-    }
-    assert "hand_name" in params["properties"]
-    assert "positions" in params["properties"]
-    # Hand-specific params should NOT leak into other groups
-    assert "alias" not in params["properties"]
-    assert "arm_type" not in params["properties"]
-
-
 def test_train_schema_has_no_hand_params() -> None:
     """hand_type, hand_name, positions should NOT appear in train."""
     tool = _find_tool(create_embodied_tools(), "train")
@@ -738,17 +647,6 @@ def test_train_schema_has_no_hand_params() -> None:
     assert "hand_type" not in props
     assert "hand_name" not in props
     assert "positions" not in props
-
-
-def test_setup_schema_has_no_hand_runtime_params() -> None:
-    """hand_name and positions should NOT appear in manifest."""
-    tool = _find_tool(create_embodied_tools(), "manifest")
-    props = tool.parameters["properties"]
-    assert "hand_name" not in props
-    assert "positions" not in props
-    # hand_type SHOULD be in manifest (for bind_hand)
-    assert "hand_type" in props
-    assert props["hand_type"]["enum"] == ["inspire_rh56", "revo2"]
 
 
 def test_resolve_cameras_defaults_and_passthrough(tmp_path: Path) -> None:

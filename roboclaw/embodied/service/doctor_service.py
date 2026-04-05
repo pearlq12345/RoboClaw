@@ -20,13 +20,41 @@ class DoctorService:
         kwargs: dict[str, Any],
         tty_handoff: Any,
     ) -> str:
-        from roboclaw.embodied.engine.command_builder import ArmCommandBuilder
-        from roboclaw.embodied.runner import LocalLeRobotRunner
+        import asyncio
 
-        result = await LocalLeRobotRunner().run(ArmCommandBuilder().doctor())
-        returncode, stdout, stderr = result
-        if returncode != 0:
-            output = f"Command failed (exit {returncode}).\nstdout: {stdout}\nstderr: {stderr}"
-        else:
-            output = stdout or "Done."
-        return output + f"\n\nCurrent setup:\n{json.dumps(manifest.snapshot, indent=2, ensure_ascii=False)}"
+        environment = await asyncio.to_thread(self._check_environment_sync)
+        manifest_snapshot = manifest.snapshot
+        hardware_status = self._parent.get_hardware_status(manifest)
+        result = {
+            "environment": environment,
+            "manifest": manifest_snapshot,
+            "hardware_status": hardware_status,
+        }
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    @staticmethod
+    def _check_environment_sync() -> dict[str, Any]:
+        """Check LeRobot and SDK availability (may block on first import)."""
+        env: dict[str, Any] = {
+            "lerobot_installed": False,
+            "lerobot_version": None,
+            "feetech_sdk": False,
+            "dynamixel_sdk": False,
+        }
+        try:
+            import lerobot
+            env["lerobot_installed"] = True
+            env["lerobot_version"] = getattr(lerobot, "__version__", "unknown")
+        except (ImportError, OSError):
+            pass
+        try:
+            import scservo_sdk  # noqa: F401
+            env["feetech_sdk"] = True
+        except (ImportError, OSError):
+            pass
+        try:
+            import dynamixel_sdk  # noqa: F401
+            env["dynamixel_sdk"] = True
+        except (ImportError, OSError):
+            pass
+        return env
