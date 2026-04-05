@@ -29,11 +29,11 @@ def _read_symlink_map(directory: str) -> dict[str, str]:
 
 
 def _list_serial_ports() -> list[str]:
-    """Return ports using the same discovery scope as lerobot-find-port.
+    """Return hardware serial ports (ttyACM*, ttyUSB*, cu.* etc).
 
-    On Windows, lerobot uses pyserial COM-port enumeration. On Unix-like
-    systems, it scans every `/dev/tty*` entry. RoboClaw mirrors that behavior
-    so any port visible to the official helper is also visible here.
+    Only scans actual USB/hardware serial devices — never virtual consoles
+    (/dev/tty, /dev/tty0-63) or pseudo-terminals, since opening those with
+    pyserial corrupts the controlling terminal's termios flags (OPOST, ECHO).
     """
     try:
         from serial.tools import list_ports
@@ -49,10 +49,20 @@ def _list_serial_ports() -> list[str]:
             if getattr(port, "device", "")
         )
 
+    if sys.platform == "darwin":
+        return sorted(
+            {
+                *(str(p) for p in Path("/dev").glob("tty.usb*")),
+                *(str(p) for p in Path("/dev").glob("tty.usbserial*")),
+                *(str(p) for p in Path("/dev").glob("cu.usb*")),
+                *(str(p) for p in Path("/dev").glob("cu.usbserial*")),
+            }
+        )
+
     return sorted(
         {
-            *(str(path) for path in Path("/dev").glob("tty*")),
-            *(str(path) for path in Path("/dev").glob("cu.*")),
+            *(str(p) for p in Path("/dev").glob("ttyACM*")),
+            *(str(p) for p in Path("/dev").glob("ttyUSB*")),
         }
     )
 
