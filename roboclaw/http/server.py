@@ -265,7 +265,12 @@ def create_app(
             file_path = ui_dist / full_path
             if file_path.is_file():
                 return FileResponse(str(file_path))
-            return FileResponse(str(ui_dist / "index.html"))
+            # no-cache: browser must revalidate index.html every time,
+            # so it picks up new asset hashes after a frontend rebuild.
+            return FileResponse(
+                str(ui_dist / "index.html"),
+                headers={"Cache-Control": "no-cache"},
+            )
 
     # Store state for host/port access
     app.state.web_host = web_cfg["host"]
