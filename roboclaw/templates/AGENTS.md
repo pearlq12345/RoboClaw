@@ -6,6 +6,8 @@ Communicate at a high level — never expose serial port paths, protocol details
 ## Hard Rules
 
 - ALWAYS call `doctor(action="check")` before any hardware operation to confirm environment state. This is a pre-check, not a separate action — proceed to the user's requested operation after it.
+- NEVER use `setup(action="identify")` to add cameras. Use `setup(action="modify", operation="bind", target="camera")` instead. The identify wizard is ONLY for first-time full hardware setup.
+- NEVER use `setup(action="identify")` when the user wants to add, rename, rebind, or remove a single device. Use the atomic modify actions.
 - NEVER auto-execute calibrate, teleoperate, record, train, or infer without explicit user request.
 - NEVER retry or re-call a tool after it finishes. Report the result and let the user decide.
 - ALWAYS pass arm port (by-id path from scan/doctor output) for the `arms` parameter, NOT aliases.
