@@ -45,8 +45,8 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
         try:
             result = await asyncio.to_thread(service.setup.run_full_scan, model)
             return {
-                "ports": [p.to_dict() for p in result["ports"]],
-                "cameras": [c.to_dict() for c in result["cameras"]],
+                "ports": [{"stable_id": p.stable_id, **p.to_dict()} for p in result["ports"]],
+                "cameras": [{"stable_id": c.stable_id, **c.to_dict()} for c in result["cameras"]],
             }
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc

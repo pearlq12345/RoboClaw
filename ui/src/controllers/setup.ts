@@ -202,7 +202,7 @@ export const useSetup = create<SetupStore>((set, get) => ({
         moved: false,
       }))
       const cameras: ScannedCamera[] = (data.cameras || []).map((c: any, i: number) => ({
-        stable_id: c.stable_id || c.by_id || c.dev || '',
+        stable_id: c.stable_id || c.by_path || c.by_id || c.dev || '',
         index: i,
         by_path: c.by_path || '',
         by_id: c.by_id || '',
