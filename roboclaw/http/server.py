@@ -311,6 +311,42 @@ def _check_device_permissions() -> None:
         )
 
 
+def _ensure_ui_build() -> None:
+    """Rebuild frontend if ui/src is newer than ui/dist."""
+    import shutil
+    import subprocess
+
+    ui_root = Path(__file__).resolve().parent.parent.parent / "ui"
+    ui_src = ui_root / "src"
+    ui_dist = ui_root / "dist"
+
+    if not ui_src.is_dir():
+        return
+
+    # Find newest mtime in src/ vs dist/
+    def _newest_mtime(directory: Path) -> float:
+        return max((f.stat().st_mtime for f in directory.rglob("*") if f.is_file()), default=0)
+
+    src_mtime = _newest_mtime(ui_src)
+    dist_mtime = _newest_mtime(ui_dist) if ui_dist.is_dir() else 0
+
+    if dist_mtime >= src_mtime:
+        return
+
+    npm = shutil.which("npm")
+    if not npm:
+        logger.warning("Frontend outdated but npm not found — skipping rebuild")
+        return
+
+    logger.info("Frontend source newer than build, rebuilding ui …")
+    node_modules = ui_root / "node_modules"
+    if not node_modules.is_dir():
+        logger.info("Installing frontend dependencies …")
+        subprocess.run([npm, "install"], cwd=str(ui_root), check=True)
+    subprocess.run([npm, "run", "build"], cwd=str(ui_root), check=True)
+    logger.info("Frontend rebuild complete")
+
+
 def main(
     *,
     config_path: str | None = None,
@@ -322,6 +358,7 @@ def main(
     import uvicorn
 
     _check_device_permissions()
+    _ensure_ui_build()
     app = create_app(config_path=config_path, workspace=workspace, host=host, port=port)
     logger.info("Starting RoboClaw Web UI at http://{}:{}", app.state.web_host, app.state.web_port)
     uvicorn.run(app, host=app.state.web_host, port=app.state.web_port, log_level="info")
