@@ -6,23 +6,36 @@ import ScanArea from './ScanArea'
 import DeviceNode from './DeviceNode'
 
 const STEPS = ['select', 'scan', 'identify', 'review'] as const
-const btnBack = 'px-4 py-1.5 text-sm text-tx2 hover:text-tx'
-const btnPrimary = 'px-4 py-1.5 text-sm bg-ac text-white rounded hover:bg-ac/90 disabled:opacity-40'
-const btnOutline = 'px-4 py-1.5 text-sm border border-ac text-ac rounded hover:bg-ac/10'
-const cardBase = 'px-5 py-3 rounded-lg border text-sm font-medium transition-colors'
-const formBox = 'mt-2 p-3 bg-sf border border-bd rounded-lg space-y-2'
-const inputCls = 'w-full px-3 py-1.5 text-sm bg-bg border border-bd rounded focus:border-ac outline-none text-tx'
+const btnBack = 'px-4 py-1.5 text-sm text-tx2 hover:text-tx transition-colors'
+const btnPrimary = 'px-4 py-1.5 text-sm bg-ac text-white rounded-md hover:bg-ac/90 disabled:opacity-40 transition-colors'
+const btnOutline = 'px-4 py-1.5 text-sm border border-ac text-ac rounded-md hover:bg-ac/10 transition-colors'
+const formBox = 'mt-1.5 ml-11 p-3 bg-bg border border-bd/50 rounded-lg space-y-2'
+const inputCls = 'w-full px-3 py-1.5 text-sm bg-bg border border-bd rounded-md focus:border-ac outline-none text-tx'
 
 // -- Step Indicator ----------------------------------------------------------
 
 function StepIndicator({ current }: { current: string }) {
   const idx = STEPS.indexOf(current as (typeof STEPS)[number])
+  const labels = ['选择型号', '扫描', '分配', '确认']
+
   return (
-    <div className="flex items-center justify-center gap-2 mb-6">
+    <div className="flex items-center justify-center gap-1 mb-6">
       {STEPS.map((s, i) => (
-        <div key={s} className={`w-2.5 h-2.5 rounded-full transition-colors ${
-          i === idx ? 'bg-ac' : i < idx ? 'bg-ac/40' : 'bg-bd'
-        }`} />
+        <div key={s} className="flex items-center gap-1">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-medium transition-colors ${
+            i === idx ? 'bg-ac/10 text-ac' : i < idx ? 'text-gn' : 'text-tx2'
+          }`}>
+            <span className={`w-5 h-5 flex items-center justify-center rounded-full text-2xs ${
+              i < idx ? 'bg-gn text-white' : i === idx ? 'bg-ac text-white' : 'bg-bd/50 text-tx2'
+            }`}>
+              {i < idx ? '✓' : i + 1}
+            </span>
+            <span className="hidden sm:inline">{labels[i]}</span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div className={`w-6 h-px ${i < idx ? 'bg-gn' : 'bg-bd'}`} />
+          )}
+        </div>
       ))}
     </div>
   )
@@ -37,25 +50,32 @@ function ModelSelect() {
   const models: CatalogModel[] =
     selectedCategory && catalog?.models ? catalog.models[selectedCategory] ?? [] : []
 
+  const categoryIcons: Record<string, string> = { arm: '🦾', hand: '🤚', humanoid: '🤖', mobile: '🚗' }
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 flex-wrap">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {categories.map((cat) => (
           <button key={cat.id} disabled={!cat.supported} onClick={() => setCategory(cat.id)}
-            className={`${cardBase} ${!cat.supported ? 'border-bd bg-sf/40 text-tx2 cursor-not-allowed'
-              : cat.id === selectedCategory ? 'border-ac bg-ac/10 text-ac' : 'border-bd bg-sf hover:border-ac text-tx'}`}>
-            {cat.id}
-            {!cat.supported && <span className="block text-2xs text-tx2 mt-0.5">即将支持</span>}
+            className={`flex flex-col items-center gap-1 px-4 py-3 rounded-lg border text-sm font-medium transition-all ${
+              !cat.supported ? 'border-bd/40 bg-sf/40 text-tx2/50 cursor-not-allowed'
+              : cat.id === selectedCategory ? 'border-ac bg-ac/5 text-ac shadow-sm' : 'border-bd/60 bg-sf hover:border-ac/50 text-tx'
+            }`}>
+            <span className="text-lg">{categoryIcons[cat.id] || '📦'}</span>
+            <span>{cat.id}</span>
+            {!cat.supported && <span className="text-2xs text-tx2/60">即将支持</span>}
           </button>
         ))}
       </div>
       {selectedCategory && models.length > 0 && (
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           {models.map((m) => (
             <button key={m.name} onClick={() => { setModel(m.name); goToStep('scan') }}
-              className={`${cardBase} ${m.name === selectedModel ? 'border-ac bg-ac/10 text-ac' : 'border-bd bg-sf hover:border-ac text-tx'}`}>
+              className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
+                m.name === selectedModel ? 'border-ac bg-ac/5 text-ac shadow-sm' : 'border-bd/60 bg-sf hover:border-ac/50 text-tx'
+              }`}>
               {m.name}
-              {m.roles.length > 0 && <span className="block text-2xs text-tx2 mt-0.5">{m.roles.join(' / ')}</span>}
+              {m.roles.length > 0 && <span className="text-2xs text-tx2 ml-1.5">({m.roles.join('/')})</span>}
             </button>
           ))}
         </div>
@@ -112,11 +132,12 @@ function PortAssignForm({ stableId, roles, model }: {
   return (
     <div className={formBox}>
       {roles.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
           {roles.map((r) => (
             <button key={r} onClick={() => setRole(r)}
-              className={`px-3 py-1 text-xs rounded border transition-colors ${
-                role === r ? 'border-ac bg-ac/10 text-ac' : 'border-bd text-tx2 hover:border-ac'}`}>
+              className={`px-2.5 py-1 text-2xs rounded-md border transition-colors ${
+                role === r ? 'border-ac bg-ac/10 text-ac font-medium' : 'border-bd/50 text-tx2 hover:border-ac/50'
+              }`}>
               {r}
             </button>
           ))}
@@ -125,10 +146,12 @@ function PortAssignForm({ stableId, roles, model }: {
       <input value={alias} onChange={(e) => setAlias(e.target.value)}
         placeholder="设备名称" className={inputCls} />
       {alias.trim() && (
-        <p className="text-2xs text-tx2">名称预览: {role ? `${alias.trim()}_${role}` : alias.trim()}</p>
+        <p className="text-2xs text-tx2">预览: {role ? `${alias.trim()}_${role}` : alias.trim()}</p>
       )}
       <button onClick={submit} disabled={!alias.trim() || (roles.length > 0 && !role)}
-        className="px-3 py-1 text-xs bg-ac text-white rounded disabled:opacity-40">确认分配</button>
+        className="px-3 py-1 text-xs bg-ac text-white rounded-md disabled:opacity-40 hover:bg-ac/90 transition-colors">
+        确认分配
+      </button>
     </div>
   )
 }
@@ -143,7 +166,9 @@ function CameraAssignForm({ stableId }: { stableId: string }) {
         placeholder="摄像头名称" className={inputCls} />
       <button onClick={() => { if (alias.trim()) sessionAssign(stableId, alias.trim(), 'opencv') }}
         disabled={!alias.trim()}
-        className="px-3 py-1 text-xs bg-ac text-white rounded disabled:opacity-40">确认分配</button>
+        className="px-3 py-1 text-xs bg-ac text-white rounded-md disabled:opacity-40 hover:bg-ac/90 transition-colors">
+        确认分配
+      </button>
     </div>
   )
 }
@@ -167,11 +192,11 @@ function IdentifyStep() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-tx2">{t('moveArmPrompt')}</p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Unassigned */}
-        <div>
-          <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium mb-3">未分配设备</h4>
-          <div className="space-y-2">
+        <div className="rounded-lg border border-bd/40 p-3">
+          <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium mb-2">未分配设备</h4>
+          <div className="space-y-1.5">
             {freePorts.map((port) => (
               <div key={port.stable_id}>
                 <div onClick={() => setActiveId(activeId === port.stable_id ? null : port.stable_id)}
@@ -195,22 +220,22 @@ function IdentifyStep() {
               </div>
             ))}
             {freePorts.length === 0 && freeCams.length === 0 && (
-              <p className="text-sm text-tx2">所有设备已分配</p>
+              <p className="text-sm text-tx2 py-2">所有设备已分配</p>
             )}
           </div>
         </div>
         {/* Assigned */}
-        <div>
-          <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium mb-3">已分配设备</h4>
-          <div className="space-y-2">
+        <div className="rounded-lg border border-gn/20 bg-gn/[0.02] p-3">
+          <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium mb-2">已分配设备</h4>
+          <div className="space-y-1.5">
             {assignments.map((a) => (
-              <div key={a.alias} className="flex items-center gap-2 bg-sf border border-gn/30 rounded-lg px-3 py-2">
-                <span className="w-2 h-2 rounded-full bg-gn" />
-                <span className="text-sm font-medium text-tx flex-1">{a.alias}</span>
-                <span className="text-2xs text-tx2">{a.spec_name}</span>
+              <div key={a.alias} className="flex items-center gap-2 bg-sf border border-gn/20 rounded-lg px-3 py-2">
+                <span className="w-2 h-2 rounded-full bg-gn shrink-0" />
+                <span className="text-sm font-medium text-tx flex-1 truncate">{a.alias}</span>
+                <span className="text-2xs text-tx2 shrink-0">{a.spec_name}</span>
               </div>
             ))}
-            {assignments.length === 0 && <p className="text-sm text-tx2">暂无已分配设备</p>}
+            {assignments.length === 0 && <p className="text-sm text-tx2 py-2">暂无已分配设备</p>}
           </div>
         </div>
       </div>
@@ -230,30 +255,32 @@ function ReviewStep() {
 
   return (
     <div className="space-y-4">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-tx2 text-xs border-b border-bd">
-            <th className="py-2 font-medium">名称</th>
-            <th className="py-2 font-medium">规格</th>
-            <th className="py-2 font-medium">接口</th>
-            <th className="py-2 font-medium w-16" />
-          </tr>
-        </thead>
-        <tbody>
-          {assignments.map((a) => (
-            <tr key={a.alias} className="border-b border-bd/50">
-              <td className="py-2 text-tx">{a.alias}</td>
-              <td className="py-2 text-tx2">{a.spec_name}</td>
-              <td className="py-2 text-tx2 text-2xs truncate max-w-[200px]">{a.interface_stable_id}</td>
-              <td className="py-2">
-                <button onClick={() => sessionUnassign(a.alias)} className="text-2xs text-rd hover:text-rd/80">
-                  移除
-                </button>
-              </td>
+      <div className="rounded-lg border border-bd/40 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-tx2 text-xs bg-sf">
+              <th className="px-3 py-2 font-medium">名称</th>
+              <th className="px-3 py-2 font-medium">规格</th>
+              <th className="px-3 py-2 font-medium">接口</th>
+              <th className="px-3 py-2 font-medium w-12" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {assignments.map((a) => (
+              <tr key={a.alias} className="border-t border-bd/30">
+                <td className="px-3 py-2 text-tx font-medium">{a.alias}</td>
+                <td className="px-3 py-2 text-tx2">{a.spec_name}</td>
+                <td className="px-3 py-2 text-tx2 text-2xs truncate max-w-[200px]">{a.interface_stable_id}</td>
+                <td className="px-3 py-2">
+                  <button onClick={() => sessionUnassign(a.alias)} className="text-2xs text-rd hover:text-rd/80">
+                    移除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {assignments.length === 0 && (
         <p className="text-sm text-tx2 text-center py-4">暂无分配，请返回添加设备</p>
       )}
@@ -273,7 +300,7 @@ export default function DiscoveryWizard() {
   const { wizardStep, error } = useSetup()
 
   return (
-    <div className="rounded-xl border border-bd bg-bg p-6 space-y-4">
+    <div className="rounded-xl border border-bd/60 bg-bg p-6 space-y-4 shadow-sm">
       {error && (
         <div className="rounded-lg border border-rd/30 bg-rd/5 p-3 text-sm text-rd">{error}</div>
       )}

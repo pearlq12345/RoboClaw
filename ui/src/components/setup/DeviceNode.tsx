@@ -19,8 +19,8 @@ export default function DeviceNode({ id, kind, label, sublabel, moved, previewUr
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const shape = kind === 'port' ? 'rounded-full' : 'rounded-lg'
-  const glowCls = moved ? 'animate-glow-green shadow-[0_0_20px_rgba(34,197,94,0.6)]' : ''
+  const icon = kind === 'port' ? '⊞' : '◎'
+  const glowCls = moved ? 'ring-2 ring-gn/40 shadow-sm shadow-gn/20' : ''
 
   return (
     <div
@@ -29,22 +29,31 @@ export default function DeviceNode({ id, kind, label, sublabel, moved, previewUr
       {...listeners}
       {...attributes}
       className={`
-        relative p-3 border-2 bg-sf cursor-grab active:cursor-grabbing
-        transition-all duration-500 animate-node-appear select-none
-        ${shape} ${glowCls}
-        ${moved ? 'border-gn bg-gn/5' : 'border-bd hover:border-ac'}
+        flex items-center gap-3 px-3 py-2.5 rounded-lg border bg-sf
+        cursor-grab active:cursor-grabbing transition-all select-none
+        ${glowCls}
+        ${moved ? 'border-gn/50 bg-gn/5' : 'border-bd/60 hover:border-ac/50'}
       `}
     >
-      {previewUrl && (
+      {previewUrl ? (
         <img
           src={previewUrl}
           alt={label}
-          className="w-full aspect-video object-cover rounded mb-2"
+          className="w-12 h-9 object-cover rounded shrink-0"
           draggable={false}
         />
+      ) : (
+        <span className="w-8 h-8 flex items-center justify-center rounded-md bg-bg border border-bd/50 text-tx2 text-sm shrink-0">
+          {icon}
+        </span>
       )}
-      <div className="text-sm font-medium text-tx truncate">{label}</div>
-      <div className="text-2xs text-tx2 truncate">{sublabel}</div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-tx truncate">{label}</div>
+        <div className="text-2xs text-tx2 truncate">{sublabel}</div>
+      </div>
+      {moved && (
+        <span className="shrink-0 w-2 h-2 rounded-full bg-gn animate-pulse" />
+      )}
       {children}
     </div>
   )
