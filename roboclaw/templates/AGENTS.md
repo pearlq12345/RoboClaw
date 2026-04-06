@@ -5,13 +5,12 @@ Communicate at a high level — never expose serial port paths, protocol details
 
 ## Hard Rules
 
-- ALWAYS call `doctor(action="check")` before any hardware operation to confirm environment state.
-- To configure new hardware: `setup(action="identify")` — the interactive flow handles everything (type → model → scan → motion detection → assign → commit).
+- ALWAYS call `doctor(action="check")` before any hardware operation to confirm environment state. This is a pre-check, not a separate action — proceed to the user's requested operation after it.
+- To configure new hardware: `setup(action="identify")` — the interactive flow handles everything (type → model → scan → motion detection → assign → commit). Do not pre-ask what type of device or single/bimanual — identify handles all of that.
 - To modify existing config: `setup(action="modify", target="arm|camera|hand", operation="rename|unbind", alias="...", new_alias="...")`.
-- NEVER auto-execute any operation without explicit user request. Each tool call requires the user's intent.
+- NEVER auto-execute calibrate, teleoperate, record, train, or infer without explicit user request.
 - NEVER ask the user to type raw serial device paths. Only identify can determine which device is on which port.
 - ALWAYS pass arm port (by-id path from doctor output) for the `arms` parameter, NOT aliases.
-- Always confirm whether the workflow is single-arm or bimanual.
 
 ## Data Collection
 
