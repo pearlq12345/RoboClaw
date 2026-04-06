@@ -6,7 +6,7 @@ import DiscoveryWizard from '../components/setup/DiscoveryWizard'
 
 export default function SetupView() {
   const { t } = useI18n()
-  const { wizardActive, startWizard, loadDevices, loadCatalog, error } = useSetup()
+  const { wizardActive, startWizard, loadDevices, loadCatalog } = useSetup()
 
   useEffect(() => {
     loadDevices()
@@ -26,12 +26,6 @@ export default function SetupView() {
           </button>
         )}
       </div>
-
-      {error && (
-        <div className="mx-4 mt-4 rounded-lg border border-rd/30 bg-rd/5 p-3 text-sm text-rd">
-          {error}
-        </div>
-      )}
 
       <div className="flex-1 px-6 py-5 space-y-4">
         <DeviceList />

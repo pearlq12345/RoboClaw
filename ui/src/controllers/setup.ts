@@ -236,13 +236,21 @@ export const useSetup = create<SetupStore>((set, get) => ({
 
   startMotion: async () => {
     if (get().motionActive) return
-    try {
-      if (motionTimer) { clearInterval(motionTimer); motionTimer = null }
-      await postJson(`${SETUP}/motion/start`)
-      set({ motionActive: true })
-      motionTimer = setInterval(() => get().pollMotion(), 300)
-    } catch (e: unknown) {
-      set({ error: (e as Error).message })
+    if (motionTimer) { clearInterval(motionTimer); motionTimer = null }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await postJson(`${SETUP}/motion/start`)
+        set({ motionActive: true, error: null })
+        motionTimer = setInterval(() => get().pollMotion(), 300)
+        return
+      } catch (e: unknown) {
+        const msg = (e as Error).message || ''
+        if (msg.includes('busy') && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 800))
+          continue
+        }
+        set({ error: msg })
+      }
     }
   },
 
