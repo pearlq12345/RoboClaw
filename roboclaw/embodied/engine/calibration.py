@@ -86,11 +86,6 @@ class CalibrationSession:
         self._bus.connect()
         self._bus.disable_torque()
 
-        # Set all motors to position mode
-        OperatingMode = self._import_operating_mode()
-        for motor in self._bus.motors:
-            self._bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
-
         self._state = "connected"
 
     def set_homing(self) -> dict[str, int]:
@@ -238,7 +233,3 @@ class CalibrationSession:
         from lerobot.motors.motors_bus import MotorCalibration
         return MotorCalibration
 
-    @staticmethod
-    def _import_operating_mode() -> type:
-        from lerobot.motors.motors_bus import OperatingMode
-        return OperatingMode
