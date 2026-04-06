@@ -404,6 +404,7 @@ _MODIFY_DISPATCH = {
     ("unbind", "hand"): "unbind_hand",
     ("rename", "arm"): "rename_arm",
     ("rename", "camera"): "rename_camera",
+    ("bind", "camera"): "set_camera",
     ("rebind", "arm"): "rebind_arm",
     ("rename", "hand"): "rename_hand",
 }
@@ -423,6 +424,20 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
     if operation == "unbind":
         getattr(svc, method_name)(alias)
         return f"{target.title()} '{alias}' removed."
+
+    if operation == "bind" and target == "camera":
+        dev = kwargs.get("dev", "")
+        if not dev:
+            return "bind camera requires dev (e.g., '/dev/video4')."
+        from roboclaw.embodied.hardware.scan import scan_cameras
+        cameras = scan_cameras()
+        matched = next((c for c in cameras if c.dev == dev), None)
+        if matched is None:
+            avail = ", ".join(c.dev for c in cameras) if cameras else "none"
+            return f"Camera '{dev}' not found. Available: {avail}"
+        result = svc.set_camera(alias, matched)
+        data = result.to_dict() if hasattr(result, "to_dict") else str(result)
+        return f"Camera '{alias}' bound to {dev}.\n{json.dumps(data, indent=2) if isinstance(data, dict) else data}"
 
     new_alias = kwargs.get("new_alias", "")
 
