@@ -178,7 +178,7 @@ function IdentifyStep() {
   const {
     catalog, selectedCategory, selectedModel,
     scannedPorts, scannedCameras, assignments,
-    startMotion, stopMotion, goToStep,
+    startMotion, stopMotion, goToStep, sessionUnassign,
   } = useSetup()
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -229,10 +229,16 @@ function IdentifyStep() {
           <h4 className="text-xs text-tx2 uppercase tracking-wider font-medium mb-2">已分配设备</h4>
           <div className="space-y-1.5">
             {assignments.map((a) => (
-              <div key={a.alias} className="flex items-center gap-2 bg-white border border-gn/20 rounded-lg shadow-card px-3 py-2">
+              <div key={a.alias} className="group flex items-center gap-2 bg-white border border-gn/20 rounded-lg shadow-card px-3 py-2">
                 <span className="w-2 h-2 rounded-full bg-gn shrink-0" />
                 <span className="text-sm font-medium text-tx flex-1 truncate">{a.alias}</span>
                 <span className="text-2xs text-tx2 shrink-0">{a.spec_name}</span>
+                <button
+                  onClick={() => sessionUnassign(a.alias)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-sm text-tx3 hover:text-rd shrink-0"
+                >
+                  &times;
+                </button>
               </div>
             ))}
             {assignments.length === 0 && <p className="text-sm text-tx2 py-2">暂无已分配设备</p>}

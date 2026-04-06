@@ -280,6 +280,7 @@ export const useSetup = create<SetupStore>((set, get) => ({
   // -- Session assign/commit --------------------------------------------------
 
   sessionAssign: async (stableId, alias, specName) => {
+    set({ error: null })
     try {
       await postJson(`${SETUP}/session/assign`, {
         interface_stable_id: stableId,
@@ -293,6 +294,7 @@ export const useSetup = create<SetupStore>((set, get) => ({
   },
 
   sessionUnassign: async (alias) => {
+    set({ error: null })
     try {
       await deleteApi(`${SETUP}/session/assign/${encodeURIComponent(alias)}`)
       await get().refreshSession()
