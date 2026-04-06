@@ -495,7 +495,7 @@ class SetupSession:
             self._pending_role = role
 
     def _submit_confirm(self, answer: str) -> None:
-        if answer.lower() == "y":
+        if answer.strip().lower() in ("", "y", "yes"):
             count = self.commit()
             self._set_result("committed", count=count)
         else:
