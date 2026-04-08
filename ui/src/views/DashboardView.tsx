@@ -9,6 +9,8 @@ function canDo(state: SessionState, hwReady: boolean) {
   const idle = state === 'idle'
   const tele = state === 'teleoperating'
   const rec = state === 'recording'
+  const rep = state === 'replaying'
+  const inf = state === 'inferring'
   return {
     teleopStart: idle && hwReady,
     teleopStop: tele,
@@ -16,6 +18,11 @@ function canDo(state: SessionState, hwReady: boolean) {
     recStop: rec,
     saveEp: rec,
     discardEp: rec,
+    replayStart: idle && hwReady,
+    replayStop: rep,
+    trainStart: idle,
+    inferStart: idle && hwReady,
+    inferStop: inf,
   }
 }
 
@@ -58,6 +65,20 @@ export default function DashboardView() {
   const [episodeTime, setEpisodeTime] = useState(300)
   const [resetTime, setResetTime] = useState(10)
 
+  // Replay state
+  const [replayDataset, setReplayDataset] = useState('')
+  const [replayEpisode, setReplayEpisode] = useState(0)
+
+  // Train state
+  const [trainDataset, setTrainDataset] = useState('')
+  const [trainSteps, setTrainSteps] = useState(100000)
+  const [trainDevice, setTrainDevice] = useState('cuda')
+
+  // Infer state
+  const [inferCheckpoint, setInferCheckpoint] = useState('')
+  const [inferSourceDs, setInferSourceDs] = useState('')
+  const [inferEpisodes, setInferEpisodes] = useState(1)
+
   useEffect(() => {
     store.loadDatasets()
     store.addLog('RoboClaw UI loaded')
@@ -86,11 +107,15 @@ export default function DashboardView() {
     preparing: t('hwInitializing'),
     teleoperating: t('stateTeleoperating'),
     recording: t('stateRecording'),
+    replaying: t('stateReplaying'),
+    inferring: t('stateInferring'),
   }
   const stateBadgeCls: Record<string, string> = {
     preparing: 'bg-yl/15 text-yl border-yl/30',
     teleoperating: 'bg-ac/15 text-ac border-ac/30',
     recording: 'bg-rd/15 text-rd border-rd/30',
+    replaying: 'bg-gn/15 text-gn border-gn/30',
+    inferring: 'bg-ac/15 text-ac border-ac/30',
   }
 
   const hwAccent = !hwStatus ? 'shadow-inset-ac' : hwStatus.ready ? 'shadow-inset-gn' : 'shadow-inset-yl'
@@ -268,6 +293,122 @@ export default function DashboardView() {
                       <><span className="w-2 h-2 rounded-full bg-yl animate-pulse" /><span className="text-yl">{t('episodeResetting')}</span></>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Second row: replay, train, infer */}
+          <div className="flex gap-3 px-4 py-2 max-[900px]:flex-col">
+            {/* Replay */}
+            <div className="w-[220px] max-[900px]:w-full shrink-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-4">
+              <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('replay')}</h3>
+              <select
+                value={replayDataset}
+                onChange={(e) => setReplayDataset(e.target.value)}
+                className="w-full bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm mb-2
+                  focus:outline-none focus:border-ac"
+              >
+                <option value="">{t('selectDataset')}</option>
+                {datasets.map(d => (
+                  <option key={d.name} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono mb-2">
+                {t('episode')}
+                <input type="number" value={replayEpisode} onChange={(e) => setReplayEpisode(Number(e.target.value) || 0)} min={0}
+                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
+              </label>
+              <div className="space-y-2">
+                <ActionBtn color="gn" disabled={!ok.replayStart || !replayDataset || !!loading}
+                  onClick={() => store.doReplayStart({ dataset_name: replayDataset, episode: replayEpisode })}>
+                  {loading === 'replay' ? t('startingReplay') : t('startReplay')}
+                </ActionBtn>
+                <ActionBtn color="yl" disabled={!ok.replayStop} onClick={store.doReplayStop}>
+                  {t('stopReplay')}
+                </ActionBtn>
+              </div>
+            </div>
+
+            {/* Training */}
+            <div className="w-[220px] max-[900px]:w-full shrink-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-5">
+              <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('training')}</h3>
+              <select
+                value={trainDataset}
+                onChange={(e) => setTrainDataset(e.target.value)}
+                className="w-full bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm mb-2
+                  focus:outline-none focus:border-ac"
+              >
+                <option value="">{t('selectDataset')}</option>
+                {datasets.map(d => (
+                  <option key={d.name} value={d.name}>{d.name}</option>
+                ))}
+              </select>
+              <div className="flex gap-2 mb-2">
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                  {t('steps')}
+                  <input type="number" value={trainSteps} onChange={(e) => setTrainSteps(Number(e.target.value) || 100000)}
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
+                </label>
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
+                  {t('device')}
+                  <select value={trainDevice} onChange={(e) => setTrainDevice(e.target.value)}
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
+                    <option value="cuda">cuda</option>
+                    <option value="cpu">cpu</option>
+                  </select>
+                </label>
+              </div>
+              <ActionBtn color="ac" disabled={!ok.trainStart || !trainDataset || !!loading}
+                onClick={() => store.doTrainStart({ dataset_name: trainDataset, steps: trainSteps, device: trainDevice })}>
+                {loading === 'train' ? t('startingTraining') : t('startTraining')}
+              </ActionBtn>
+              {store.trainJobMessage && (
+                <div className="mt-2 text-xs text-tx2 font-mono bg-sf2 rounded p-2 break-all">
+                  {store.trainJobMessage}
+                </div>
+              )}
+            </div>
+
+            {/* Inference */}
+            <div className="flex-1 min-w-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-6">
+              <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('inference')}</h3>
+              <div className="flex gap-2 mb-2">
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                  {t('selectCheckpoint')}
+                  <input value={inferCheckpoint} onChange={(e) => setInferCheckpoint(e.target.value)}
+                    placeholder="/path/to/checkpoint"
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac placeholder:text-tx3" />
+                </label>
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
+                  {t('sourceDataset')}
+                  <select value={inferSourceDs} onChange={(e) => setInferSourceDs(e.target.value)}
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
+                    <option value="">--</option>
+                    {datasets.map(d => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
+                  {t('numEpisodes')}
+                  <input type="number" value={inferEpisodes} onChange={(e) => setInferEpisodes(Number(e.target.value) || 1)} min={1}
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <ActionBtn color="ac" disabled={!ok.inferStart || !!loading}
+                  onClick={() => store.doInferStart({ checkpoint_path: inferCheckpoint, source_dataset: inferSourceDs, num_episodes: inferEpisodes })}>
+                  {loading === 'infer' ? t('startingInference') : t('startInference')}
+                </ActionBtn>
+                <ActionBtn color="yl" disabled={!ok.inferStop} onClick={store.doInferStop}>
+                  {t('stopInference')}
+                </ActionBtn>
+              </div>
+              {(state === 'inferring') && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-ac font-medium">
+                  <span className="w-2 h-2 rounded-full bg-ac animate-pulse" />
+                  {t('stateInferring')}
                 </div>
               )}
             </div>

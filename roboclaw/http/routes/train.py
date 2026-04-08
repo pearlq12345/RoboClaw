@@ -1,0 +1,51 @@
+"""Training routes — policy training lifecycle."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from roboclaw.embodied.service import EmbodiedService
+
+
+class TrainStartRequest(BaseModel):
+    dataset_name: str
+    steps: int = 100_000
+    device: str = "cuda"
+
+
+def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
+
+    @app.post("/api/train/start")
+    async def train_start(body: TrainStartRequest) -> dict[str, Any]:
+        result = await service.train.train(
+            manifest=service.manifest,
+            kwargs={
+                "dataset_name": body.dataset_name,
+                "steps": body.steps,
+                "device": body.device,
+            },
+            tty_handoff=None,
+        )
+        return {"message": result}
+
+    @app.get("/api/train/status/{job_id}")
+    async def train_status(job_id: str) -> dict[str, Any]:
+        result = await service.train.job_status(
+            manifest=service.manifest,
+            kwargs={"job_id": job_id},
+            tty_handoff=None,
+        )
+        return {"message": result}
+
+    @app.get("/api/train/datasets")
+    async def train_datasets() -> dict[str, Any]:
+        result = service.train.list_datasets(service.manifest)
+        return {"message": result}
+
+    @app.get("/api/train/policies")
+    async def train_policies() -> dict[str, Any]:
+        result = service.train.list_policies(service.manifest)
+        return {"message": result}

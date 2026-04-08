@@ -86,6 +86,36 @@ const translations = {
     del: '删除',
     deleteConfirm: '确定删除数据集',
 
+    // Replay
+    replay: '回放',
+    startReplay: '开始回放',
+    stopReplay: '停止回放',
+    selectDataset: '选择数据集',
+    episode: '回合',
+    stateReplaying: '回放中',
+    startingReplay: '启动回放中...',
+
+    // Training
+    training: '训练',
+    startTraining: '开始训练',
+    steps: '训练步数',
+    device: '设备',
+    stateTraining: '训练中',
+    startingTraining: '启动训练中...',
+    trainJobStatus: '训练状态',
+    refreshPolicies: '刷新模型',
+    noPolicies: '暂无训练模型',
+    policies: '已训练模型',
+
+    // Inference
+    inference: '推理',
+    startInference: '开始推理',
+    stopInference: '停止推理',
+    selectCheckpoint: '选择模型',
+    sourceDataset: '源数据集',
+    stateInferring: '推理中',
+    startingInference: '启动推理中...',
+
     // States
     stateDisconnected: '未连接',
     stateConnected: '已连接',
@@ -235,6 +265,36 @@ const translations = {
     noCameraFeed: 'No camera feed',
     del: 'Del',
     deleteConfirm: 'Delete dataset',
+
+    // Replay
+    replay: 'Replay',
+    startReplay: 'Start Replay',
+    stopReplay: 'Stop Replay',
+    selectDataset: 'Select Dataset',
+    episode: 'Episode',
+    stateReplaying: 'Replaying',
+    startingReplay: 'Starting replay...',
+
+    // Training
+    training: 'Training',
+    startTraining: 'Start Training',
+    steps: 'Steps',
+    device: 'Device',
+    stateTraining: 'Training',
+    startingTraining: 'Starting training...',
+    trainJobStatus: 'Training Status',
+    refreshPolicies: 'Refresh Models',
+    noPolicies: 'No trained models',
+    policies: 'Trained Models',
+
+    // Inference
+    inference: 'Inference',
+    startInference: 'Start Inference',
+    stopInference: 'Stop Inference',
+    selectCheckpoint: 'Select Model',
+    sourceDataset: 'Source Dataset',
+    stateInferring: 'Inferring',
+    startingInference: 'Starting inference...',
 
     // States
     stateDisconnected: 'Disconnected',

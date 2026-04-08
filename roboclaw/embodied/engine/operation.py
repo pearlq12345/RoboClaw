@@ -23,7 +23,9 @@ from loguru import logger
 
 from roboclaw.embodied.engine.helpers import (
     ActionError,
+    prepare_infer,
     prepare_record,
+    prepare_replay,
     prepare_teleop,
 )
 from roboclaw.embodied.manifest import Manifest
@@ -162,6 +164,56 @@ class OperationEngine:
 
         await self._transition_through_preparing("recording", argv, manifest)
         return dataset_name
+
+    async def start_replay(
+        self,
+        *,
+        dataset_name: str = "default",
+        episode: int = 0,
+        fps: int = 30,
+        setup: Manifest | None = None,
+    ) -> None:
+        """Start dataset replay on follower arms."""
+        self._require_idle_or_raise()
+        self._error_message = ""
+        self._stderr_lines = []
+        manifest = setup or Manifest()
+        try:
+            argv = prepare_replay(manifest, {
+                "dataset_name": dataset_name,
+                "episode": episode,
+                "fps": fps,
+            })
+        except ActionError as exc:
+            raise RuntimeError(str(exc)) from exc
+        await self._transition_through_preparing("replaying", argv, manifest)
+
+    async def start_inference(
+        self,
+        *,
+        checkpoint_path: str = "",
+        source_dataset: str = "",
+        dataset_name: str = "",
+        task: str = "eval",
+        num_episodes: int = 1,
+        setup: Manifest | None = None,
+    ) -> None:
+        """Start policy inference on follower arms."""
+        self._require_idle_or_raise()
+        self._error_message = ""
+        self._stderr_lines = []
+        manifest = setup or Manifest()
+        try:
+            argv = prepare_infer(manifest, {
+                "checkpoint_path": checkpoint_path,
+                "source_dataset": source_dataset,
+                "dataset_name": dataset_name,
+                "task": task,
+                "num_episodes": num_episodes,
+            })
+        except ActionError as exc:
+            raise RuntimeError(str(exc)) from exc
+        await self._transition_through_preparing("inferring", argv, manifest)
 
     async def stop(self) -> None:
         if self._state == "idle":

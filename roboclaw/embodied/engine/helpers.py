@@ -327,6 +327,127 @@ def prepare_record(
     return argv, dataset_name, str(ds_path)
 
 
+def prepare_replay(
+    manifest: Manifest,
+    kwargs: dict[str, Any],
+) -> list[str]:
+    """Build replay argv from manifest. Returns argv.
+
+    Raises ActionError on validation failure.
+    """
+    from roboclaw.embodied.engine.command_builder import builder_for_arms
+
+    grouped = group_arms(_resolve_action_arms(manifest, kwargs))
+    followers = grouped["followers"]
+    if not followers:
+        raise ActionError("No follower arms configured.")
+    if len(followers) not in {1, 2}:
+        raise ActionError(f"Unsupported follower arm count: {len(followers)}.")
+
+    dataset_name = kwargs.get("dataset_name", "default")
+    error = _validate_dataset_name(dataset_name)
+    if error:
+        raise ActionError(error)
+    ds_root = dataset_path(manifest, dataset_name, fallback=_DEFAULT_REPLAY_ROOT)
+    episode = kwargs.get("episode", 0)
+    fps = kwargs.get("fps", 30)
+    controller = builder_for_arms(followers)
+
+    if len(followers) == 1:
+        return controller.replay(
+            robot_type=followers[0].type_name,
+            robot_port=followers[0].port,
+            robot_cal_dir=followers[0].calibration_dir,
+            robot_id=_arm_id(followers[0]),
+            repo_id=f"local/{dataset_name}",
+            dataset_root=str(ds_root),
+            episode=episode,
+            fps=fps,
+        )
+    robot_dir = ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
+    return controller.replay_bimanual(
+        robot_id=_BIMANUAL_ID,
+        robot_cal_dir=robot_dir,
+        left_robot=followers[0],
+        right_robot=followers[1],
+        repo_id=f"local/{dataset_name}",
+        dataset_root=str(ds_root),
+        episode=episode,
+        fps=fps,
+    )
+
+
+def prepare_infer(
+    manifest: Manifest,
+    kwargs: dict[str, Any],
+) -> list[str]:
+    """Build policy inference argv from manifest. Returns argv.
+
+    Raises ActionError on validation failure.
+    """
+    from datetime import datetime
+
+    from roboclaw.embodied.engine.command_builder import builder_for_arms
+    from roboclaw.embodied.learning.act import ACTPipeline
+    from roboclaw.embodied.sensor.camera import resolve_cameras
+
+    grouped = group_arms(_resolve_action_arms(manifest, kwargs))
+    followers = grouped["followers"]
+    if not followers:
+        raise ActionError("No follower arms configured.")
+    if len(followers) not in {1, 2}:
+        raise ActionError(f"Unsupported follower arm count: {len(followers)}.")
+
+    cameras = {} if kwargs.get("use_cameras") is False else resolve_cameras(manifest.cameras)
+    policies_root = manifest.snapshot.get("policies", {}).get("root", "")
+    checkpoint = kwargs.get("checkpoint_path")
+    if not checkpoint:
+        source_dataset = kwargs.get("source_dataset", kwargs.get("dataset_name", ""))
+        if source_dataset:
+            checkpoint = ACTPipeline().checkpoint_path(str(Path(policies_root) / source_dataset))
+        else:
+            checkpoint = ACTPipeline().checkpoint_path(policies_root)
+
+    dataset_name = kwargs.get("dataset_name")
+    if not dataset_name:
+        dataset_name = f"eval_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    if not dataset_name.startswith("eval_"):
+        dataset_name = f"eval_{dataset_name}"
+    name_error = _validate_dataset_name(dataset_name)
+    if name_error:
+        raise ActionError(name_error)
+
+    ds_path = dataset_path(manifest, dataset_name)
+    resume = ds_path.exists()
+    controller = builder_for_arms(followers)
+    policy_kwargs = {
+        "cameras": cameras,
+        "policy_path": checkpoint,
+        "repo_id": f"local/{dataset_name}",
+        "dataset_root": str(ds_path),
+        "task": kwargs.get("task", "eval"),
+        "num_episodes": kwargs.get("num_episodes", 1),
+        "resume": resume,
+    }
+
+    if len(followers) == 1:
+        return controller.run_policy(
+            robot_type=followers[0].type_name,
+            robot_port=followers[0].port,
+            robot_cal_dir=followers[0].calibration_dir,
+            robot_id=_arm_id(followers[0]),
+            **policy_kwargs,
+        )
+    robot_dir = ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
+    return controller.run_policy_bimanual(
+        robot_id=_BIMANUAL_ID,
+        robot_cal_dir=robot_dir,
+        left_robot=followers[0],
+        right_robot=followers[1],
+        **policy_kwargs,
+    )
+
+
 def _display_kwargs(
     display_data: bool, display_ip: str, display_port: int,
 ) -> dict[str, Any]:

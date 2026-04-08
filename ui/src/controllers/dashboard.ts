@@ -5,7 +5,7 @@ import { api, postJson } from './api'
 // Types
 // ---------------------------------------------------------------------------
 
-export type SessionState = 'idle' | 'preparing' | 'teleoperating' | 'recording'
+export type SessionState = 'idle' | 'preparing' | 'teleoperating' | 'recording' | 'replaying' | 'inferring'
 export type EpisodePhase = '' | 'recording' | 'saving' | 'resetting'
 
 export interface ArmStatus {
@@ -133,6 +133,22 @@ interface DashboardStore {
   generateSnapshot: () => Promise<any>
   dismissFault: (faultType: string, deviceAlias: string) => void
 
+  // Replay
+  doReplayStart: (params: { dataset_name: string; episode?: number; fps?: number }) => Promise<void>
+  doReplayStop: () => Promise<void>
+
+  // Training
+  doTrainStart: (params: { dataset_name: string; steps?: number; device?: string }) => Promise<void>
+  fetchTrainStatus: (jobId: string) => Promise<void>
+  fetchTrainDatasets: () => Promise<void>
+  fetchTrainPolicies: () => Promise<void>
+  trainJobMessage: string
+  policies: any[]
+
+  // Inference
+  doInferStart: (params: { checkpoint_path?: string; source_dataset?: string; num_episodes?: number }) => Promise<void>
+  doInferStop: () => Promise<void>
+
   // Calibration
   startCalibration: (armAlias: string) => Promise<void>
   setCalibrationHoming: () => Promise<void>
@@ -153,6 +169,9 @@ const HARDWARE = '/api/hardware'
 const DATASETS = '/api/datasets'
 const TROUBLESHOOT = '/api/troubleshoot'
 const SYSTEM = '/api/system'
+const REPLAY = '/api/replay'
+const TRAIN = '/api/train'
+const INFER = '/api/infer'
 const CALIBRATION = '/api/calibration'
 
 // ---------------------------------------------------------------------------
@@ -188,6 +207,8 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
   logs: [],
   loading: null,
   calibration: { ...defaultCalibration },
+  trainJobMessage: '',
+  policies: [],
 
   addLog: (message, cls = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -414,6 +435,98 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
 
     if (type === 'dashboard.calibration.state_changed') {
       set({ calibration: { state: event.state || 'idle', arm_alias: event.arm_alias || '' } })
+    }
+  },
+
+  // -- Replay -------------------------------------------------------------
+
+  doReplayStart: async (params) => {
+    set({ loading: 'replay' })
+    get().addLog(`Starting replay: ${params.dataset_name} ep${params.episode ?? 0}`)
+    try {
+      await postJson(`${REPLAY}/start`, params)
+      get().addLog('Replay started', 'ok')
+    } catch (e: unknown) {
+      get().addLog(`Replay start failed: ${(e as Error).message}`, 'err')
+    } finally {
+      set({ loading: null })
+    }
+  },
+
+  doReplayStop: async () => {
+    get().addLog('Stopping replay...')
+    try {
+      await postJson(`${REPLAY}/stop`)
+      get().addLog('Replay stopped', 'info')
+    } catch (e: unknown) {
+      get().addLog(`Replay stop failed: ${(e as Error).message}`, 'err')
+    }
+  },
+
+  // -- Training -----------------------------------------------------------
+
+  doTrainStart: async (params) => {
+    set({ loading: 'train' })
+    get().addLog(`Starting training: ${params.dataset_name} (${params.steps ?? 100000} steps)`)
+    try {
+      const data = await postJson(`${TRAIN}/start`, params)
+      set({ trainJobMessage: data.message || '' })
+      get().addLog(data.message || 'Training started', 'ok')
+    } catch (e: unknown) {
+      get().addLog(`Train start failed: ${(e as Error).message}`, 'err')
+    } finally {
+      set({ loading: null })
+    }
+  },
+
+  fetchTrainStatus: async (jobId) => {
+    try {
+      const data = await api(`${TRAIN}/status/${encodeURIComponent(jobId)}`)
+      set({ trainJobMessage: data.message || '' })
+    } catch { /* ignore */ }
+  },
+
+  fetchTrainDatasets: async () => {
+    try {
+      await get().loadDatasets()
+    } catch { /* ignore */ }
+  },
+
+  fetchTrainPolicies: async () => {
+    try {
+      const data = await api(`${TRAIN}/policies`)
+      const msg = data.message || '[]'
+      try {
+        const parsed = JSON.parse(msg)
+        set({ policies: Array.isArray(parsed) ? parsed : [] })
+      } catch {
+        set({ policies: [] })
+      }
+    } catch { /* ignore */ }
+  },
+
+  // -- Inference ----------------------------------------------------------
+
+  doInferStart: async (params) => {
+    set({ loading: 'infer' })
+    get().addLog(`Starting inference...`)
+    try {
+      await postJson(`${INFER}/start`, params)
+      get().addLog('Inference started', 'ok')
+    } catch (e: unknown) {
+      get().addLog(`Inference start failed: ${(e as Error).message}`, 'err')
+    } finally {
+      set({ loading: null })
+    }
+  },
+
+  doInferStop: async () => {
+    get().addLog('Stopping inference...')
+    try {
+      await postJson(`${INFER}/stop`)
+      get().addLog('Inference stopped', 'info')
+    } catch (e: unknown) {
+      get().addLog(`Inference stop failed: ${(e as Error).message}`, 'err')
     }
   },
 

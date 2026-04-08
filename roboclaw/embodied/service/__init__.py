@@ -170,6 +170,35 @@ class EmbodiedService:
             self._monitor.set_recording_active(True)
         return dataset_name
 
+    async def start_replay(
+        self,
+        *,
+        dataset_name: str = "default",
+        episode: int = 0,
+        fps: int = 30,
+    ) -> None:
+        await self._engine.start_replay(
+            dataset_name=dataset_name, episode=episode, fps=fps, setup=self.manifest,
+        )
+
+    async def start_inference(
+        self,
+        *,
+        checkpoint_path: str = "",
+        source_dataset: str = "",
+        dataset_name: str = "",
+        task: str = "eval",
+        num_episodes: int = 1,
+    ) -> None:
+        await self._engine.start_inference(
+            checkpoint_path=checkpoint_path,
+            source_dataset=source_dataset,
+            dataset_name=dataset_name,
+            task=task,
+            num_episodes=num_episodes,
+            setup=self.manifest,
+        )
+
     async def stop(self) -> None:
         await self._engine.stop()
 
