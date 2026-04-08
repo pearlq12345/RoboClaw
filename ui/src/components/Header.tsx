@@ -47,16 +47,6 @@ export default function Header() {
             {item.label}
           </Link>
         ))}
-        <Link
-          to="/setup"
-          className={`px-3 py-1 text-sm transition-colors ${
-            location.pathname === '/setup'
-              ? 'text-ac font-medium border-b-2 border-ac'
-              : 'text-tx2 hover:text-tx'
-          }`}
-        >
-          {t('setup')}
-        </Link>
       </nav>
 
       <div className="flex-1" />

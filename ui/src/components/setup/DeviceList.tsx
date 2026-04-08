@@ -73,7 +73,7 @@ function dotColorForType(type: string): string {
   return 'bg-tx2'
 }
 
-export default function DeviceList() {
+export default function DeviceList({ onCalibrate }: { onCalibrate?: (alias: string) => void } = {}) {
   const { devices, removeArm, renameArm, removeCamera, renameCamera, removeHand, renameHand } =
     useSetup()
   const { t } = useI18n()
@@ -93,19 +93,30 @@ export default function DeviceList() {
   return (
     <div className="flex flex-col gap-4">
       {arms.length > 0 && section(t('arm'), arms.map((a: ConfiguredArm) => (
-        <DeviceRow
-          key={a.alias}
-          alias={a.alias}
-          typeBadge={a.type}
-          dotColor={dotColorForType(a.type)}
-          statusTag={
-            a.calibrated
-              ? { label: t('hwCalibrated'), color: 'bg-gn' }
-              : { label: t('hwUncalibrated'), color: 'bg-yl' }
-          }
-          onRename={(n) => renameArm(a.alias, n)}
-          onRemove={() => removeArm(a.alias)}
-        />
+        <div key={a.alias} className="flex items-center gap-1">
+          <div className="flex-1">
+            <DeviceRow
+              alias={a.alias}
+              typeBadge={a.type}
+              dotColor={dotColorForType(a.type)}
+              statusTag={
+                a.calibrated
+                  ? { label: t('hwCalibrated'), color: 'bg-gn' }
+                  : { label: t('hwUncalibrated'), color: 'bg-yl' }
+              }
+              onRename={(n) => renameArm(a.alias, n)}
+              onRemove={() => removeArm(a.alias)}
+            />
+          </div>
+          {!a.calibrated && onCalibrate && (
+            <button
+              onClick={() => onCalibrate(a.alias)}
+              className="shrink-0 px-2 py-1 text-2xs text-ac border border-ac/60 rounded hover:bg-ac/10"
+            >
+              {t('calibrate')}
+            </button>
+          )}
+        </div>
       )))}
 
       {cameras.length > 0 && section(t('camera'), cameras.map((c: ConfiguredCamera) => (

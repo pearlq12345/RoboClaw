@@ -113,6 +113,12 @@ const translations = {
     servoPositions: '舵机位置',
     servoLoading: '正在读取舵机数据...',
     servoBusy: '串口占用中，遥操作/录制结束后恢复',
+    servoTemperature: '舵机温度',
+    settingsHardware: '硬件配置',
+    settingsProvider: 'AI 服务商',
+    addDevice: '添加设备',
+    calibrate: '校准',
+    warnings: '个警告',
 
     // Setup Wizard
     setup: '硬件设置',
@@ -255,6 +261,12 @@ const translations = {
     servoPositions: 'Servo Positions',
     servoLoading: 'Reading servo data...',
     servoBusy: 'Serial port busy, will resume after teleop/recording stops',
+    servoTemperature: 'Servo Temperature',
+    settingsHardware: 'Hardware',
+    settingsProvider: 'AI Provider',
+    addDevice: 'Add Device',
+    calibrate: 'Calibrate',
+    warnings: 'warnings',
 
     // Setup Wizard
     setup: 'Setup',

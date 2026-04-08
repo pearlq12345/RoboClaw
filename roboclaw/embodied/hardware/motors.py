@@ -66,13 +66,18 @@ def read_servo_positions(arms: list[Binding]) -> dict[str, Any]:
         try:
             bus.connect()
             positions: dict[str, int | None] = {}
+            temperatures: dict[str, int | None] = {}
             for name in motor_config:
                 try:
                     positions[name] = int(bus.read("Present_Position", name, normalize=False))
                 except Exception:
-                    logger.debug("Failed to read motor '{}' on arm '{}'", name, alias)
+                    logger.debug("Failed to read position for motor '{}' on arm '{}'", name, alias)
                     positions[name] = None
-            result["arms"][alias] = positions
+                try:
+                    temperatures[name] = int(bus.read("Present_Temperature", name, normalize=False))
+                except Exception:
+                    temperatures[name] = None
+            result["arms"][alias] = {"positions": positions, "temperatures": temperatures}
         finally:
             bus.disconnect()
     return result

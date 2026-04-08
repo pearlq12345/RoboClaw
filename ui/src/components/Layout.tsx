@@ -20,7 +20,7 @@ export default function Layout() {
     fetchHardwareStatus().then(() => {
       const hs = useDashboard.getState().hardwareStatus
       if (hs && hs.arms.length === 0 && hs.cameras.length === 0) {
-        navigate('/setup')
+        navigate('/settings')
       }
     })
   }, [])

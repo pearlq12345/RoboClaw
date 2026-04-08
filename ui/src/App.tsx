@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ChatView from './views/ChatView'
 import SettingsView from './views/SettingsView'
 import DashboardView from './views/DashboardView'
-import SetupView from './views/SetupView'
 import Layout from './components/Layout'
 
 function App() {
@@ -14,7 +13,7 @@ function App() {
           <Route path="dashboard" element={<DashboardView />} />
           <Route path="chat" element={<ChatView />} />
           <Route path="settings" element={<SettingsView />} />
-          <Route path="setup" element={<SetupView />} />
+          <Route path="setup" element={<Navigate to="/settings" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
