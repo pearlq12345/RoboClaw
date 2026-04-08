@@ -7,7 +7,7 @@ from typing import Any
 
 from roboclaw.agent.tools.base import Tool
 
-_SETUP_ACTIONS = ["identify", "modify", "scan", "probe", "motion_start", "motion_poll", "motion_stop", "preview_cameras"]
+_SETUP_ACTIONS = ["identify", "modify", "preview_cameras"]
 _DOCTOR_ACTIONS = ["check"]
 _CALIBRATION_ACTIONS = ["calibrate"]
 _TELEOP_ACTIONS = ["teleoperate"]
@@ -41,8 +41,8 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 },
                 "operation": {
                     "type": "string",
-                    "enum": ["rename", "unbind", "rebind", "bind"],
-                    "description": "Operation for modify action.",
+                    "enum": ["rename", "unbind", "bind"],
+                    "description": "Operation to perform for modify.",
                 },
                 "alias": {
                     "type": "string",
@@ -50,11 +50,7 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 },
                 "new_alias": {
                     "type": "string",
-                    "description": "New alias for rename/rebind.",
-                },
-                "new_type": {
-                    "type": "string",
-                    "description": "New arm type for rebind (e.g., 'koch_follower').",
+                    "description": "New alias for rename operation.",
                 },
                 "arm_type": {
                     "type": "string",
@@ -62,7 +58,7 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 },
                 "port": {
                     "type": "string",
-                    "description": "Serial port path for probe or bind_arm (by-id path from scan).",
+                    "description": "Serial port path for bind_arm (by-id path from scan).",
                 },
                 "dev": {
                     "type": "string",
@@ -351,19 +347,9 @@ class EmbodiedToolGroup(Tool):
                 svc,
                 lambda _: svc.setup.run_identify(kwargs, self._tty_handoff),
             )
-        if action == "scan":
-            return await _run_with_service(svc, lambda _: _run_scan(svc))
-        if action == "probe":
-            return await _run_with_service(svc, lambda _: _run_probe(kwargs))
-        if action == "motion_start":
-            return await _run_with_service(svc, lambda _: _run_motion_start(svc))
-        if action == "motion_poll":
-            return await _run_with_service(svc, lambda _: _run_motion_poll(svc))
-        if action == "motion_stop":
-            return await _run_with_service(svc, lambda _: _run_motion_stop(svc))
         if action == "preview_cameras":
             return await _run_with_service(svc, lambda _: _run_preview_cameras())
-        # modify (bind, unbind, rename, rebind)
+        # modify
         return await _run_with_service(
             svc,
             lambda _: _run_modify(svc, kwargs),
@@ -425,88 +411,6 @@ def create_embodied_tools(tty_handoff: Any = None) -> list[EmbodiedToolGroup]:
     return [EmbodiedToolGroup(name, spec, tty_handoff=tty_handoff) for name, spec in _TOOL_GROUPS.items()]
 
 
-async def _run_scan(svc: Any) -> str | list:
-    """Scan hardware and return available ports + cameras."""
-    from roboclaw.embodied.hardware.scan import scan_serial_ports, scan_cameras
-    ports = scan_serial_ports()
-    cameras = scan_cameras()
-    results = []
-    for p in ports:
-        bound = svc.manifest.find_binding_by_port(p.address) if hasattr(svc.manifest, 'find_binding_by_port') else None
-        results.append({
-            "type": "serial",
-            "dev": p.dev,
-            "by_id": p.by_id,
-            "bus_type": p.bus_type,
-            "motor_ids": list(p.motor_ids),
-            "bound_as": bound.alias if bound else None,
-        })
-    for c in cameras:
-        results.append({
-            "type": "camera",
-            "dev": c.dev,
-            "by_id": c.by_id,
-            "width": c.width,
-            "height": c.height,
-            "fps": c.fps,
-        })
-    return json.dumps(results, indent=2)
-
-
-async def _run_probe(kwargs: dict[str, Any]) -> str:
-    """Probe a specific serial port for motor protocol and IDs."""
-    port = kwargs.get("port", "")
-    if not port:
-        return "probe requires 'port' (by-id path or dev path)."
-    from roboclaw.embodied.hardware.probers import get_prober
-    for protocol in ("dynamixel", "feetech"):
-        try:
-            prober = get_prober(protocol)
-        except (ValueError, ImportError):
-            continue
-        try:
-            ids = prober.probe(port)
-            if ids:
-                return json.dumps({
-                    "port": port,
-                    "protocol": protocol,
-                    "motor_ids": ids,
-                })
-        except Exception:
-            continue
-    return json.dumps({"port": port, "protocol": None, "motor_ids": []})
-
-
-async def _run_motion_start(svc: Any) -> str:
-    """Start motion detection on unbound serial ports."""
-    try:
-        count = svc.setup.start_motion_detection()
-        return f"Motion detection started on {count} port(s). Use motion_poll to check, motion_stop to end."
-    except RuntimeError as exc:
-        return f"Cannot start motion detection: {exc}"
-
-
-async def _run_motion_poll(svc: Any) -> str:
-    """Poll motion detection, return which port moved."""
-    try:
-        results = svc.setup.poll_motion()
-        moved = [r for r in results if r["moved"]]
-        if moved:
-            return json.dumps({"moved": True, "port": moved[0]["stable_id"], "all": results})
-        return json.dumps({"moved": False, "all": results})
-    except RuntimeError as exc:
-        return f"Cannot poll motion: {exc}"
-
-
-async def _run_motion_stop(svc: Any) -> str:
-    """Stop motion detection."""
-    try:
-        svc.setup.stop_motion_detection()
-        return "Motion detection stopped."
-    except RuntimeError as exc:
-        return f"Cannot stop motion detection: {exc}"
-
-
 async def _run_preview_cameras() -> str:
     """Open a live camera preview in the browser. Returns URL."""
     from roboclaw.embodied.hardware.scan import scan_cameras
@@ -539,7 +443,7 @@ _MODIFY_DISPATCH = {
     ("rename", "camera"): "rename_camera",
     ("bind", "camera"): "set_camera",
     ("bind", "arm"): "set_arm",
-    ("rebind", "arm"): "rebind_arm",
+
     ("rename", "hand"): "rename_hand",
 }
 
@@ -591,18 +495,8 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
         data = result.to_dict() if hasattr(result, "to_dict") else str(result)
         return f"Arm '{alias}' ({arm_type}) bound to {port}.\n{json.dumps(data, indent=2) if isinstance(data, dict) else data}"
 
-    new_alias = kwargs.get("new_alias", "")
-
-    if operation == "rebind":
-        new_type = kwargs.get("new_type", "")
-        if not new_type:
-            return "rebind requires new_type (e.g., 'koch_follower')."
-        if not new_alias:
-            new_alias = alias
-        result = svc.rebind_arm(alias, new_alias, new_type)
-        return f"Arm rebound: '{alias}' → '{new_alias}' ({new_type}).\n{json.dumps(result, indent=2)}"
-
     # rename
+    new_alias = kwargs.get("new_alias", "")
     if not new_alias:
         return "rename requires new_alias."
     result = getattr(svc, method_name)(alias, new_alias)
