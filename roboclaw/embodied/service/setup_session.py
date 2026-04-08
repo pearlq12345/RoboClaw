@@ -20,6 +20,15 @@ if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
 
 
+def _is_headless() -> bool:
+    """Check if the system has no display (headless mode)."""
+    import os
+    import sys
+    if sys.platform == "darwin":
+        return False
+    return not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
+
+
 class SetupPhase(str, Enum):
     IDLE = "idle"
     DISCOVERING = "discovering"
@@ -513,30 +522,48 @@ class SetupSession:
             self._camera_preview.stop()
             self._camera_preview = None
 
-    def _start_camera_preview(self) -> None:
+    def preview_cameras(self) -> list[dict] | str:
+        """Start camera preview. Returns MJPEG URL or list of static frame paths.
+
+        Mode-aware:
+        - Non-headless (has display): starts CameraPreviewServer + opens browser
+        - Headless (no display): captures static frames for LLM analysis
+        """
         all_video = self._video_candidates
         if not all_video:
-            return
+            return "No cameras detected."
+        if _is_headless():
+            return self._capture_static_previews(all_video)
+        return self._start_mjpeg_preview(all_video)
+
+    def _start_mjpeg_preview(self, cameras_list: list[VideoInterface]) -> str:
         cameras: dict[int, str] = {}
-        for cam in all_video:
+        for cam in cameras_list:
             dev = cam.dev or ""
             if dev.startswith("/dev/video"):
-                try:
-                    cameras[int(dev.replace("/dev/video", ""))] = dev
-                except ValueError:
-                    pass
+                idx = dev.replace("/dev/video", "")
+                if idx.isdigit():
+                    cameras[int(idx)] = dev
         if not cameras:
-            return
-        try:
-            from roboclaw.embodied.hardware.camera_preview import CameraPreviewServer
-            import webbrowser
-            srv = CameraPreviewServer(cameras)
-            url = srv.start()
-            self._camera_preview = srv
-            self._messages.append(f"  📷 Camera preview: {url}")
-            webbrowser.open(url)
-        except Exception:
-            pass  # preview is best-effort
+            return "No video devices found."
+        from roboclaw.embodied.hardware.camera_preview import CameraPreviewServer
+        import webbrowser
+        srv = CameraPreviewServer(cameras)
+        url = srv.start()
+        self._camera_preview = srv
+        self._messages.append(f"  Camera preview: {url}")
+        webbrowser.open(url)
+        return url
+
+    def _capture_static_previews(self, cameras_list: list[VideoInterface]) -> list[dict]:
+        from roboclaw.embodied.hardware.scan import capture_camera_frames
+        output_dir = "/tmp/roboclaw-camera-previews"
+        previews = capture_camera_frames(cameras_list, output_dir)
+        for p in previews:
+            self._messages.append(f"  Camera preview saved: {p.get('image_path', '?')}")
+        if not previews:
+            self._messages.append("  No camera frames captured.")
+        return previews
 
     def _next_camera_step(self):
         from roboclaw.embodied.adapters.protocol import PromptStep
@@ -548,7 +575,7 @@ class SetupSession:
             return None
         if self._camera_index == 0:
             self._messages.append(t("cameraNaming", lang))
-            self._start_camera_preview()
+            self.preview_cameras()
         if self._camera_index >= len(all_video):
             self._stop_camera_preview()
             return None

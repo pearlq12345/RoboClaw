@@ -348,7 +348,7 @@ class EmbodiedToolGroup(Tool):
                 lambda _: svc.setup.run_identify(kwargs, self._tty_handoff),
             )
         if action == "preview_cameras":
-            return await _run_with_service(svc, lambda _: _run_preview_cameras())
+            return await _run_with_service(svc, lambda _: svc.setup.preview_cameras())
         # modify
         return await _run_with_service(
             svc,
@@ -411,28 +411,22 @@ def create_embodied_tools(tty_handoff: Any = None) -> list[EmbodiedToolGroup]:
     return [EmbodiedToolGroup(name, spec, tty_handoff=tty_handoff) for name, spec in _TOOL_GROUPS.items()]
 
 
-async def _run_preview_cameras() -> str:
-    """Open a live camera preview in the browser. Returns URL."""
+def _find_camera(dev: str) -> tuple[Any, str]:
+    """Scan and find a camera by device path. Returns (camera_or_None, available_list_str)."""
     from roboclaw.embodied.hardware.scan import scan_cameras
-    import webbrowser
     cameras = scan_cameras()
-    if not cameras:
-        return "No cameras detected."
-    cam_dict: dict[int, str] = {}
-    for cam in cameras:
-        dev = cam.dev or ""
-        if dev.startswith("/dev/video"):
-            try:
-                cam_dict[int(dev.replace("/dev/video", ""))] = dev
-            except ValueError:
-                pass
-    if not cam_dict:
-        return "No video devices found."
-    from roboclaw.embodied.hardware.camera_preview import CameraPreviewServer
-    srv = CameraPreviewServer(cam_dict)
-    url = srv.start()
-    webbrowser.open(url)
-    return f"Camera preview opened at {url}\nClose the browser tab when done. The server will auto-stop on next action."
+    matched = next((c for c in cameras if c.dev == dev), None)
+    avail = ", ".join(c.dev for c in cameras) if cameras else "none"
+    return matched, avail
+
+
+def _find_serial_port(port: str) -> tuple[Any, str]:
+    """Scan and find a serial port by by-id or dev path. Returns (port_or_None, available_list_str)."""
+    from roboclaw.embodied.hardware.scan import scan_serial_ports
+    ports = scan_serial_ports()
+    matched = next((p for p in ports if p.by_id == port or p.dev == port), None)
+    avail = ", ".join(p.by_id or p.dev for p in ports) if ports else "none"
+    return matched, avail
 
 
 _MODIFY_DISPATCH = {
@@ -441,8 +435,8 @@ _MODIFY_DISPATCH = {
     ("unbind", "hand"): "unbind_hand",
     ("rename", "arm"): "rename_arm",
     ("rename", "camera"): "rename_camera",
-    ("bind", "camera"): "set_camera",
-    ("bind", "arm"): "set_arm",
+    ("bind", "camera"): "bind_camera",
+    ("bind", "arm"): "bind_arm",
 
     ("rename", "hand"): "rename_hand",
 }
@@ -467,13 +461,10 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
         dev = kwargs.get("dev", "")
         if not dev:
             return "bind camera requires dev (e.g., '/dev/video4')."
-        from roboclaw.embodied.hardware.scan import scan_cameras
-        cameras = scan_cameras()
-        matched = next((c for c in cameras if c.dev == dev), None)
+        matched, avail = _find_camera(dev)
         if matched is None:
-            avail = ", ".join(c.dev for c in cameras) if cameras else "none"
             return f"Camera '{dev}' not found. Available: {avail}"
-        result = svc.set_camera(alias, matched)
+        result = svc.bind_camera(alias, matched)
         data = result.to_dict() if hasattr(result, "to_dict") else str(result)
         return f"Camera '{alias}' bound to {dev}.\n{json.dumps(data, indent=2) if isinstance(data, dict) else data}"
 
@@ -485,13 +476,10 @@ async def _run_modify(svc: Any, kwargs: dict[str, Any]) -> str:
             return f"bind arm requires arm_type. Valid: {list(all_arm_types())}"
         if not port:
             return "bind arm requires port (by-id path from scan results)."
-        from roboclaw.embodied.hardware.scan import scan_serial_ports
-        ports = scan_serial_ports()
-        matched = next((p for p in ports if p.by_id == port or p.dev == port), None)
+        matched, avail = _find_serial_port(port)
         if matched is None:
-            avail = ", ".join(p.by_id or p.dev for p in ports) if ports else "none"
             return f"Port '{port}' not found. Available: {avail}"
-        result = svc.set_arm(alias, arm_type, matched)
+        result = svc.bind_arm(alias, arm_type, matched)
         data = result.to_dict() if hasattr(result, "to_dict") else str(result)
         return f"Arm '{alias}' ({arm_type}) bound to {port}.\n{json.dumps(data, indent=2) if isinstance(data, dict) else data}"
 
