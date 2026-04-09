@@ -142,7 +142,7 @@ export default function SettingsView() {
         <p className="mt-1 text-sm text-tx3">{t('settingsDesc')}</p>
       </div>
 
-      <div className="flex-1 p-6 max-w-4xl space-y-6">
+      <div className="flex-1 p-6 grid grid-cols-2 gap-6 items-start max-[900px]:grid-cols-1">
         {/* Hardware section */}
         <section className="bg-sf rounded-xl p-5 shadow-card shadow-inset-ac">
           <div className="flex items-center justify-between mb-4">
