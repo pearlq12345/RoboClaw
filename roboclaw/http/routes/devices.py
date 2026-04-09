@@ -54,6 +54,7 @@ def register_device_routes(app: FastAPI, service: Any) -> None:
 
     @app.get("/api/devices")
     async def devices_list() -> dict[str, Any]:
+        service.manifest.reload_if_changed()
         return service.manifest.snapshot
 
     # -- CRUD for arms, cameras, hands -----------------------------------------

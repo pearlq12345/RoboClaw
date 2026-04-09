@@ -48,7 +48,29 @@ class Manifest:
         self._datasets: dict[str, Any] = {}
         self._policies: dict[str, Any] = {}
         self._bindings: dict[str, Binding] = {}
+        self._file_mtime: float = 0.0
         self._load()
+        self._update_mtime()
+
+    def _update_mtime(self) -> None:
+        """Record current file mtime."""
+        try:
+            self._file_mtime = self._path.stat().st_mtime
+        except FileNotFoundError:
+            self._file_mtime = 0.0
+
+    def reload_if_changed(self) -> bool:
+        """Reload from disk if another process has written the file. Returns True if reloaded."""
+        try:
+            current_mtime = self._path.stat().st_mtime
+        except FileNotFoundError:
+            return False
+        if current_mtime > self._file_mtime:
+            with self._lock:
+                self._load()
+                self._file_mtime = current_mtime
+            return True
+        return False
 
     # ── Internal I/O ──────────────────────────────────────────────────
 
@@ -89,6 +111,7 @@ class Manifest:
                 json.dump(snapshot, f, indent=2, ensure_ascii=False)
                 f.write("\n")
             os.replace(tmp_path, str(self._path))
+            self._update_mtime()
         except BaseException:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
