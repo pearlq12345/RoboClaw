@@ -33,7 +33,6 @@ class InferSession:
         tty_handoff: Any,
     ) -> str:
         from roboclaw.embodied.runner import LocalLeRobotRunner
-        from roboclaw.embodied.sensor.camera import resolve_cameras
 
         grouped = group_arms(_resolve_action_arms(manifest, kwargs))
         followers = grouped["followers"]
@@ -42,7 +41,20 @@ class InferSession:
         if len(followers) not in {1, 2}:
             return f"Unsupported follower arm count: {len(followers)}. Use 1 (single) or 2 (bimanual)."
 
-        cameras = {} if kwargs.get("use_cameras") is False else resolve_cameras(manifest.cameras)
+        if kwargs.get("use_cameras") is False:
+            cameras: dict = {}
+        else:
+            cameras = {
+                cam.alias: {
+                    "type": "opencv",
+                    "index_or_path": cam.port,
+                    "width": cam.interface.width,
+                    "height": cam.interface.height,
+                    "fps": cam.interface.fps or 30,
+                }
+                for cam in manifest.cameras
+                if cam.alias and cam.port
+            }
         policies_root = manifest.snapshot.get("policies", {}).get("root", "")
         checkpoint = kwargs.get("checkpoint_path")
         if not checkpoint:

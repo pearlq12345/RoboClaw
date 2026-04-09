@@ -315,12 +315,9 @@ class Manifest:
         if not port:
             raise ValueError("Camera interface has no usable address.")
 
-        from roboclaw.embodied.sensor.registry import get_camera_spec
-
         with self._lock:
             binding = Binding(
                 alias=name,
-                spec=get_camera_spec("opencv"),
                 interface=interface,
                 guard=self._guard_for_binding(interface),
                 _kind="camera",
