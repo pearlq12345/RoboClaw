@@ -142,6 +142,21 @@ class AgentLoop:
                 tool.embodied_service = self.embodied_service
                 self.tools.register(tool)
 
+        # Perception tools — camera frames, VLM scene understanding, depth, spatial reasoning.
+        # No TTY required; available regardless of restrict_to_workspace.
+        from roboclaw.agent.tools.perception import DepthTool, SceneUnderstandTool, SpatialTool
+        for tool_cls in (SceneUnderstandTool, DepthTool, SpatialTool):
+            self.tools.register(tool_cls())
+
+        # Training pipeline tools — train, eval, serve, checkpoint management.
+        # No TTY required; available regardless of restrict_to_workspace.
+        if not self.restrict_to_workspace:
+            from roboclaw.agent.tools.training import (
+                EvalTool, JobStatusTool, ListCheckpointsTool, ServeTool, TrainTool,
+            )
+            for tool_cls in (TrainTool, JobStatusTool, EvalTool, ServeTool, ListCheckpointsTool):
+                self.tools.register(tool_cls())
+
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
         if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:
