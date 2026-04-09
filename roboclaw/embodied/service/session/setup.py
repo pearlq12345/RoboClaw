@@ -128,7 +128,9 @@ class SetupSession:
             else:
                 serial = self._discovery.discover_all()
             video = self._discovery.discover_cameras()
-            self._candidates = [*serial, *video]
+            # Exclude interfaces already bound in the manifest.
+            bound_ids = {b.interface.stable_id for b in self._parent.manifest.bindings if b.interface.stable_id}
+            self._candidates = [c for c in [*serial, *video] if c.stable_id not in bound_ids]
             self._phase = SetupPhase.ASSIGNING
             ports = [c for c in self._candidates if isinstance(c, SerialInterface)]
             cameras = [c for c in self._candidates if isinstance(c, VideoInterface)]
