@@ -182,7 +182,10 @@ function IdentifyStep() {
   } = useSetup()
   const [activeId, setActiveId] = useState<string | null>(null)
 
-  useEffect(() => { startMotion(); return () => { stopMotion() } }, [])
+  useEffect(() => {
+    if (scannedPorts.length > 0) startMotion()
+    return () => { stopMotion() }
+  }, [])
 
   const roles = catalog?.models[selectedCategory]?.find((m) => m.name === selectedModel)?.roles ?? []
   const assignedIds = new Set(assignments.map((a) => a.interface_stable_id))
