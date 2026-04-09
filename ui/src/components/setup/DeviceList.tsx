@@ -67,11 +67,10 @@ function DeviceRow({ alias, typeBadge, dotColor, statusTag, onRename, onRemove }
   )
 }
 
-function dotColorForType(type: string): string {
-  const t = type.toLowerCase()
-  if (t.includes('leader')) return 'bg-ac'
-  if (t.includes('follower')) return 'bg-gn'
-  return 'bg-tx2'
+function dotColorForArm(connected: boolean, calibrated: boolean): string {
+  if (!connected) return 'bg-rd'
+  if (!calibrated) return 'bg-yl'
+  return 'bg-gn'
 }
 
 export default function DeviceList() {
@@ -97,7 +96,7 @@ export default function DeviceList() {
       {arms.length > 0 && section(t('arm'), arms.map((a: ConfiguredArm) => {
         const live = hwStatus?.arms.find((h) => h.alias === a.alias)
         const connected = live ? live.connected : true  // assume connected if no live data yet
-        const dotColor = !connected ? 'bg-rd' : dotColorForType(a.type)
+        const dotColor = dotColorForArm(connected, a.calibrated)
         const statusTag = !connected
           ? { label: t('hwDisconnected'), color: 'bg-rd' }
           : a.calibrated
@@ -124,7 +123,7 @@ export default function DeviceList() {
             key={c.alias}
             alias={c.alias}
             typeBadge={c.port}
-            dotColor={connected ? 'bg-ac' : 'bg-rd'}
+            dotColor={connected ? 'bg-gn' : 'bg-rd'}
             statusTag={!connected ? { label: t('hwDisconnected'), color: 'bg-rd' } : null}
             onRename={(n) => renameCamera(c.alias, n)}
             onRemove={() => removeCamera(c.alias)}
@@ -137,7 +136,7 @@ export default function DeviceList() {
           key={h.alias}
           alias={h.alias}
           typeBadge={h.type}
-          dotColor={dotColorForType(h.type)}
+          dotColor="bg-gn"
           onRename={(n) => renameHand(h.alias, n)}
           onRemove={() => removeHand(h.alias)}
         />
