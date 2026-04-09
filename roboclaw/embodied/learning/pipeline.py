@@ -82,9 +82,9 @@ class TrainingPipeline:
 
     def __init__(self, policies_root: str | None = None):
         if policies_root is None:
-            from roboclaw.embodied.setup import load_setup
-            setup = load_setup()
-            policies_root = setup.get("policies", {}).get("root", "~/.roboclaw/workspace/embodied/policies")
+            from roboclaw.embodied.manifest.helpers import load_manifest
+            manifest = load_manifest()
+            policies_root = manifest.get("policies", {}).get("root", "~/.roboclaw/workspace/embodied/policies")
         self._policies_root = Path(policies_root).expanduser()
         self._policies_root.mkdir(parents=True, exist_ok=True)
         self._act = ACTPipeline()
@@ -112,14 +112,14 @@ class TrainingPipeline:
             raise NotImplementedError(f"Algorithm '{algorithm}' not yet implemented. Only 'act' is supported.")
 
         if dataset_root is None:
-            from roboclaw.embodied.setup import load_setup
-            setup = load_setup()
-            ds_root = setup.get("datasets", {}).get("root", "~/.roboclaw/workspace/embodied/datasets")
+            from roboclaw.embodied.manifest.helpers import load_manifest
+            manifest = load_manifest()
+            ds_root = manifest.get("datasets", {}).get("root", "~/.roboclaw/workspace/embodied/datasets")
         else:
             ds_root = dataset_root
 
         from roboclaw.embodied.runner import LocalLeRobotRunner
-        from roboclaw.embodied.ops.helpers import _logs_dir
+        from roboclaw.embodied.engine.helpers import _logs_dir
 
         output_dir = self._policies_root / dataset_name
         resume = output_dir.is_dir()
@@ -153,7 +153,7 @@ class TrainingPipeline:
         Polls the runner's job status and parses log lines for metrics.
         """
         from roboclaw.embodied.runner import LocalLeRobotRunner
-        from roboclaw.embodied.ops.helpers import _logs_dir
+        from roboclaw.embodied.engine.helpers import _logs_dir
 
         runner = LocalLeRobotRunner()
         while True:
@@ -195,8 +195,8 @@ class TrainingPipeline:
         """
         from roboclaw.embodied.embodiment.arm.command_builder import ArmCommandBuilder
         from roboclaw.embodied.runner import LocalLeRobotRunner
-        from roboclaw.embodied.ops.helpers import _logs_dir
-        from roboclaw.embodied.setup import load_setup, ensure_setup
+        from roboclaw.embodied.engine.helpers import _logs_dir
+        from roboclaw.embodied.manifest.helpers import ensure_manifest
 
         job = self._jobs.get(job_id)
         if job is None:
@@ -206,8 +206,9 @@ class TrainingPipeline:
         if not Path(checkpoint).exists():
             raise FileNotFoundError(f"No checkpoint found at {checkpoint}")
 
-        setup = ensure_setup()
-        cameras_root = setup.get("cameras", [])
+        manifest = ensure_manifest()
+        manifest_snapshot = manifest.snapshot
+        cameras_root = manifest_snapshot.get("cameras", [])
         if cameras_root:
             cameras = {cam["alias"]: {"type": "opencv", "index_or_path": cam["port"]} for cam in cameras_root}
         else:
@@ -278,7 +279,7 @@ class TrainingPipeline:
     ) -> str:
         """Start an inference server for a trained policy. Returns the server URL."""
         from roboclaw.embodied.runner import LocalLeRobotRunner
-        from roboclaw.embodied.ops.helpers import _logs_dir
+        from roboclaw.embodied.engine.helpers import _logs_dir
 
         job = self._jobs.get(job_id)
         if job is None:
