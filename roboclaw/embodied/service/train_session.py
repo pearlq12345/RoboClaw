@@ -109,3 +109,87 @@ class TrainSession:
         if not policies:
             return "No policies found."
         return json.dumps(policies, indent=2, ensure_ascii=False)
+
+    async def eval_policy(
+        self,
+        manifest: Manifest,
+        kwargs: dict[str, Any],
+        tty_handoff: Any,
+    ) -> str:
+        from roboclaw.embodied.learning.pipeline import TrainingPipeline
+        job_id = kwargs.get("job_id", "")
+        if not job_id:
+            return "job_id is required for eval_policy."
+        tp = TrainingPipeline()
+        try:
+            result = await tp.eval(
+                job_id=job_id,
+                eval_dataset=kwargs.get("eval_dataset"),
+                num_episodes=kwargs.get("num_episodes", 10),
+                device=kwargs.get("device", "cuda"),
+            )
+        except FileNotFoundError as e:
+            return f"Checkpoint not found: {e}"
+        except ValueError as e:
+            return str(e)
+        if not result.get("success"):
+            return f"Eval failed.\nstderr: {result.get('stderr', 'unknown')}"
+        sr = result.get("success_rate")
+        sr_str = f"{sr:.1%}" if sr is not None else "not parsed from output"
+        return (
+            f"Eval complete for job {job_id}:\n"
+            f"  checkpoint: {result.get('checkpoint')}\n"
+            f"  success_rate: {sr_str}\n"
+            f"  episodes: {kwargs.get('num_episodes', 10)}"
+        )
+
+    async def serve_policy(
+        self,
+        manifest: Manifest,
+        kwargs: dict[str, Any],
+        tty_handoff: Any,
+    ) -> str:
+        from roboclaw.embodied.learning.pipeline import TrainingPipeline
+        job_id = kwargs.get("job_id", "")
+        if not job_id:
+            return "job_id is required for serve_policy."
+        tp = TrainingPipeline()
+        try:
+            url = await tp.serve(
+                job_id=job_id,
+                device=kwargs.get("device", "cuda"),
+                host=kwargs.get("host", "0.0.0.0"),
+                port=kwargs.get("port", 8000),
+            )
+        except FileNotFoundError as e:
+            return f"Checkpoint not found: {e}"
+        except ValueError as e:
+            return str(e)
+        return (
+            f"Policy server started.\n  URL: {url}\n"
+            f"  job_id: {job_id}\n"
+            f"Use record with checkpoint_path=<checkpoint> to run inference."
+        )
+
+    def list_checkpoints(self, manifest: Manifest | None = None, kwargs: dict[str, Any] | None = None, tty_handoff: Any = None) -> str:
+        from roboclaw.embodied.learning.pipeline import TrainingPipeline
+        output_dir = (kwargs or {}).get("output_dir", "")
+        if not output_dir:
+            return "output_dir is required for list_checkpoints."
+        tp = TrainingPipeline()
+        checkpoints = tp.list_checkpoints(output_dir)
+        if not checkpoints:
+            return f"No checkpoints found in {output_dir}."
+        lines = [f"Checkpoints in {output_dir}:"]
+        for cp in checkpoints:
+            tag = " (best)" if cp["is_best"] else ""
+            lines.append(f"  step {cp['step']}{tag}: {cp['path']}")
+        return "\n".join(lines)
+
+    def best_checkpoint(self, manifest: Manifest | None = None, kwargs: dict[str, Any] | None = None, tty_handoff: Any = None) -> str:
+        from roboclaw.embodied.learning.pipeline import TrainingPipeline
+        output_dir = (kwargs or {}).get("output_dir", "")
+        if not output_dir:
+            return "output_dir is required for best_checkpoint."
+        path = TrainingPipeline().checkpoint_path(output_dir)
+        return f"Best checkpoint: {path}"

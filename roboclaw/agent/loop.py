@@ -136,26 +136,19 @@ class AgentLoop:
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
+        # Perception — available regardless of restrict_to_workspace (camera reading is safe).
+        from roboclaw.embodied.tool import create_embodied_tools
         if not self.restrict_to_workspace:
-            from roboclaw.embodied.tool import create_embodied_tools
             for tool in create_embodied_tools(tty_handoff=self.tty_handoff):
                 tool.embodied_service = self.embodied_service
                 self.tools.register(tool)
-
-        # Perception tools — camera frames, VLM scene understanding, depth, spatial reasoning.
-        # No TTY required; available regardless of restrict_to_workspace.
-        from roboclaw.agent.tools.perception import DepthTool, SceneUnderstandTool, SpatialTool
-        for tool_cls in (SceneUnderstandTool, DepthTool, SpatialTool):
-            self.tools.register(tool_cls())
-
-        # Training pipeline tools — train, eval, serve, checkpoint management.
-        # No TTY required; available regardless of restrict_to_workspace.
-        if not self.restrict_to_workspace:
-            from roboclaw.agent.tools.training import (
-                EvalTool, JobStatusTool, ListCheckpointsTool, ServeTool, TrainTool,
-            )
-            for tool_cls in (TrainTool, JobStatusTool, EvalTool, ServeTool, ListCheckpointsTool):
-                self.tools.register(tool_cls())
+        else:
+            # Only the perception group is available in workspace-restricted mode.
+            for tool in create_embodied_tools(tty_handoff=self.tty_handoff):
+                if tool.name == "perception":
+                    tool.embodied_service = self.embodied_service
+                    self.tools.register(tool)
+                    break
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""

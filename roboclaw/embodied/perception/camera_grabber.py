@@ -9,13 +9,15 @@ import numpy as np
 
 
 def _default_camera_configs() -> dict[str, dict]:
-    """Load camera configs from setup.json if available, else return empty."""
+    """Load camera configs from Manifest binding state."""
     try:
-        from roboclaw.embodied.setup import load_setup
-        setup = load_setup()
-        cameras = setup.get("cameras", [])
-        if isinstance(cameras, list):
-            return {cam["alias"]: cam for cam in cameras if cam.get("alias")}
+        from roboclaw.embodied.manifest import Manifest
+        manifest = Manifest()
+        configs = {}
+        for binding in manifest.cameras:
+            # Port may be /dev/videoN or rtsp:// URL
+            configs[binding.alias] = {"port": binding.port}
+        return configs
     except Exception:
         pass
     return {}
