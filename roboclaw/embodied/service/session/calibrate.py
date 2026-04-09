@@ -15,11 +15,10 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from roboclaw.embodied.board.channels import CH_SESSION
 from roboclaw.embodied.board.constants import Command, SessionState
 from roboclaw.embodied.board.consumer import InputConsumer, OutputConsumer
 from roboclaw.embodied.command import CommandBuilder, resolve_action_arms
-from roboclaw.embodied.embodiment.arm.registry import get_model, get_role
+from roboclaw.embodied.embodiment.arm.registry import get_model
 from roboclaw.embodied.embodiment.manifest.binding import Binding
 from roboclaw.embodied.service.session.base import Session
 
@@ -41,7 +40,6 @@ _MOTOR_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Regex patterns for parsing calibration subprocess output
 _RE_POSITION_ROW = re.compile(
     r"(\w+)\s+\|\s+(-?\d+)\s+\|\s+(-?\d+)\s+\|\s+(-?\d+)"
 )
@@ -60,19 +58,24 @@ def _get_spec(arm_type: str) -> dict[str, Any]:
 class CalibrationOutputConsumer(OutputConsumer):
     """Parse lerobot-calibrate subprocess stdout → Board state updates."""
 
-    def __init__(self, board: Any, stdout: Any, arm: Binding) -> None:
+    def __init__(self, board: Any, stdout: Any) -> None:
         super().__init__(board, stdout)
-        self._arm = arm
+        self._positions: dict[str, dict[str, int]] = {}
 
     async def parse_line(self, line: str) -> None:
-        low = line.lower()
+        # Hot path: position table rows are the most frequent output
+        m = _RE_POSITION_ROW.search(line)
+        if m:
+            name = m.group(1)
+            new_val = {"min": int(m.group(2)), "pos": int(m.group(3)), "max": int(m.group(4))}
+            if self._positions.get(name) != new_val:
+                self._positions[name] = new_val
+                await self.board.update(calibration_positions=dict(self._positions))
+            return
 
+        low = line.lower()
         if "press enter to use provided calibration" in low:
-            await self.board.update(
-                state=SessionState.CALIBRATING,
-                calibration_step="choose",
-                calibration_arm=self._arm.alias,
-            )
+            await self.board.update(state=SessionState.CALIBRATING, calibration_step="choose")
         elif "running calibration" in low:
             await self.board.update(calibration_step="starting")
         elif "move" in low and "middle" in low and "press enter" in low:
@@ -81,13 +84,6 @@ class CalibrationOutputConsumer(OutputConsumer):
             await self.board.update(calibration_step="recording")
         elif "calibration saved" in low:
             await self.board.update(calibration_step="done")
-        else:
-            m = _RE_POSITION_ROW.search(line)
-            if m:
-                name, mn, pos, mx = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))
-                positions = self.board.get("calibration_positions") or {}
-                positions[name] = {"min": mn, "pos": pos, "max": mx}
-                await self.board.update(calibration_positions=dict(positions))
 
 
 class CalibrationInputConsumer(InputConsumer):
@@ -111,13 +107,13 @@ class CalibrationSession(Session):
     """
 
     def __init__(self, parent: EmbodiedService) -> None:
-        super().__init__(parent.manifest, parent.board)
+        super().__init__(board=parent.board, manifest=parent.manifest)
         self._parent = parent
         self._arm: Binding | None = None
-        self._manifest: Manifest | None = None
+        self._cal_manifest: Manifest | None = None
 
     def _make_output_consumer(self, board: Any, stdout: Any) -> OutputConsumer:
-        return CalibrationOutputConsumer(board, stdout, self._arm)
+        return CalibrationOutputConsumer(board, stdout)
 
     def _make_input_consumer(self, board: Any, stdin: Any) -> InputConsumer:
         return CalibrationInputConsumer(board, stdin)
@@ -125,15 +121,24 @@ class CalibrationSession(Session):
     async def start_calibration(self, arm: Binding, manifest: Manifest) -> None:
         """Start calibration subprocess for a single arm."""
         self._arm = arm
-        self._manifest = manifest
+        self._cal_manifest = manifest
+        await self.board.update(calibration_arm=arm.alias)
         argv = CommandBuilder.calibrate(arm)
         await self.start(argv, initial_state=SessionState.CALIBRATING, auto_confirm=False)
 
-    async def _on_process_exit(self, rc: int) -> None:
-        """Called when subprocess exits. Sync EEPROM on success."""
-        if rc == 0 and self._arm and self._manifest:
-            self._manifest.mark_arm_calibrated(self._arm.alias)
+    async def _wait_process(self) -> None:
+        """Override to sync EEPROM and release embodiment lock on exit."""
+        assert self._process is not None
+        rc = self._process.returncode
+        if rc is None:
+            rc = await self._process.wait()
+        await super()._wait_process()
+
+        if rc == 0 and self._arm and self._cal_manifest:
+            self._cal_manifest.mark_arm_calibrated(self._arm.alias)
             _sync_calibration_to_motors(self._arm)
+
+        self._parent.release_embodiment()
 
     # -- CLI protocol (used by TtySession when invoked from agent) ---------
 
@@ -174,7 +179,7 @@ class CalibrationSession(Session):
             return
         await super().stop()
 
-    # -- Agent entry point (backward compat with tool dispatch) ------------
+    # -- Agent entry point -------------------------------------------------
 
     async def calibrate(
         self,
@@ -194,28 +199,29 @@ class CalibrationSession(Session):
         if not targets:
             return "All arms are already calibrated."
 
+        from roboclaw.embodied.toolkit.tty import TtySession
+
         results: list[str] = []
         for arm in targets:
-            from roboclaw.embodied.toolkit.tty import TtySession
-
             self._arm = arm
-            self._manifest = manifest
+            self._cal_manifest = manifest
             argv = CommandBuilder.calibrate(arm)
 
             await tty_handoff(start=True, label=f"Calibrating: {arm.alias}")
             try:
+                await self.board.update(calibration_arm=arm.alias)
                 await self.start(argv, initial_state=SessionState.CALIBRATING, auto_confirm=False)
-                result = await TtySession(tty_handoff).run(self)
-                # Check if calibration succeeded
+                await TtySession(tty_handoff).run(self)
                 step = self.board.get("calibration_step", "")
                 if step == "done":
                     manifest.mark_arm_calibrated(arm.alias)
                     _sync_calibration_to_motors(arm)
                     results.append(f"{arm.alias}: OK")
                 else:
-                    results.append(f"{arm.alias}: {result}")
-            except Exception as exc:
-                results.append(f"{arm.alias}: FAILED ({exc})")
+                    results.append(f"{arm.alias}: incomplete")
+            except Exception:
+                logger.exception("Calibration failed for {}", arm.alias)
+                results.append(f"{arm.alias}: FAILED")
             finally:
                 await tty_handoff(start=False, label=f"Calibrating: {arm.alias}")
 

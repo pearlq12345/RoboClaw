@@ -42,6 +42,10 @@ export interface SessionStatus {
   dataset: string | null
   rerun_web_port: number
   error: string
+  // Calibration-specific (populated when state === 'calibrating')
+  calibration_step: string
+  calibration_arm: string
+  calibration_positions: Record<string, { min: number; pos: number; max: number }> | null
 }
 
 export interface Fault {
@@ -69,11 +73,9 @@ export interface NetworkInfo {
   lan_ip: string
 }
 
-// CalibrationStatus kept minimal for WebSocket event handling
 interface CalibrationStatus {
   state: string
   arm_alias: string
-  positions?: Record<string, number>
   mins?: Record<string, number>
   maxes?: Record<string, number>
   homing_offsets?: Record<string, number>
@@ -180,6 +182,9 @@ const defaultSession: SessionStatus = {
   dataset: null,
   rerun_web_port: 0,
   error: '',
+  calibration_step: '',
+  calibration_arm: '',
+  calibration_positions: null,
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +397,9 @@ export const useDashboard = create<DashboardStore>((set, get) => ({
           dataset: event.dataset || null,
           rerun_web_port: event.rerun_web_port || 0,
           error: event.error || '',
+          calibration_step: event.calibration_step || '',
+          calibration_arm: event.calibration_arm || '',
+          calibration_positions: event.calibration_positions || null,
         },
       })
       return

@@ -6,24 +6,23 @@ import { postJson } from '../controllers/api'
 const CALIBRATION = '/api/calibration'
 
 function sendCommand(cmd: string) {
-  postJson(`${CALIBRATION}/command`, { command: cmd })
+  postJson(`${CALIBRATION}/command`, { command: cmd }).catch(() => {})
 }
 
 export function CalibrationPanel({ armAlias, onClose }: { armAlias: string; onClose: () => void }) {
-  const session = useDashboard((s) => s.session)
+  const step = useDashboard((s) => s.session.calibration_step)
+  const positions = useDashboard((s) => s.session.calibration_positions)
+  const sessionState = useDashboard((s) => s.session.state)
   const { t } = useI18n()
 
-  const step = (session as any).calibration_step || ''
-  const positions = (session as any).calibration_positions as Record<string, { min: number; pos: number; max: number }> | undefined
-  const isCalibrating = session.state === 'calibrating'
+  const isCalibrating = sessionState === 'calibrating'
 
   useEffect(() => {
-    if (!isCalibrating && step === '') return
-    if (session.state === 'idle' && step === 'done') {
+    if (sessionState === 'idle' && step === 'done') {
       const timer = setTimeout(onClose, 1500)
       return () => clearTimeout(timer)
     }
-  }, [session.state, step])
+  }, [sessionState, step, onClose])
 
   if (!isCalibrating && step !== 'done') {
     return null
