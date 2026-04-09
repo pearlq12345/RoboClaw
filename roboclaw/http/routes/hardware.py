@@ -14,7 +14,6 @@ def register_hardware_routes(app: FastAPI, service: EmbodiedService) -> None:
 
     @app.get("/api/hardware/status")
     async def hardware_status() -> dict[str, Any]:
-        service.manifest.reload_if_changed()
         return service.get_hardware_status()
 
     @app.get("/api/hardware/servos")
