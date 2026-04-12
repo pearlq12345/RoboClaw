@@ -42,8 +42,8 @@
 
 ## 📢 News
 
+- **2026-04-11** Web dashboard for the full embodied workflow.
 - **2026-03-24** Conversational arm setup, calibration, teleoperation, data collection, training, and inference.
-- **2026-04-01** Web-based data collection dashboard is now available through the web interface.
 - **2026-03-17** Embodied framework skeleton, domain contracts, and assembly-centered onboarding controller.
 - **2026-03-12** Repository created.
 
