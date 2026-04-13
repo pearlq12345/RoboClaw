@@ -120,7 +120,7 @@ def test_create_embodied_tools_returns_eight_groups() -> None:
         ("teleop", {"teleoperate"}, {"arms", "fps"}, {"dataset_name", "checkpoint_path", "positions"}),
         ("record", {"record"}, {"arms", "dataset_name", "task", "num_episodes", "fps", "episode_time_s", "reset_time_s", "use_cameras"}, {"checkpoint_path", "positions"}),
         ("replay", {"replay"}, {"arms", "dataset_name", "episode", "fps"}, {"checkpoint_path", "positions"}),
-        ("train", {"train", "job_status", "list_datasets", "list_policies"}, {"dataset_name", "steps", "device", "job_id"}, {"positions", "port"}),
+        ("train", {"train", "job_status", "eval_policy", "serve_policy", "list_checkpoints", "best_checkpoint"}, {"dataset_name", "steps", "device", "job_id"}, {"positions", "port"}),
         ("infer", {"run_policy"}, {"arms", "dataset_name", "source_dataset", "checkpoint_path", "task", "num_episodes", "use_cameras"}, {"positions", "port"}),
     ],
 )

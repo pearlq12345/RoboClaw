@@ -13,7 +13,7 @@ _CALIBRATION_ACTIONS = ["calibrate"]
 _TELEOP_ACTIONS = ["teleoperate"]
 _RECORD_ACTIONS = ["record"]
 _REPLAY_ACTIONS = ["replay"]
-_TRAIN_ACTIONS = ["train", "job_status", "list_datasets", "list_policies"]
+_TRAIN_ACTIONS = ["train", "job_status", "eval_policy", "serve_policy", "list_checkpoints", "best_checkpoint"]
 _INFER_ACTIONS = ["run_policy"]
 _HUB_ACTIONS = ["push_dataset", "pull_dataset", "push_policy", "pull_policy"]
 _LANGUAGE_PROP = {"type": "string", "description": "User's language code (en, zh)."}
@@ -588,6 +588,14 @@ async def _run_train_action(
         return await train.train(manifest, kwargs, tty_handoff)
     if action == "job_status":
         return await train.job_status(manifest, kwargs, tty_handoff)
+    if action == "eval_policy":
+        return await train.eval_policy(manifest, kwargs, tty_handoff)
+    if action == "serve_policy":
+        return await train.serve_policy(manifest, kwargs, tty_handoff)
+    if action == "list_checkpoints":
+        return train.list_checkpoints(manifest, kwargs, tty_handoff)
+    if action == "best_checkpoint":
+        return train.best_checkpoint(manifest, kwargs, tty_handoff)
     if action == "list_datasets":
         return train.list_datasets(manifest)
     return train.list_policies(manifest)
