@@ -101,13 +101,13 @@ def calibration_root(tmp_path: Path) -> Path:
         yield root
 
 
-def test_create_embodied_tools_returns_eight_groups() -> None:
+def test_create_embodied_tools_returns_ten_groups() -> None:
     tools = create_embodied_tools()
-    assert len(tools) == 8
+    assert len(tools) == 10
     names = {t.name for t in tools}
     assert names == {
         "setup", "doctor", "calibration", "teleop",
-        "record", "replay", "train", "infer",
+        "record", "replay", "train", "infer", "hub", "perception",
     }
 
 
@@ -122,6 +122,7 @@ def test_create_embodied_tools_returns_eight_groups() -> None:
         ("replay", {"replay"}, {"arms", "dataset_name", "episode", "fps"}, {"checkpoint_path", "positions"}),
         ("train", {"train", "job_status", "list_datasets", "list_policies"}, {"dataset_name", "steps", "device", "job_id"}, {"positions", "port"}),
         ("infer", {"run_policy"}, {"arms", "dataset_name", "source_dataset", "checkpoint_path", "task", "num_episodes", "use_cameras"}, {"positions", "port"}),
+        ("perception", {"scene_understand", "object_detect", "what_changed"}, {"camera_alias", "question", "object_name", "model"}, {"arms", "dataset_name", "fps", "port"}),
     ],
 )
 def test_tool_group_schemas(
