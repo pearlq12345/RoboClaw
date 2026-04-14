@@ -115,6 +115,17 @@ from .exports import (
     workflow_quality_parquet_path,
 )
 
+# -- serializers (API response builders) --
+from .serializers import (
+    build_workspace_payload,
+    coerce_int,
+    derive_task_value,
+    episode_time_bounds,
+    serialize_propagation_results,
+    serialize_prototype_results,
+    serialize_quality_results,
+)
+
 __all__ = [
     # features
     "ACTION_FIELD_CANDIDATES",
@@ -208,4 +219,12 @@ __all__ = [
     "publish_text_annotations_metadata_parquet",
     "save_working_quality_parquet",
     "workflow_quality_parquet_path",
+    # serializers
+    "build_workspace_payload",
+    "coerce_int",
+    "derive_task_value",
+    "episode_time_bounds",
+    "serialize_propagation_results",
+    "serialize_prototype_results",
+    "serialize_quality_results",
 ]

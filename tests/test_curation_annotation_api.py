@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 
 from roboclaw.http import curation_routes
 from roboclaw.data.curation import exports as curation_exports
+from roboclaw.data.curation import hf_import as curation_hf_import
+from roboclaw.data.curation import serializers as curation_serializers
 from roboclaw.data.curation import service as curation_service
 from roboclaw.data.curation.state import (
     load_workflow_state,
@@ -73,7 +75,7 @@ def _build_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Test
         lambda name: (dataset_root / name).resolve(),
     )
     monkeypatch.setattr(
-        curation_routes,
+        curation_serializers,
         "load_episode_data",
         lambda _dataset_path, _episode_index: {
             "info": info,
@@ -258,7 +260,7 @@ def test_quality_batch_can_pause_and_resume(
     dataset_root = tmp_path / "datasets"
     dataset_root.mkdir()
     dataset_path = _write_demo_dataset(dataset_root, total_episodes=3)
-    service = curation_service.CurationService(dataset_path, "demo")
+    service = curation_service._LegacyCurationService(dataset_path, "demo")
 
     def _fake_run_quality_validators(
         target_dataset_path: Path,
@@ -539,7 +541,12 @@ def test_workflow_import_hf_dataset_job(
         )
         return str(target_dir)
 
-    monkeypatch.setattr(curation_routes, "snapshot_download", _fake_snapshot_download)
+    monkeypatch.setattr(curation_hf_import, "snapshot_download", _fake_snapshot_download)
+    monkeypatch.setattr(
+        curation_hf_import,
+        "datasets_root",
+        lambda: dataset_root,
+    )
     monkeypatch.setattr(
         curation_routes,
         "datasets_root",

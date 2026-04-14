@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Callable
 
@@ -10,7 +11,12 @@ from loguru import logger
 from .canonical import build_canonical_trajectory
 from .clustering import discover_prototype_clusters, refine_clusters_with_dba
 from .dtw import resolve_dtw_configuration
-from .exports import save_working_quality_parquet
+from .exports import (
+    dataset_quality_parquet_path,
+    dataset_text_annotations_parquet_path,
+    save_working_quality_parquet,
+    workflow_quality_parquet_path,
+)
 from .features import (
     build_episode_sequence,
     build_joint_trajectory_payload,
@@ -25,6 +31,13 @@ from .propagation import (
     derive_quality_tags,
     detect_grasp_place_events,
     propagate_annotation_spans,
+)
+from .serializers import (
+    build_workspace_payload,
+    coerce_int,
+    serialize_propagation_results,
+    serialize_prototype_results,
+    serialize_quality_results,
 )
 from .state import (
     is_stage_pause_requested,
@@ -118,7 +131,316 @@ def _load_episode_duration(dataset_path: Path, episode_index: int) -> float:
 
 
 class CurationService:
-    """Orchestrates the 3-stage curation pipeline for a single dataset."""
+    """Orchestrates the 3-stage curation pipeline for a single dataset.
+
+    A single instance is created at application startup.  Dataset-specific
+    parameters are passed to each method rather than stored on ``__init__``.
+    """
+
+    def __init__(self) -> None:
+        self._active_tasks: dict[tuple[str, str], asyncio.Task[Any]] = {}
+
+    # ------------------------------------------------------------------
+    # Legacy constructor shim — accepts (dataset_path, dataset_name) so
+    # existing call-sites (e.g. ``CurationService(dp, dn)``) keep working
+    # until they are migrated.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _legacy(cls, dataset_path: Path, dataset_name: str | None = None) -> _LegacyCurationService:
+        return _LegacyCurationService(dataset_path, dataset_name)
+
+    # ------------------------------------------------------------------
+    # Task management
+    # ------------------------------------------------------------------
+
+    async def _run_in_background(
+        self,
+        coro: Any,
+        dataset_path: Path,
+        stage_key: str,
+    ) -> None:
+        """Wrapper that logs errors and updates state on failure."""
+        task_key = (str(dataset_path.resolve()), stage_key)
+        try:
+            await coro
+        except asyncio.CancelledError:
+            state = load_workflow_state(dataset_path)
+            state["stages"][stage_key]["status"] = "error"
+            save_workflow_state(dataset_path, state)
+            raise
+        except Exception:
+            logger.exception("Background workflow task failed")
+            state = load_workflow_state(dataset_path)
+            state["stages"][stage_key]["status"] = "error"
+            save_workflow_state(dataset_path, state)
+        finally:
+            self._active_tasks.pop(task_key, None)
+
+    def _register_workflow_task(
+        self,
+        dataset_path: Path,
+        stage_key: str,
+        coro: Any,
+    ) -> None:
+        """Schedule *coro* as the active background task for a stage."""
+        task_key = (str(dataset_path.resolve()), stage_key)
+        existing = self._active_tasks.get(task_key)
+        if existing is not None and not existing.done():
+            existing.cancel()
+        task = asyncio.create_task(
+            self._run_in_background(coro, dataset_path, stage_key),
+        )
+        self._active_tasks[task_key] = task
+
+    def reconcile_stale_state(
+        self,
+        dataset_path: Path,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Mark ``running`` stages whose task has vanished as ``error``."""
+        resolved_dataset = str(dataset_path.resolve())
+        changed = False
+        for stage_key, stage in state.get("stages", {}).items():
+            if stage.get("status") != "running":
+                continue
+            active_task = self._active_tasks.get((resolved_dataset, stage_key))
+            if active_task is not None and not active_task.done():
+                continue
+            stage["status"] = "error"
+            summary = stage.get("summary")
+            if not isinstance(summary, dict):
+                summary = {}
+            summary["warning"] = "Previous run was interrupted before completion."
+            stage["summary"] = summary
+            changed = True
+        if changed:
+            save_workflow_state(dataset_path, state)
+        return state
+
+    # ------------------------------------------------------------------
+    # High-level orchestration (called from thin route layer)
+    # ------------------------------------------------------------------
+
+    async def start_quality_run(
+        self,
+        dataset_path: Path,
+        dataset_name: str,
+        selected_validators: list[str],
+        episode_indices: list[int] | None,
+        threshold_overrides: dict[str, float] | None,
+    ) -> dict[str, str]:
+        svc = _LegacyCurationService(dataset_path, dataset_name)
+
+        async def _task() -> None:
+            await asyncio.to_thread(
+                svc.run_quality_batch,
+                selected_validators,
+                episode_indices,
+                threshold_overrides,
+            )
+
+        self._register_workflow_task(dataset_path, "quality_validation", _task())
+        logger.info("Quality run queued for dataset '{}'", dataset_name)
+        return {"status": "started"}
+
+    async def start_quality_resume(
+        self,
+        dataset_path: Path,
+        dataset_name: str,
+        selected_validators: list[str],
+        episode_indices: list[int] | None,
+        threshold_overrides: dict[str, float] | None,
+    ) -> dict[str, str]:
+        state = load_workflow_state(dataset_path)
+        quality_stage = state["stages"]["quality_validation"]
+        if quality_stage.get("status") != "paused":
+            raise ValueError("Quality validation is not paused")
+
+        existing = load_quality_results(dataset_path)
+        if not existing:
+            raise ValueError("No paused quality results to resume")
+
+        completed = {
+            int(episode.get("episode_index"))
+            for episode in existing.get("episodes", [])
+            if episode.get("episode_index") is not None
+        }
+        total = int(existing.get("total", 0) or 0)
+        if episode_indices:
+            remaining = [index for index in episode_indices if index not in completed]
+        else:
+            remaining = [index for index in range(total) if index not in completed]
+
+        svc = _LegacyCurationService(dataset_path, dataset_name)
+        resolved_validators = existing.get("selected_validators") or selected_validators
+        resolved_overrides = existing.get("threshold_overrides") or threshold_overrides
+
+        async def _task() -> None:
+            await asyncio.to_thread(
+                svc.run_quality_batch,
+                resolved_validators,
+                remaining,
+                resolved_overrides,
+                None,
+                True,
+            )
+
+        self._register_workflow_task(dataset_path, "quality_validation", _task())
+        logger.info(
+            "Quality resume queued for dataset '{}' with {} remaining episodes",
+            dataset_name,
+            len(remaining),
+        )
+        return {"status": "started"}
+
+    async def start_prototype_run(
+        self,
+        dataset_path: Path,
+        dataset_name: str,
+        cluster_count: int | None,
+        candidate_limit: int,
+    ) -> dict[str, str]:
+        svc = _LegacyCurationService(dataset_path, dataset_name)
+
+        async def _task() -> None:
+            await asyncio.to_thread(
+                svc.run_prototype_discovery,
+                cluster_count,
+                candidate_limit,
+            )
+
+        self._register_workflow_task(dataset_path, "prototype_discovery", _task())
+        logger.info("Prototype run queued for dataset '{}'", dataset_name)
+        return {"status": "started"}
+
+    async def start_propagation_run(
+        self,
+        dataset_path: Path,
+        dataset_name: str,
+        source_episode_index: int,
+    ) -> dict[str, str]:
+        svc = _LegacyCurationService(dataset_path, dataset_name)
+
+        async def _task() -> None:
+            await asyncio.to_thread(
+                svc.run_semantic_propagation,
+                source_episode_index,
+            )
+
+        self._register_workflow_task(dataset_path, "annotation", _task())
+        logger.info(
+            "Propagation run queued for dataset '{}' from episode {}",
+            dataset_name,
+            source_episode_index,
+        )
+        return {"status": "started"}
+
+    # ------------------------------------------------------------------
+    # Query methods
+    # ------------------------------------------------------------------
+
+    def get_quality_results(self, dataset_path: Path) -> dict[str, Any]:
+        payload = serialize_quality_results(load_quality_results(dataset_path))
+        payload["working_parquet_path"] = str(workflow_quality_parquet_path(dataset_path))
+        payload["published_parquet_path"] = str(dataset_quality_parquet_path(dataset_path))
+        return payload
+
+    def get_prototype_results(self, dataset_path: Path) -> dict[str, Any]:
+        return serialize_prototype_results(load_prototype_results(dataset_path))
+
+    def get_propagation_results(self, dataset_path: Path) -> dict[str, Any]:
+        payload = serialize_propagation_results(load_propagation_results(dataset_path))
+        payload["published_parquet_path"] = str(dataset_text_annotations_parquet_path(dataset_path))
+        return payload
+
+    def get_workflow_state(self, dataset_path: Path) -> dict[str, Any]:
+        state = load_workflow_state(dataset_path)
+        return self.reconcile_stale_state(dataset_path, state)
+
+    def delete_quality_results(
+        self,
+        dataset: str,
+        dataset_path: Path,
+    ) -> dict[str, Any]:
+        state = load_workflow_state(dataset_path)
+        quality_stage = state["stages"]["quality_validation"]
+        if quality_stage.get("status") == "running":
+            raise ValueError("Quality validation is still running")
+
+        removed_paths: list[str] = []
+        for path in (
+            dataset_path / ".workflow" / "quality" / "latest.json",
+            workflow_quality_parquet_path(dataset_path),
+            dataset_quality_parquet_path(dataset_path),
+        ):
+            if not path.exists():
+                continue
+            path.unlink()
+            removed_paths.append(str(path))
+
+        quality_stage["status"] = "idle"
+        quality_stage["selected_validators"] = []
+        quality_stage["latest_run"] = None
+        quality_stage["pause_requested"] = False
+        quality_stage["summary"] = None
+        save_workflow_state(dataset_path, state)
+        logger.info("Deleted quality results for dataset '{}'", dataset)
+        return {"status": "deleted", "removed_paths": removed_paths}
+
+    def save_episode_annotations(
+        self,
+        dataset_path: Path,
+        episode_index: int,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        save_annotations(dataset_path, episode_index, data)
+        self._update_annotation_stage(dataset_path, episode_index)
+        saved = load_annotations(dataset_path, episode_index)
+        if saved is None:
+            raise RuntimeError("Annotation save did not persist")
+        return saved
+
+    def get_workspace_payload(
+        self,
+        dataset: str,
+        dataset_path: Path,
+        episode_index: int,
+    ) -> dict[str, Any]:
+        return build_workspace_payload(dataset, dataset_path, episode_index)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _update_annotation_stage(dataset_path: Path, episode_index: int) -> None:
+        state = load_workflow_state(dataset_path)
+        annotation_stage = state["stages"]["annotation"]
+        annotated_episodes = {
+            coerced
+            for value in annotation_stage.get("annotated_episodes", [])
+            if (coerced := coerce_int(value)) is not None
+        }
+        annotated_episodes.add(episode_index)
+        annotation_stage["annotated_episodes"] = sorted(annotated_episodes)
+        annotation_stage["summary"] = {
+            "annotated_count": len(annotation_stage["annotated_episodes"]),
+            "last_saved_episode_index": episode_index,
+        }
+        save_workflow_state(dataset_path, state)
+
+
+
+# ---------------------------------------------------------------------------
+# _LegacyCurationService — holds dataset_path/name for pipeline methods.
+# Used internally by CurationService orchestration methods and by existing
+# test code that constructs ``CurationService(dataset_path, name)``.
+# ---------------------------------------------------------------------------
+
+
+class _LegacyCurationService:
+    """Bound pipeline executor for a single dataset."""
 
     def __init__(self, dataset_path: Path, dataset_name: str | None = None):
         self.dataset_path = dataset_path
