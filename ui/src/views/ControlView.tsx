@@ -72,6 +72,9 @@ export default function ControlView() {
     return msg
   }
 
+  // Merged record/infer card
+  type OpMode = 'record' | 'infer'
+  const [mode, setMode] = useState<OpMode>('record')
   const [task, setTask] = useState('')
   const [numEp, setNumEp] = useState(10)
   const [episodeTime, setEpisodeTime] = useState(300)
@@ -80,11 +83,10 @@ export default function ControlView() {
   const [fps, setFps] = useState(30)
   const [useCameras, setUseCameras] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [inferCheckpoint, setInferCheckpoint] = useState('')
+  // Replay
   const [replayDataset, setReplayDataset] = useState('')
   const [replayEpisode, setReplayEpisode] = useState(0)
-  const [inferCheckpoint, setInferCheckpoint] = useState('')
-  const [inferEpisodeTime, setInferEpisodeTime] = useState(60)
-  const [inferEpisodes, setInferEpisodes] = useState(1)
 
   useEffect(() => {
     store.loadDatasets()
@@ -258,17 +260,52 @@ export default function ControlView() {
             )}
           </div>
 
-          {/* Recording */}
+          {/* Record / Infer — merged card with tab switch */}
           <div className="flex-1 min-w-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-3">
-            <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('recording')}</h3>
-            <input
-              value={task}
-              onChange={(e) => { setTask(e.target.value); setTaskError(false) }}
-              placeholder="Pick up the red block"
-              className={`w-full bg-sf2 border text-tx px-3 py-2 rounded-lg text-sm
-                focus:outline-none focus:border-ac focus:shadow-glow-ac placeholder:text-tx3 mb-3
-                ${taskError ? 'border-rd animate-shake' : 'border-bd'}`}
-            />
+            {/* Tab bar */}
+            <div className="flex gap-1.5 mb-3">
+              {(['record', 'infer'] as const).map((m) => {
+                const label = m === 'record' ? t('recording') : t('inference')
+                const active = mode === m
+                const locked = (m === 'record' && state === 'inferring') || (m === 'infer' && state === 'recording')
+                return (
+                  <button key={m} disabled={locked}
+                    onClick={() => setMode(m)}
+                    className={`px-3 py-1.5 text-xs rounded-md border transition-colors font-medium
+                      ${active ? 'border-ac bg-ac/5 text-ac ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'}
+                      ${locked ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Mode-specific input */}
+            {mode === 'record' ? (
+              <input
+                value={task}
+                onChange={(e) => { setTask(e.target.value); setTaskError(false) }}
+                placeholder="Pick up the red block"
+                className={`w-full bg-sf2 border text-tx px-3 py-2 rounded-lg text-sm
+                  focus:outline-none focus:border-ac focus:shadow-glow-ac placeholder:text-tx3 mb-3
+                  ${taskError ? 'border-rd animate-shake' : 'border-bd'}`}
+              />
+            ) : (
+              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono mb-3">
+                {t('selectCheckpoint')}
+                <select value={inferCheckpoint} onChange={(e) => setInferCheckpoint(e.target.value)}
+                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
+                  <option value="">--</option>
+                  {policies.map(p => (
+                    <option key={p.name} value={p.checkpoint}>
+                      {p.name}{p.steps ? ` (${p.steps} steps)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {/* Shared + mode-specific params */}
             <div className="flex gap-2 items-end flex-wrap">
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
                 {t('numEpisodes')}
@@ -280,11 +317,13 @@ export default function ControlView() {
                 <input type="number" value={episodeTime} onChange={(e) => setEpisodeTime(Number(e.target.value) || 300)} min={1}
                   className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
               </label>
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
-                {t('resetTime')}
-                <input type="number" value={resetTime} onChange={(e) => setResetTime(Number(e.target.value) || 10)} min={0}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-              </label>
+              {mode === 'record' && (
+                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
+                  {t('resetTime')}
+                  <input type="number" value={resetTime} onChange={(e) => setResetTime(Number(e.target.value) || 10)} min={0}
+                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
+                </label>
+              )}
             </div>
 
             {/* Collapsible advanced options */}
@@ -315,15 +354,17 @@ export default function ControlView() {
                       focus:outline-none focus:border-ac placeholder:text-tx3"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
-                  {t('fps')}
-                  <input
-                    type="number" value={fps}
-                    onChange={(e) => setFps(Number(e.target.value) || 30)} min={1} max={120}
-                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
-                      focus:outline-none focus:border-ac"
-                  />
-                </label>
+                {mode === 'record' && (
+                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
+                    {t('fps')}
+                    <input
+                      type="number" value={fps}
+                      onChange={(e) => setFps(Number(e.target.value) || 30)} min={1} max={120}
+                      className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
+                        focus:outline-none focus:border-ac"
+                    />
+                  </label>
+                )}
                 <label className="flex items-center gap-2 text-2xs text-tx3 font-mono cursor-pointer self-center pb-1.5">
                   <input
                     type="checkbox" checked={useCameras}
@@ -335,18 +376,33 @@ export default function ControlView() {
               </div>
             )}
 
-            <div className="flex gap-2 items-end flex-wrap">
-              <div className="flex gap-2 ml-auto">
-                <ActionBtn color="gn" disabled={!ok.recStart || !!loading} onClick={handleRecordStart}
-                  title={busy && state !== 'teleoperating' ? busyReason : undefined}>
-                  {loading === 'record' ? t('startingRecord') : t('startRecording')}
-                </ActionBtn>
-                <ActionBtn color="rd" disabled={!ok.recStop} onClick={store.doRecordStop}>
-                  {t('stopRecording')}
-                </ActionBtn>
-              </div>
+            {/* Action buttons */}
+            <div className="flex gap-2 justify-end">
+              {mode === 'record' ? (
+                <>
+                  <ActionBtn color="gn" disabled={!ok.recStart || !!loading} onClick={handleRecordStart}
+                    title={busy && state !== 'teleoperating' ? busyReason : undefined}>
+                    {loading === 'record' ? t('startingRecord') : t('startRecording')}
+                  </ActionBtn>
+                  <ActionBtn color="rd" disabled={!ok.recStop} onClick={store.doRecordStop}>
+                    {t('stopRecording')}
+                  </ActionBtn>
+                </>
+              ) : (
+                <>
+                  <ActionBtn color="ac" disabled={!ok.inferStart || !!loading || !inferCheckpoint}
+                    onClick={() => store.doInferStart({ checkpoint_path: inferCheckpoint, num_episodes: numEp, episode_time_s: episodeTime })}
+                    title={busy ? busyReason : undefined}>
+                    {loading === 'infer' ? t('startingInference') : t('startInference')}
+                  </ActionBtn>
+                  <ActionBtn color="yl" disabled={!ok.inferStop} onClick={store.doInferStop}>
+                    {t('stopInference')}
+                  </ActionBtn>
+                </>
+              )}
             </div>
 
+            {/* Recording progress */}
             {state === 'recording' && (
               <div className="mt-3 pt-3 border-t border-bd/40">
                 <div className="flex items-center justify-between text-xs mb-1.5">
@@ -385,49 +441,66 @@ export default function ControlView() {
                 </div>
               </div>
             )}
+
+            {/* Inference status */}
+            {state === 'preparing' && mode === 'infer' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-yl font-medium">
+                <span className="w-2 h-2 rounded-full bg-yl animate-pulse" />
+                {prepareStage || t('statePreparing')}
+              </div>
+            )}
+            {state === 'inferring' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-ac font-medium">
+                <span className="w-2 h-2 rounded-full bg-ac animate-pulse" />
+                {t('stateInferring')}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Second row: Replay + Inference */}
+        {/* Second row: Replay */}
         <div className="flex gap-3 max-[900px]:flex-col">
-          {/* Replay */}
-          <div className="w-[220px] max-[900px]:w-full shrink-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-4">
+          <div className="flex-1 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-4">
             <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('replay')}</h3>
-            <select
-              value={replayDataset}
-              onChange={(e) => { setReplayDataset(e.target.value); setReplayEpisode(0) }}
-              className="w-full bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm mb-2
-                focus:outline-none focus:border-ac"
-            >
-              <option value="">{t('selectDataset')}</option>
-              {datasets.filter(d => d.total_episodes && d.total_episodes > 0).map(d => (
-                <option key={d.name} value={d.name}>
-                  {d.name} ({d.total_episodes} ep)
-                </option>
-              ))}
-            </select>
-            {(() => {
-              const sel = datasets.find(d => d.name === replayDataset)
-              const maxEp = (sel?.total_episodes ?? 1) - 1
-              return (
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono mb-2">
-                  {t('episode')} {sel ? `(0-${maxEp})` : ''}
-                  <input type="number" value={replayEpisode}
-                    onChange={(e) => setReplayEpisode(Math.min(Number(e.target.value) || 0, maxEp))}
-                    min={0} max={maxEp}
-                    className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-                </label>
-              )
-            })()}
-            <div className="space-y-2">
-              <ActionBtn color="gn" disabled={!ok.replayStart || !replayDataset || !!loading}
-                onClick={() => store.doReplayStart({ dataset_name: replayDataset, episode: replayEpisode })}
-                title={busy ? busyReason : undefined}>
-                {loading === 'replay' ? t('startingReplay') : t('startReplay')}
-              </ActionBtn>
-              <ActionBtn color="yl" disabled={!ok.replayStop} onClick={store.doReplayStop}>
-                {t('stopReplay')}
-              </ActionBtn>
+            <div className="flex gap-2 items-end flex-wrap">
+              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1 min-w-[160px]">
+                {t('selectDataset')}
+                <select
+                  value={replayDataset}
+                  onChange={(e) => { setReplayDataset(e.target.value); setReplayEpisode(0) }}
+                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac"
+                >
+                  <option value="">--</option>
+                  {datasets.filter(d => d.total_episodes && d.total_episodes > 0).map(d => (
+                    <option key={d.name} value={d.name}>
+                      {d.name} ({d.total_episodes} ep)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(() => {
+                const sel = datasets.find(d => d.name === replayDataset)
+                const maxEp = (sel?.total_episodes ?? 1) - 1
+                return (
+                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[90px]">
+                    {t('episode')} {sel ? `(0-${maxEp})` : ''}
+                    <input type="number" value={replayEpisode}
+                      onChange={(e) => setReplayEpisode(Math.min(Number(e.target.value) || 0, maxEp))}
+                      min={0} max={maxEp}
+                      className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
+                  </label>
+                )
+              })()}
+              <div className="flex gap-2">
+                <ActionBtn color="gn" disabled={!ok.replayStart || !replayDataset || !!loading}
+                  onClick={() => store.doReplayStart({ dataset_name: replayDataset, episode: replayEpisode })}
+                  title={busy ? busyReason : undefined}>
+                  {loading === 'replay' ? t('startingReplay') : t('startReplay')}
+                </ActionBtn>
+                <ActionBtn color="yl" disabled={!ok.replayStop} onClick={store.doReplayStop}>
+                  {t('stopReplay')}
+                </ActionBtn>
+              </div>
             </div>
             {state === 'preparing' && owner === 'replaying' && (
               <div className="mt-2 flex items-center gap-2 text-xs text-yl font-medium">
@@ -439,57 +512,6 @@ export default function ControlView() {
               <div className="mt-2 flex items-center gap-2 text-xs text-gn font-medium">
                 <span className="w-2 h-2 rounded-full bg-gn animate-pulse" />
                 {t('stateReplaying')}
-              </div>
-            )}
-          </div>
-
-          {/* Inference */}
-          <div className="flex-1 min-w-0 bg-sf rounded-lg p-3.5 shadow-card animate-slide-up stagger-5">
-            <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('inference')}</h3>
-            <div className="flex gap-2 mb-2">
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1">
-                {t('selectCheckpoint')}
-                <select value={inferCheckpoint} onChange={(e) => setInferCheckpoint(e.target.value)}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm focus:outline-none focus:border-ac">
-                  <option value="">--</option>
-                  {policies.map(p => (
-                    <option key={p.name} value={p.checkpoint}>
-                      {p.name}{p.steps ? ` (${p.steps} steps)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
-                {t('epTime')}
-                <input type="number" value={inferEpisodeTime} onChange={(e) => setInferEpisodeTime(Number(e.target.value) || 60)} min={10}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-              </label>
-              <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
-                {t('numEpisodes')}
-                <input type="number" value={inferEpisodes} onChange={(e) => setInferEpisodes(Number(e.target.value) || 1)} min={1}
-                  className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <ActionBtn color="ac" disabled={!ok.inferStart || !!loading || !inferCheckpoint}
-                onClick={() => store.doInferStart({ checkpoint_path: inferCheckpoint, num_episodes: inferEpisodes, episode_time_s: inferEpisodeTime })}
-                title={busy ? busyReason : undefined}>
-                {loading === 'infer' ? t('startingInference') : t('startInference')}
-              </ActionBtn>
-              <ActionBtn color="yl" disabled={!ok.inferStop} onClick={store.doInferStop}>
-                {t('stopInference')}
-              </ActionBtn>
-            </div>
-            {state === 'preparing' && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-yl font-medium">
-                <span className="w-2 h-2 rounded-full bg-yl animate-pulse" />
-                {prepareStage || t('statePreparing')}
-              </div>
-            )}
-            {state === 'inferring' && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-ac font-medium">
-                <span className="w-2 h-2 rounded-full bg-ac animate-pulse" />
-                {t('stateInferring')}
               </div>
             )}
           </div>
