@@ -165,6 +165,7 @@ _TRAIN_LOG_RE = re.compile(
 )
 _MAX_CURVE_POINTS = 1000
 _TAIL_READ_BLOCK_BYTES = 65_536
+_MAX_CACHED_JOBS = 50
 _BEST_LOSS_BY_JOB: dict[str, dict[str, float | int]] = {}
 
 
@@ -217,6 +218,9 @@ def _parse_training_curve(job_id: str, log_path: Path) -> tuple[dict[str, float 
 
     points_list = list(points)
     if best is not None:
+        if len(_BEST_LOSS_BY_JOB) >= _MAX_CACHED_JOBS:
+            oldest = next(iter(_BEST_LOSS_BY_JOB))
+            del _BEST_LOSS_BY_JOB[oldest]
         _BEST_LOSS_BY_JOB[job_id] = best
 
     return best, points_list

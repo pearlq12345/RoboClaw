@@ -4,6 +4,7 @@ import { useDashboard, type SessionState } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
 import { CameraPreviewPanel } from '../components/CameraPreviewPanel'
 import { ServoPanel } from '../components/ServoPanel'
+import { LossCurvePanel } from '../components/LossCurvePanel'
 
 function canDo(state: SessionState, hwReady: boolean) {
   const canStart = state === 'idle' || state === 'error'
@@ -52,7 +53,7 @@ function ActionBtn({
 
 export default function ControlView() {
   const store = useDashboard()
-  const { session, datasets, loading, hardwareStatus: hwStatus, trainCurve } = store
+  const { session, datasets, loading, hardwareStatus: hwStatus } = store
   const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner } = session
   const hwReady = hwStatus?.ready ?? false
   const ok = canDo(state, hwReady)
@@ -72,7 +73,6 @@ export default function ControlView() {
   const [inferCheckpoint, setInferCheckpoint] = useState('')
   const [inferSourceDs, setInferSourceDs] = useState('')
   const [inferEpisodes, setInferEpisodes] = useState(1)
-  const [trainJobId, setTrainJobId] = useState('')
 
   useEffect(() => {
     store.loadDatasets()
@@ -87,24 +87,6 @@ export default function ControlView() {
     }, 5000)
     return () => clearInterval(pollInterval)
   }, [])
-
-  useEffect(() => {
-    const jobId = trainJobId.trim()
-    store.clearTrainCurve()
-    if (!jobId) {
-      return
-    }
-
-    store.fetchTrainCurve(jobId)
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        store.fetchTrainCurve(jobId)
-      }
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [trainJobId])
-
 
   const stateLabel: Record<string, string> = {
     preparing: t('hwInitializing'),
@@ -158,38 +140,6 @@ export default function ControlView() {
   const hwAccent = !hwStatus ? 'shadow-inset-ac' : hwStatus.ready ? 'shadow-inset-gn' : 'shadow-inset-yl'
   const camerasExist = hwStatus && hwStatus.cameras.length > 0 && hwStatus.cameras.some((c: any) => c.connected)
   const pct = targetEpisodes > 0 ? Math.round((savedEpisodes / targetEpisodes) * 100) : 0
-  const curvePoints = trainCurve?.points ?? []
-  const hasCurveData = curvePoints.length > 0
-  const latestEp = hasCurveData ? curvePoints[curvePoints.length - 1].ep : null
-  const xMin = hasCurveData ? Math.min(...curvePoints.map((point) => point.ep)) : 0
-  const xMax = hasCurveData ? Math.max(...curvePoints.map((point) => point.ep)) : 100
-  const rawYMin = hasCurveData ? Math.min(...curvePoints.map((point) => point.loss)) : 0.1
-  const rawYMax = hasCurveData ? Math.max(...curvePoints.map((point) => point.loss)) : 1
-  const yPadding = hasCurveData ? Math.max((rawYMax - rawYMin) * 0.15, 0.05) : 0
-  const yMin = hasCurveData ? Math.max(0, rawYMin - yPadding) : rawYMin
-  const yMax = hasCurveData ? rawYMax + yPadding : rawYMax
-  const xSpan = Math.max(xMax - xMin, 1)
-  const ySpan = Math.max(yMax - yMin, 0.1)
-  const yTicks = hasCurveData
-    ? Array.from({ length: 4 }, (_, index) => {
-      const ratio = 1 - (index / 3)
-      return (yMin + ySpan * ratio).toFixed(2)
-    })
-    : ['1.00', '0.70', '0.40', '0.10']
-  const xTicks = hasCurveData
-    ? Array.from({ length: 5 }, (_, index) => {
-      const ratio = index / 4
-      const tick = xMin + xSpan * ratio
-      return String(Math.round(tick))
-    })
-    : ['0', '25', '50', '75', '100']
-  const polylinePoints = hasCurveData
-    ? curvePoints.map((point) => {
-      const x = 8 + ((point.ep - xMin) / xSpan) * 84
-      const y = 88 - ((point.loss - yMin) / ySpan) * 74
-      return `${x.toFixed(2)},${y.toFixed(2)}`
-    }).join(' ')
-    : ''
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -512,8 +462,8 @@ export default function ControlView() {
           </div>
         </div>
 
-        {/* Bottom: Camera + Servo monitoring + Loss curve placeholder */}
-        <div className="grid grid-cols-3 gap-3 min-h-[240px] max-[1200px]:grid-cols-1">
+        {/* Bottom: Camera + Servo monitoring + Loss curve */}
+        <div className="grid grid-cols-3 gap-3 min-h-[240px] max-[1200px]:grid-cols-2 max-[900px]:grid-cols-1">
           {camerasExist ? (
             <CameraPreviewPanel cameras={hwStatus!.cameras} busy={busy} />
           ) : (
@@ -522,131 +472,7 @@ export default function ControlView() {
             </div>
           )}
           <ServoPanel state={state} />
-          <section className="bg-sf rounded-lg p-4 shadow-card flex flex-col animate-slide-up stagger-5">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest">{t('lossCurve')}</h3>
-              <div className="text-right text-[11px] font-mono text-tx3">
-                {hasCurveData ? (
-                  <>
-                    <div>{`${t('latestLoss')}: ${trainCurve?.last_loss?.toFixed(3)}`}</div>
-                    <div>{`${t('latestEpoch')}: ${latestEp}`}</div>
-                    <div className="mt-1">{`${t('bestLoss')}: ${trainCurve?.best_loss?.toFixed(3)}`}</div>
-                    <div>{`${t('bestEpoch')}: ${trainCurve?.best_ep}`}</div>
-                  </>
-                ) : (
-                  <div className="px-2 py-1 rounded-full bg-ac/10 text-ac font-semibold">Live</div>
-                )}
-              </div>
-            </div>
-            <label className="mt-3 flex flex-col gap-1 text-2xs text-tx3 font-mono">
-              {t('trainingId')}
-              <input
-                value={trainJobId}
-                onChange={(e) => setTrainJobId(e.target.value)}
-                placeholder={t('trainingIdPlaceholder')}
-                className="bg-sf2 border border-bd text-tx px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:border-ac placeholder:text-tx3"
-              />
-            </label>
-            <div className="mt-4 flex-1 min-h-[240px] rounded-xl border border-dashed border-bd2/80 bg-gradient-to-br from-sf2/80 via-white to-ac/5 p-4">
-              <div className="h-full flex gap-3">
-                <div className="w-8 shrink-0 flex items-center justify-center">
-                  <span className="text-xs font-mono uppercase tracking-[0.25em] text-tx3 [writing-mode:vertical-rl] rotate-180">
-                    {t('loss')}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0 flex flex-col">
-                  <div className="relative flex-1 rounded-lg border border-bd/60 bg-white/70 overflow-hidden">
-                    <div
-                      className="absolute inset-0 opacity-80"
-                      style={{
-                        backgroundImage: `
-                          linear-gradient(to right, rgba(156,163,175,0.18) 1px, transparent 1px),
-                          linear-gradient(to bottom, rgba(156,163,175,0.18) 1px, transparent 1px)
-                        `,
-                        backgroundSize: '20% 100%, 100% 25%',
-                      }}
-                    />
-                    <div className="absolute left-0 top-0 bottom-0 w-px bg-tx2/25" />
-                    <div className="absolute left-0 right-0 bottom-0 h-px bg-tx2/25" />
-                    <svg
-                      className="absolute inset-0 w-full h-full text-ac/70"
-                      viewBox="0 0 100 100"
-                      preserveAspectRatio="none"
-                      aria-hidden="true"
-                    >
-                      <defs>
-                        <linearGradient id="loss-placeholder-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="currentColor" stopOpacity="0.35" />
-                          <stop offset="100%" stopColor="currentColor" stopOpacity="0.9" />
-                        </linearGradient>
-                      </defs>
-                      <path
-                        d="M8 78 C18 65, 24 56, 34 54 S50 36, 60 40 S74 24, 92 18"
-                        fill="none"
-                        stroke="url(#loss-placeholder-gradient)"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        className={hasCurveData ? 'hidden' : ''}
-                      />
-                      {hasCurveData && (
-                        <>
-                          <polyline
-                            points={polylinePoints}
-                            fill="none"
-                            stroke="url(#loss-placeholder-gradient)"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </>
-                      )}
-                    </svg>
-                    {hasCurveData && curvePoints.map((point, index) => {
-                      const x = 8 + ((point.ep - xMin) / xSpan) * 84
-                      const y = 88 - ((point.loss - yMin) / ySpan) * 74
-                      return (
-                        <span
-                          key={`${point.ep}-${point.loss}-${index}`}
-                          className="absolute block w-[4px] h-[4px] rounded-full bg-ac/85 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
-                          style={{
-                            left: `${x}%`,
-                            top: `${y}%`,
-                            transform: 'translate(-50%, -50%)',
-                          }}
-                        />
-                      )
-                    })}
-                    {!hasCurveData && (
-                      <>
-                        <span className="absolute block w-[4px] h-[4px] rounded-full bg-ac/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]" style={{ left: '34%', top: '54%', transform: 'translate(-50%, -50%)' }} />
-                        <span className="absolute block w-[4px] h-[4px] rounded-full bg-ac/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]" style={{ left: '60%', top: '40%', transform: 'translate(-50%, -50%)' }} />
-                        <span className="absolute block w-[4px] h-[4px] rounded-full bg-ac/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]" style={{ left: '92%', top: '18%', transform: 'translate(-50%, -50%)' }} />
-                      </>
-                    )}
-                    {!hasCurveData && (
-                      <div className="absolute inset-x-0 bottom-5 text-center px-6">
-                        <div className="text-sm font-semibold text-tx">{t('lossCurve')}</div>
-                        <div className="mt-1 text-sm text-tx3">{t('lossCurvePlaceholder')}</div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 px-1 flex items-center justify-between text-[11px] font-mono text-tx3">
-                    {xTicks.map((tick) => (
-                      <span key={tick}>{tick}</span>
-                    ))}
-                  </div>
-                  <div className="mt-1 text-center text-xs font-mono uppercase tracking-[0.25em] text-tx3">
-                    {t('epoch')}
-                  </div>
-                </div>
-                <div className="w-8 shrink-0 flex flex-col justify-between text-[11px] font-mono text-tx3 py-1">
-                  {yTicks.map((tick) => (
-                    <span key={tick}>{tick}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
+          <LossCurvePanel />
         </div>
       </div>
     </div>

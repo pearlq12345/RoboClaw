@@ -44,7 +44,8 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
     @app.get("/api/train/curve/{job_id}")
     async def train_curve(job_id: str) -> dict[str, Any]:
         try:
-            return service.train.curve_data(
+            return await asyncio.to_thread(
+                service.train.curve_data,
                 manifest=service.manifest,
                 kwargs={"job_id": job_id},
                 tty_handoff=None,
