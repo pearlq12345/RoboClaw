@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from roboclaw.embodied.embodiment.hardware.discovery import HardwareDiscovery
 from roboclaw.embodied.embodiment.hardware.scan import (
+    _camera_probe_targets,
     _list_serial_ports,
     scan_serial_ports,
     serial_patterns_for_platform,
@@ -117,6 +118,13 @@ def test_scan_serial_ports_macos_only_returns_cu_devices() -> None:
 
     assert len(ports) == 1
     assert ports[0].dev == "/dev/cu.usbmodem123"
+
+
+def test_camera_probe_targets_macos_uses_index_range() -> None:
+    with patch("roboclaw.embodied.embodiment.hardware.scan.sys.platform", "darwin"):
+        targets = _camera_probe_targets()
+    assert targets[0] == (0, "0")
+    assert targets[-1] == (9, "9")
 
 
 def test_discovery_probes_directly_on_scanned_port() -> None:

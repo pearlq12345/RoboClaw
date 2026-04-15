@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
@@ -151,4 +152,23 @@ class TestCheckCameras:
         cams = [Binding.from_dict({"alias": "cam", "port": "", "width": 640, "height": 480}, "camera", {})]
         faults: list[HardwareFault] = []
         _check_cameras(cams, time.time(), faults, recording_active=False)
+        assert faults == []
+
+    def test_numeric_camera_index_is_treated_as_connected(self, monkeypatch):
+        class _FakeCap:
+            def isOpened(self) -> bool:
+                return True
+
+            def release(self) -> None:
+                return None
+
+        class _FakeCv2:
+            @staticmethod
+            def VideoCapture(_index: int) -> _FakeCap:
+                return _FakeCap()
+
+        monkeypatch.setitem(sys.modules, "cv2", _FakeCv2)
+        cam = self._camera_binding("0")
+        faults: list[HardwareFault] = []
+        _check_cameras([cam], time.time(), faults, recording_active=False)
         assert faults == []

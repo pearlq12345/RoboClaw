@@ -194,16 +194,32 @@ def capture_camera_frames(
 
 
 def _probe_cameras(cv2, by_path: dict, by_id: dict) -> list[VideoInterface]:
-    """Try opening each /dev/videoN, return one per physical USB device."""
+    """Probe camera sources and return one entry per physical USB device.
+
+    Linux: probe ``/dev/videoN`` interfaces.
+    macOS: probe integer camera indices (OpenCV backend).
+    """
     raw: list[VideoInterface] = []
+    for index, dev in _camera_probe_targets():
+        info = _try_open_camera(cv2, index, dev, by_path, by_id)
+        if info:
+            raw.append(info)
+    return _dedupe_by_usb_device(raw)
+
+
+def _camera_probe_targets() -> list[tuple[int, str]]:
+    """Return ``(index, label)`` probe targets for the current platform."""
+    if sys.platform == "darwin":
+        # macOS has no /dev/videoN nodes; OpenCV uses integer indices.
+        return [(idx, str(idx)) for idx in range(10)]
+
+    targets: list[tuple[int, str]] = []
     for dev in sorted(glob.glob("/dev/video*")):
         m = re.match(r"/dev/video(\d+)$", dev)
         if not m:
             continue
-        info = _try_open_camera(cv2, int(m.group(1)), dev, by_path, by_id)
-        if info:
-            raw.append(info)
-    return _dedupe_by_usb_device(raw)
+        targets.append((int(m.group(1)), dev))
+    return targets
 
 
 def _usb_device_key(by_path_str: str) -> str:
@@ -260,7 +276,7 @@ def _try_open_camera(cv2, index: int, dev: str, by_path: dict, by_id: dict) -> V
             return None
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        real = os.path.realpath(dev)
+        real = dev if dev.isdigit() else os.path.realpath(dev)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         cap.set(cv2.CAP_PROP_FPS, 30)
         fourcc = "MJPG" if cap.get(cv2.CAP_PROP_FPS) >= 30 else ""

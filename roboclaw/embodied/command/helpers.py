@@ -73,9 +73,10 @@ def resolve_cameras(cameras: list[Binding]) -> dict[str, dict[str, Any]]:
     for cam in cameras:
         if not cam.alias or not cam.port:
             continue
+        index_or_path: int | str = int(cam.port) if cam.port.isdigit() else cam.port
         config: dict[str, Any] = {
             "type": "opencv",
-            "index_or_path": cam.port,
+            "index_or_path": index_or_path,
             "width": cam.interface.width,
             "height": cam.interface.height,
             "fps": cam.interface.fps or 30,

@@ -90,11 +90,37 @@ def check_arm_status(arm: Binding) -> ArmStatus:
 def check_camera_status(cam: Binding) -> CameraStatus:
     """Check a single camera's connectivity."""
     alias = cam.alias
-    connected = bool(cam.port and Path(cam.port).exists())
+    connected = _camera_connected(cam.port)
     return CameraStatus(
         alias=alias, connected=connected,
         width=cam.interface.width, height=cam.interface.height,
     )
+
+
+def _camera_connected(port: str) -> bool:
+    """Return whether a configured camera target is reachable.
+
+    Supports both filesystem-style device paths (Linux ``/dev/video*``) and
+    numeric OpenCV camera indices used on macOS (``"0"``, ``"1"``, ...).
+    """
+    if not port:
+        return False
+
+    if Path(port).exists():
+        return True
+
+    if port.isdigit():
+        try:
+            import cv2
+        except ImportError:
+            return False
+        cap = cv2.VideoCapture(int(port))
+        try:
+            return bool(cap.isOpened())
+        finally:
+            cap.release()
+
+    return False
 
 
 def _fault_key(fault: HardwareFault) -> str:
@@ -228,4 +254,3 @@ def _check_cameras(
                 message=f"Camera '{status.alias}' device not found",
                 timestamp=now,
             ))
-

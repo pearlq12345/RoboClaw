@@ -642,6 +642,7 @@ def test_resolve_cameras_defaults_and_passthrough(tmp_path: Path) -> None:
             {"alias": "front", "port": "/dev/video0", "width": 640, "height": 480},
             {"alias": "side", "port": "/dev/video1", "width": 320, "height": 240, "fps": 15},
             {"alias": "dv20", "port": "/dev/video2", "width": 640, "height": 480, "fourcc": "MJPG"},
+            {"alias": "idx0", "port": "0", "width": 1280, "height": 720},
         ],
     }
     cameras = _resolve_cameras(_manifest_from_data(tmp_path, {**_MOCK_SETUP, **setup}).cameras)
@@ -650,6 +651,7 @@ def test_resolve_cameras_defaults_and_passthrough(tmp_path: Path) -> None:
     assert cameras["side"]["fps"] == 15
     assert cameras["dv20"]["fourcc"] == "MJPG"
     assert cameras["dv20"]["fps"] == 30
+    assert cameras["idx0"]["index_or_path"] == 0
 
 
 def test_dataset_path_appends_local_and_dataset_name(tmp_path: Path) -> None:
