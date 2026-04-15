@@ -101,13 +101,13 @@ def calibration_root(tmp_path: Path) -> Path:
         yield root
 
 
-def test_create_embodied_tools_returns_eight_groups() -> None:
+def test_create_embodied_tools_returns_ten_groups() -> None:
     tools = create_embodied_tools()
-    assert len(tools) == 8
+    assert len(tools) == 10
     names = {t.name for t in tools}
     assert names == {
         "setup", "doctor", "calibration", "teleop",
-        "record", "replay", "train", "infer",
+        "record", "replay", "train", "infer", "coordination", "hub",
     }
 
 
@@ -122,6 +122,7 @@ def test_create_embodied_tools_returns_eight_groups() -> None:
         ("replay", {"replay"}, {"arms", "dataset_name", "episode", "fps"}, {"checkpoint_path", "positions"}),
         ("train", {"train", "job_status", "list_datasets", "list_policies"}, {"dataset_name", "steps", "device", "job_id"}, {"positions", "port"}),
         ("infer", {"run_policy"}, {"arms", "dataset_name", "source_dataset", "checkpoint_path", "task", "num_episodes", "use_cameras"}, {"positions", "port"}),
+        ("coordination", {"decide_replan", "score_failure", "record_failure", "top_failures"}, {"uncertainty_score", "slow_threshold", "replan_threshold", "uncertainty_jump", "failure_severity", "recovery_gain", "context", "note", "limit"}, {"arms", "dataset_name", "checkpoint_path"}),
     ],
 )
 def test_tool_group_schemas(
@@ -262,6 +263,57 @@ async def test_infer_action(tmp_path: Path) -> None:
 
     argv = mock_runner.run.call_args[0][0]
     assert "--policy.path=/models/act" in argv
+
+
+@pytest.mark.asyncio
+async def test_coordination_decide_replan_action(tmp_path: Path) -> None:
+    tool = _find_tool(create_embodied_tools(), "coordination")
+    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    payload = json.loads(
+        await tool.execute(
+            action="decide_replan",
+            uncertainty_score=0.82,
+            slow_threshold=0.4,
+            replan_threshold=0.7,
+        )
+    )
+    assert payload["mode"] == "replan"
+    assert payload["should_replan"] is True
+
+
+@pytest.mark.asyncio
+async def test_coordination_record_and_top_failures(tmp_path: Path) -> None:
+    tool = _find_tool(create_embodied_tools(), "coordination")
+    manifest = _manifest_from_data(tmp_path, _MOCK_SETUP)
+    from roboclaw.embodied.service import EmbodiedService
+    tool.embodied_service = EmbodiedService(manifest=manifest)
+
+    first = json.loads(
+        await tool.execute(
+            action="record_failure",
+            context="bimanual_pick_place",
+            uncertainty_jump=0.7,
+            failure_severity=0.9,
+            recovery_gain=0.6,
+            note="slip near container edge",
+        )
+    )
+    assert first["context"] == "bimanual_pick_place"
+    assert first["salience"] > 0
+
+    top = json.loads(
+        await tool.execute(
+            action="top_failures",
+            context="bimanual_pick_place",
+            limit=1,
+        )
+    )
+    assert len(top) == 1
+    assert top[0]["context"] == "bimanual_pick_place"
+    assert top[0]["note"] == "slip near container edge"
 
 
 @pytest.mark.asyncio

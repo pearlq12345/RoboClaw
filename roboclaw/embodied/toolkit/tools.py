@@ -15,6 +15,7 @@ _RECORD_ACTIONS = ["record"]
 _REPLAY_ACTIONS = ["replay"]
 _TRAIN_ACTIONS = ["train", "job_status", "list_datasets", "list_policies"]
 _INFER_ACTIONS = ["run_policy"]
+_COORDINATION_ACTIONS = ["decide_replan", "score_failure", "record_failure", "top_failures"]
 _HUB_ACTIONS = ["push_dataset", "pull_dataset", "push_policy", "pull_policy"]
 _LANGUAGE_PROP = {"type": "string", "description": "User's language code (en, zh)."}
 
@@ -299,6 +300,58 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "coordination": {
+        "description": "Uncertainty-aware correction decisions and salient failure memory utilities.",
+        "actions": _COORDINATION_ACTIONS,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": _COORDINATION_ACTIONS,
+                    "description": "The coordination action to perform.",
+                },
+                "uncertainty_score": {
+                    "type": "number",
+                    "description": "Current uncertainty score in [0, 1].",
+                },
+                "slow_threshold": {
+                    "type": "number",
+                    "description": "Threshold for switching to slow_chunk mode.",
+                },
+                "replan_threshold": {
+                    "type": "number",
+                    "description": "Threshold for triggering replan mode.",
+                },
+                "uncertainty_jump": {
+                    "type": "number",
+                    "description": "Increase in uncertainty around a failure event, in [0, 1].",
+                },
+                "failure_severity": {
+                    "type": "number",
+                    "description": "Estimated failure severity in [0, 1].",
+                },
+                "recovery_gain": {
+                    "type": "number",
+                    "description": "Expected benefit if this failure is learned, in [0, 1].",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Task/scenario key (e.g. bimanual_pick_place).",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Optional note attached to a recorded failure.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of top failures to return.",
+                },
+            },
+            "required": ["action"],
+            "additionalProperties": False,
+        },
+    },
     "hub": {
         "description": "Upload/download datasets and policies to/from HuggingFace Hub.",
         "actions": _HUB_ACTIONS,
@@ -376,6 +429,8 @@ class EmbodiedToolGroup(Tool):
             return await self._execute_train(kwargs)
         if self._group_name == "infer":
             return await self._execute_infer(kwargs)
+        if self._group_name == "coordination":
+            return await self._execute_coordination(kwargs)
         if self._group_name == "hub":
             return await self._execute_hub(kwargs)
         return f"Unknown tool group: {self._group_name}"
@@ -445,6 +500,48 @@ class EmbodiedToolGroup(Tool):
             svc,
             lambda manifest: svc.infer.run_policy(manifest, kwargs, self._tty_handoff),
         )
+
+    async def _execute_coordination(self, kwargs: dict[str, Any]) -> str | list:
+        svc = _get_service(self.embodied_service)
+        action = kwargs["action"]
+        coordination = svc.coordination
+
+        try:
+            if action == "decide_replan":
+                payload = coordination.decide_replan(
+                    uncertainty_score=kwargs.get("uncertainty_score"),
+                    slow_threshold=kwargs.get("slow_threshold", 0.5),
+                    replan_threshold=kwargs.get("replan_threshold", 0.7),
+                )
+                return json.dumps(payload, ensure_ascii=False)
+
+            if action == "score_failure":
+                payload = {
+                    "salience": coordination.score_failure(
+                        uncertainty_jump=kwargs.get("uncertainty_jump"),
+                        failure_severity=kwargs.get("failure_severity"),
+                        recovery_gain=kwargs.get("recovery_gain"),
+                    )
+                }
+                return json.dumps(payload, ensure_ascii=False)
+
+            if action == "record_failure":
+                payload = coordination.record_failure(
+                    context=kwargs.get("context", "default"),
+                    uncertainty_jump=kwargs.get("uncertainty_jump"),
+                    failure_severity=kwargs.get("failure_severity"),
+                    recovery_gain=kwargs.get("recovery_gain"),
+                    note=kwargs.get("note", ""),
+                )
+                return json.dumps(payload, ensure_ascii=False)
+
+            payload = coordination.top_failures(
+                context=kwargs.get("context", "default"),
+                limit=int(kwargs.get("limit", 3)),
+            )
+            return json.dumps(payload, ensure_ascii=False)
+        except ValueError as exc:
+            return str(exc)
 
     async def _execute_hub(self, kwargs: dict[str, Any]) -> str | list:
         svc = _get_service(self.embodied_service)

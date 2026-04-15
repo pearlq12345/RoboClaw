@@ -17,6 +17,7 @@ from roboclaw.embodied.embodiment.lock import EmbodimentBusyError, EmbodimentFil
 from roboclaw.embodied.embodiment.manifest import Manifest
 from roboclaw.embodied.embodiment.manifest.binding import Binding
 from roboclaw.embodied.service.hub import HubService
+from roboclaw.embodied.service.coordination import CoordinationService
 from roboclaw.embodied.service.session import (
     InferSession, RecordSession, ReplaySession, Session,
     TeleopSession, TrainSession,
@@ -86,6 +87,7 @@ class EmbodiedService:
         self.infer = InferSession(self)
         self.hub = HubService(self)
         self.doctor = DoctorService(self)
+        self.coordination = CoordinationService()
 
         for session in (self.teleop, self.record, self.replay, self.infer):
             session._exit_callback = self._on_session_exit
