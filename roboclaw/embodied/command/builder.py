@@ -15,6 +15,7 @@ from roboclaw.embodied.command.helpers import (
     dataset_path,
     group_arms,
     logs_dir,
+    resolve_bimanual_pair,
     resolve_action_arms,
     resolve_cameras,
     validate_dataset_name,
@@ -189,11 +190,13 @@ def _robot_argv(
         if cameras:
             args.extend(_camera_args(resolve_cameras(cameras)))
     else:
+        left_follower, right_follower = resolve_bimanual_pair(followers, "followers")
         family = _bimanual_family(followers[0].type_name)
         bi_follower, bi_leader = _BIMANUAL[family]
-        args.extend(_bimanual_args("robot", followers[0], followers[1], bi_follower, cameras))
+        args.extend(_bimanual_args("robot", left_follower, right_follower, bi_follower, cameras))
         if leaders:
-            args.extend(_bimanual_args("teleop", leaders[0], leaders[1], bi_leader))
+            left_leader, right_leader = resolve_bimanual_pair(leaders, "leaders")
+            args.extend(_bimanual_args("teleop", left_leader, right_leader, bi_leader))
     return args
 
 

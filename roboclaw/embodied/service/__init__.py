@@ -9,6 +9,7 @@ from typing import Any
 from roboclaw.embodied.board import Board, Command, SessionState
 from roboclaw.embodied.board.board import IDLE_STATE
 from roboclaw.embodied.command import CommandBuilder, group_arms
+from roboclaw.embodied.command.helpers import ActionError, resolve_bimanual_pair
 from roboclaw.embodied.embodiment.hardware.monitor import (
     ArmStatus, CameraStatus, HardwareMonitor,
     check_arm_status, check_camera_status,
@@ -47,6 +48,12 @@ def _compute_readiness(
             missing.append(f"Camera '{status.alias}' is disconnected")
     followers = grouped["followers"]
     leaders = grouped["leaders"]
+    for role, role_arms in (("followers", followers), ("leaders", leaders)):
+        if len(role_arms) == 2:
+            try:
+                resolve_bimanual_pair(role_arms, role)
+            except ActionError as exc:
+                missing.append(str(exc))
     if followers and leaders and len(followers) != len(leaders):
         missing.append(f"Follower/leader count mismatch: {len(followers)} vs {len(leaders)}")
     return len(missing) == 0, missing
@@ -280,10 +287,10 @@ class EmbodiedService:
             reason = self.board.state.get("state", "") if active else self._embodiment_owner
             raise EmbodimentBusyError(f"Cannot modify config while busy: {reason}")
 
-    def bind_arm(self, alias: str, arm_type: str, interface: Any) -> Binding:
+    def bind_arm(self, alias: str, arm_type: str, interface: Any, side: str = "") -> Binding:
         with self._lock:
             self._require_not_busy()
-            return self.manifest.set_arm(alias, arm_type, interface)
+            return self.manifest.set_arm(alias, arm_type, interface, side=side)
 
     def unbind_arm(self, alias: str) -> None:
         with self._lock:

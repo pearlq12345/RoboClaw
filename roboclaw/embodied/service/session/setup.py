@@ -45,7 +45,7 @@ class Assignment:
     spec_name: str  # e.g. "so101_follower", "inspire_rh56", "opencv"
     interface: Interface
     slave_id: int = 0  # hand-specific, set during assign if needed
-    side: str = ""    # camera-specific: "left" or "right"
+    side: str = ""    # device side: left/right for bimanual, empty for single-arm
 
 
 class SetupSession:
@@ -220,6 +220,7 @@ class SetupSession:
 
         For cameras, ``side`` is "left"/"right" for a bimanual robot or "" for
         single-arm. When non-empty the alias must start with ``{side}_``.
+        For arms, ``side`` is optional for single-arm and required for bimanual.
         """
         if self._phase not in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
             raise RuntimeError(f"Cannot assign in {self._phase} phase.")
@@ -241,6 +242,12 @@ class SetupSession:
                 raise ValueError(
                     f"Camera alias '{alias}' must start with '{side}_'."
                 )
+        else:
+            from roboclaw.embodied.embodiment.arm.registry import all_arm_types
+            from roboclaw.embodied.embodiment.manifest.binding import validate_arm_side
+
+            if spec_name in all_arm_types():
+                validate_arm_side(side, alias)
         assignment = Assignment(
             alias=alias, spec_name=spec_name, interface=interface, side=side,
         )
@@ -270,6 +277,7 @@ class SetupSession:
         if self._phase == SetupPhase.IDENTIFYING:
             self.stop_motion_detection()
         manifest = self._parent.manifest
+        self._validate_arm_sides_before_commit(manifest)
         for a in self._assignments:
             self._commit_one(manifest, a)
         count = len(self._assignments)
@@ -292,6 +300,7 @@ class SetupSession:
                     "alias": a.alias,
                     "spec_name": a.spec_name,
                     "interface_stable_id": a.interface.stable_id,
+                    "side": a.side,
                 }
                 for a in self._assignments
             ],
@@ -752,7 +761,9 @@ class SetupSession:
         from roboclaw.embodied.embodiment.hand.registry import all_hand_types
 
         if assignment.spec_name in all_arm_types():
-            manifest.set_arm(assignment.alias, assignment.spec_name, assignment.interface)
+            manifest.set_arm(
+                assignment.alias, assignment.spec_name, assignment.interface, side=assignment.side,
+            )
         elif assignment.spec_name in all_hand_types():
             manifest.set_hand(
                 assignment.alias, assignment.spec_name,
@@ -765,4 +776,26 @@ class SetupSession:
         else:
             raise ValueError(f"Unknown spec type: {assignment.spec_name}")
 
+    def _validate_arm_sides_before_commit(self, manifest: Any) -> None:
+        """Reject ambiguous bimanual arm assignments before writing manifest."""
+        from roboclaw.embodied.embodiment.arm.registry import all_arm_types
 
+        existing_arms = list(manifest.arms)
+        pending_arms = [
+            assignment for assignment in self._assignments
+            if assignment.spec_name in all_arm_types()
+        ]
+        roles: dict[str, list[str]] = {
+            "followers": [arm.side for arm in existing_arms if arm.is_follower],
+            "leaders": [arm.side for arm in existing_arms if arm.is_leader],
+        }
+        for assignment in pending_arms:
+            if "follower" in assignment.spec_name:
+                roles["followers"].append(assignment.side)
+            elif "leader" in assignment.spec_name:
+                roles["leaders"].append(assignment.side)
+        for role, sides in roles.items():
+            if len(sides) == 2 and set(sides) != {"left", "right"}:
+                raise ValueError(
+                    f"Bimanual {role} require one 'left' arm and one 'right' arm before commit."
+                )

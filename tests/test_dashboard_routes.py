@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch, PropertyMock
 
 import pytest
@@ -9,6 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from roboclaw.embodied.service import EmbodiedService
+from roboclaw.embodied.embodiment.interface.video import VideoInterface
+from roboclaw.http.routes import hardware as hardware_routes
 from roboclaw.http.routes import register_all_routes
 
 
@@ -97,6 +100,41 @@ class TestHardwareStatus:
         assert "ready" in data
         assert "arms" in data
         assert "cameras" in data
+
+    def test_hardware_previews_return_alias_keyed_urls(self, client, app):
+        app.state.embodied_service.bind_camera("top", VideoInterface(dev="/dev/video0"))
+        with patch(
+            "roboclaw.http.routes.hardware.capture_named_camera_frames",
+            return_value=[
+                {
+                    "alias": "top",
+                    "preview_key": "00-top",
+                    "image_path": "/tmp/roboclaw-camera-previews/hardware/00-top.jpg",
+                },
+            ],
+        ):
+            resp = client.post("/api/hardware/previews")
+
+        assert resp.status_code == 200
+        assert resp.json() == [
+            {
+                "alias": "top",
+                "preview_key": "00-top",
+                "image_path": "/tmp/roboclaw-camera-previews/hardware/00-top.jpg",
+                "preview_url": "/api/hardware/previews/by-key/00-top",
+            },
+        ]
+
+    def test_hardware_preview_image_lookup_uses_exact_key(self, client, tmp_path: Path):
+        hardware_routes.HARDWARE_PREVIEW_DIR = tmp_path
+        (tmp_path / "00-top.jpg").write_bytes(b"jpeg-data")
+        (tmp_path / "00-stale.jpg").write_bytes(b"stale-data")
+
+        resp = client.get("/api/hardware/previews/by-key/00-top")
+
+        assert resp.status_code == 200
+        assert resp.content == b"jpeg-data"
+        assert resp.headers["cache-control"] == "no-store"
 
 
 # ---------------------------------------------------------------------------

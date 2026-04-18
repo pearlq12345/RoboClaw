@@ -18,7 +18,7 @@ class ActionError(RuntimeError):
 def group_arms(arms: list[Binding]) -> dict[str, list[Binding]]:
     """Split arms into followers and leaders.
 
-    For bimanual (2 arms per role), sort by alias so left_* < right_*.
+    For bimanual arms with explicit sides, keep left before right.
     """
     grouped: dict[str, list[Binding]] = {"followers": [], "leaders": []}
     for arm in arms:
@@ -27,9 +27,27 @@ def group_arms(arms: list[Binding]) -> dict[str, list[Binding]]:
         elif arm.is_leader:
             grouped["leaders"].append(arm)
     for role in ("followers", "leaders"):
-        if len(grouped[role]) == 2:
-            grouped[role].sort(key=lambda a: (0 if "left" in a.alias else 1))
+        if len(grouped[role]) == 2 and {arm.side for arm in grouped[role]} == {"left", "right"}:
+            grouped[role].sort(key=lambda arm: 0 if arm.side == "left" else 1)
     return grouped
+
+
+def resolve_bimanual_pair(arms: list[Binding], role: str) -> tuple[Binding, Binding]:
+    """Return the left/right pair for a bimanual role."""
+    if len(arms) != 2:
+        raise ActionError(
+            f"Bimanual {role} requires exactly 2 arms, got {len(arms)}."
+        )
+    sides = {arm.side for arm in arms}
+    if sides != {"left", "right"}:
+        aliases = [arm.alias for arm in arms]
+        raise ActionError(
+            f"Bimanual {role} must include one 'left' arm and one 'right' arm; "
+            f"got aliases {aliases} with sides {[arm.side for arm in arms]}."
+        )
+    left = next(arm for arm in arms if arm.side == "left")
+    right = next(arm for arm in arms if arm.side == "right")
+    return left, right
 
 
 def validate_dataset_name(name: str) -> None:

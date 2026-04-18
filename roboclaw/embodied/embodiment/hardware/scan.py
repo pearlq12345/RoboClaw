@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import hashlib
 import os
 import re
 import subprocess
@@ -174,6 +175,38 @@ def capture_camera_frames(
     scanned_cameras: list[VideoInterface], output_dir: str | Path,
 ) -> list[dict[str, str]]:
     """Capture one JPEG preview for each scanned camera."""
+    entries: list[dict[str, str | VideoInterface]] = []
+    for index, camera in enumerate(scanned_cameras):
+        identity = camera.stable_id or camera.address or camera.dev or f"camera-{index}"
+        entries.append({
+            "camera": camera,
+            "stable_id": camera.stable_id,
+            "label": camera.label,
+            "preview_key": _build_preview_key(identity, index),
+        })
+    return _capture_preview_entries(entries, output_dir)
+
+
+def capture_named_camera_frames(
+    cameras: list[tuple[str, VideoInterface]], output_dir: str | Path,
+) -> list[dict[str, str]]:
+    """Capture one JPEG preview for each named camera."""
+    entries: list[dict[str, str | VideoInterface]] = []
+    for index, (alias, camera) in enumerate(cameras):
+        entries.append({
+            "camera": camera,
+            "alias": alias,
+            "stable_id": camera.stable_id,
+            "label": alias,
+            "preview_key": _build_preview_key(alias, index),
+        })
+    return _capture_preview_entries(entries, output_dir)
+
+
+def _capture_preview_entries(
+    entries: list[dict[str, str | VideoInterface]], output_dir: str | Path,
+) -> list[dict[str, str]]:
+    """Capture preview frames for camera entries with deterministic file keys."""
     try:
         import cv2
     except ImportError as exc:
@@ -182,15 +215,39 @@ def capture_camera_frames(
     previews: list[dict[str, str]] = []
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+    _clear_preview_directory(target_dir)
     saved = suppress_stderr()
     try:
-        for index, camera in enumerate(scanned_cameras):
-            preview = _capture_camera_frame(cv2, camera, target_dir, index)
+        for entry in entries:
+            camera = entry["camera"]
+            assert isinstance(camera, VideoInterface)
+            preview_key = str(entry["preview_key"])
+            preview = _capture_camera_frame(cv2, camera, target_dir, preview_key)
             if preview is not None:
+                alias = str(entry.get("alias", ""))
+                stable_id = str(entry.get("stable_id", ""))
+                label = str(entry.get("label", camera.label))
+                preview["camera"] = label
+                if alias:
+                    preview["alias"] = alias
+                if stable_id:
+                    preview["stable_id"] = stable_id
                 previews.append(preview)
         return previews
     finally:
         restore_stderr(saved)
+
+
+def _clear_preview_directory(target_dir: Path) -> None:
+    """Remove stale preview files before writing a fresh capture batch."""
+    for image_path in target_dir.glob("*.jpg"):
+        image_path.unlink(missing_ok=True)
+
+
+def _build_preview_key(identity: str, index: int) -> str:
+    """Build a deterministic filesystem-safe preview key."""
+    digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:12]
+    return f"{index:02d}-{digest}"
 
 
 def _probe_cameras(cv2, by_path: dict, by_id: dict) -> list[VideoInterface]:
@@ -279,10 +336,9 @@ def _try_open_camera(cv2, index: int, dev: str, by_path: dict, by_id: dict) -> V
 
 
 def _capture_camera_frame(
-    cv2, camera: VideoInterface, output_dir: Path, index: int,
+    cv2, camera: VideoInterface, output_dir: Path, preview_key: str,
 ) -> dict[str, str] | None:
     source = camera.address
-    label = source
     if not source:
         return None
 
@@ -296,12 +352,12 @@ def _capture_camera_frame(
             ok, frame = cap.read()
         if not ok or frame is None:
             return None
-        image_path = output_dir / f"{index:02d}_{Path(label).name}.jpg"
+        image_path = output_dir / f"{preview_key}.jpg"
         if not cv2.imwrite(str(image_path), frame):
             raise RuntimeError(f"Failed to write camera preview to {image_path}")
         return {
-            "camera": label,
             "image_path": str(image_path),
+            "preview_key": preview_key,
         }
     finally:
         cap.release()

@@ -15,7 +15,7 @@ from roboclaw.embodied.embodiment.hand.registry import all_hand_types, get_hand_
 # ── Constants ──────────────────────────────────────────────────────────
 
 _ARM_TYPES = all_arm_types()
-_ARM_FIELDS = {"alias", "type", "port", "calibration_dir", "calibrated"}
+_ARM_FIELDS = {"alias", "type", "port", "calibration_dir", "calibrated", "side"}
 _HAND_TYPES = all_hand_types()
 _HAND_FIELDS = {"alias", "type", "port", "slave_id"}
 _CAMERA_FIELDS = {"alias", "side", "port", "width", "height", "fps", "fourcc"}
@@ -148,6 +148,19 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
 
 def _validate_arms(arms: Any) -> None:
     _validate_device_list(arms, _ARM_FIELDS, _ARM_TYPES, "Arm")
+    from roboclaw.embodied.embodiment.manifest.binding import validate_arm_side
+
+    followers: list[dict[str, Any]] = []
+    leaders: list[dict[str, Any]] = []
+    for arm in arms:
+        validate_arm_side(arm.get("side", ""), arm.get("alias", ""))
+        arm_type = arm.get("type", "")
+        if "follower" in arm_type:
+            followers.append(arm)
+        elif "leader" in arm_type:
+            leaders.append(arm)
+    _validate_bimanual_arm_sides(followers, "followers")
+    _validate_bimanual_arm_sides(leaders, "leaders")
 
 
 def _validate_hands(hands: Any) -> None:
@@ -187,6 +200,19 @@ def _validate_device_list(
         item_type = item.get("type")
         if item_type is not None and item_type not in allowed_types:
             raise ValueError(f"{label} '{alias}' has invalid type '{item_type}'.")
+
+
+def _validate_bimanual_arm_sides(arms: list[dict[str, Any]], role: str) -> None:
+    """Require explicit left/right sides when a role has two arms configured."""
+    if len(arms) != 2:
+        return
+    sides = [arm.get("side", "") for arm in arms]
+    if set(sides) != {"left", "right"}:
+        aliases = [arm.get("alias", "<unknown>") for arm in arms]
+        raise ValueError(
+            f"Bimanual {role} must include one 'left' arm and one 'right' arm; "
+            f"got aliases {aliases} with sides {sides}."
+        )
 
 
 def _ensure_unique_port(arms: list[dict], alias: str, port: str) -> None:
@@ -274,11 +300,23 @@ def refresh_bimanual_cal_dirs(manifest: dict[str, Any]) -> None:
     leaders = [a for a in arms if "leader" in a.get("type", "")]
     try:
         if len(followers) == 2:
-            ensure_bimanual_cal_dir(followers[0], followers[1], "followers")
+            left, right = _pair_arms_by_side(followers, "followers")
+            ensure_bimanual_cal_dir(left, right, "followers")
         if len(leaders) == 2:
-            ensure_bimanual_cal_dir(leaders[0], leaders[1], "leaders")
+            left, right = _pair_arms_by_side(leaders, "leaders")
+            ensure_bimanual_cal_dir(left, right, "leaders")
     except Exception:
         logger.opt(exception=True).warning("Failed to refresh bimanual calibration dirs")
+
+
+def _pair_arms_by_side(
+    arms: list[dict[str, Any]], role: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return (left, right) arms for a bimanual role."""
+    _validate_bimanual_arm_sides(arms, role)
+    left = next(arm for arm in arms if arm.get("side") == "left")
+    right = next(arm for arm in arms if arm.get("side") == "right")
+    return left, right
 
 
 # ── Hand probing ──────────────────────────────────────────────────────
@@ -326,10 +364,12 @@ def ensure_manifest(path: Path | None = None) -> "Manifest":
     return manifest
 
 
-def set_arm(alias: str, arm_type: str, port: str, *, path: Path | None = None) -> dict[str, Any]:
+def set_arm(
+    alias: str, arm_type: str, port: str, *, side: str = "", path: Path | None = None,
+) -> dict[str, Any]:
     interface = _resolve_serial_interface(port)
     m = _lazy_manifest(path)
-    m.set_arm(alias, arm_type, interface)
+    m.set_arm(alias, arm_type, interface, side=side)
     return m.snapshot
 
 

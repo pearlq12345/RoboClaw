@@ -29,7 +29,13 @@ from roboclaw.embodied.embodiment.manifest.helpers import (
     set_camera,
     set_hand,
 )
-from roboclaw.embodied.command.helpers import dataset_path, group_arms, resolve_action_arms as _resolve_arms
+from roboclaw.embodied.command.helpers import (
+    ActionError,
+    dataset_path,
+    group_arms,
+    resolve_action_arms as _resolve_arms,
+    resolve_bimanual_pair,
+)
 from roboclaw.embodied.embodiment.interface.serial import SerialInterface
 from roboclaw.embodied.embodiment.interface.video import VideoInterface
 from roboclaw.embodied.command.helpers import resolve_cameras as _resolve_cameras
@@ -342,6 +348,12 @@ def test_set_arm(manifest_file: Path, calibration_root: Path) -> None:
     assert find_arm(load_manifest(manifest_file)["arms"], "my_follower") == arm
 
 
+def test_set_arm_stores_side(manifest_file: Path) -> None:
+    with std_patch("roboclaw.embodied.embodiment.hardware.scan.scan_serial_ports", return_value=_MOCK_SCANNED_PORTS):
+        result = set_arm("left_follower", "so101_follower", "/dev/ttyACM0", side="left", path=manifest_file)
+    assert find_arm(result["arms"], "left_follower")["side"] == "left"
+
+
 def test_set_arm_replaces_existing(manifest_file: Path) -> None:
     with std_patch("roboclaw.embodied.embodiment.hardware.scan.scan_serial_ports", return_value=_MOCK_SCANNED_PORTS):
         set_arm("my_arm", "so101_follower", "/dev/ttyACM0", path=manifest_file)
@@ -355,6 +367,15 @@ def test_set_arm_rejects_duplicate_port(manifest_file: Path) -> None:
         set_arm("left_arm", "so101_follower", "/dev/ttyACM0", path=manifest_file)
         with pytest.raises(ValueError, match="already assigned"):
             set_arm("right_arm", "so101_leader", "/dev/ttyACM0", path=manifest_file)
+
+
+def test_set_arm_rejects_ambiguous_bimanual_and_rolls_back(manifest_file: Path) -> None:
+    with std_patch("roboclaw.embodied.embodiment.hardware.scan.scan_serial_ports", return_value=_MOCK_SCANNED_PORTS):
+        set_arm("arm_a", "so101_follower", "/dev/ttyACM0", side="left", path=manifest_file)
+        with pytest.raises(ValueError, match="one 'left' arm and one 'right' arm"):
+            set_arm("arm_b", "so101_follower", "/dev/ttyACM1", path=manifest_file)
+    arms = load_manifest(manifest_file)["arms"]
+    assert [arm["alias"] for arm in arms] == ["arm_a"]
 
 
 def test_set_arm_resolves_volatile_port(manifest_file: Path) -> None:
@@ -502,6 +523,16 @@ def test_validation_rejects_bad_arm_type(manifest_file: Path) -> None:
         save_manifest(bad, manifest_file)
 
 
+def test_validation_rejects_bimanual_followers_without_distinct_sides(manifest_file: Path) -> None:
+    bad = load_manifest(manifest_file)
+    bad["arms"] = [
+        {"alias": "arm_a", "type": "so101_follower", "port": "/dev/a", "side": "left"},
+        {"alias": "arm_b", "type": "so101_follower", "port": "/dev/b"},
+    ]
+    with pytest.raises(ValueError, match="one 'left' arm and one 'right' arm"):
+        save_manifest(bad, manifest_file)
+
+
 def test_arm_display_name() -> None:
     assert arm_display_name({"alias": "right"}) == "right"
     assert arm_display_name({}) == "unnamed"
@@ -545,6 +576,57 @@ def test_group_arms(tmp_path: Path) -> None:
     )
     assert [arm.alias for arm in grouped["followers"]] == ["right_follower"]
     assert [arm.alias for arm in grouped["leaders"]] == ["left_leader"]
+
+
+def test_group_arms_uses_explicit_side_for_bimanual(tmp_path: Path) -> None:
+    manifest = {
+        **_MOCK_SETUP,
+        "arms": [
+            {
+                "alias": "arm_b_follower",
+                "type": "so101_follower",
+                "port": _FOLLOWER_PORT,
+                "calibration_dir": "/cal/right",
+                "calibrated": False,
+                "side": "right",
+            },
+            {
+                "alias": "arm_a_follower",
+                "type": "so101_follower",
+                "port": _LEADER_PORT,
+                "calibration_dir": "/cal/left",
+                "calibrated": False,
+                "side": "left",
+            },
+        ],
+    }
+    grouped = group_arms(_manifest_from_data(tmp_path, manifest).arms)
+    assert [arm.side for arm in grouped["followers"]] == ["left", "right"]
+
+
+def test_resolve_bimanual_pair_rejects_missing_side(tmp_path: Path) -> None:
+    manifest = {
+        **_MOCK_SETUP,
+        "arms": [
+            {
+                "alias": "follower_a",
+                "type": "so101_follower",
+                "port": _FOLLOWER_PORT,
+                "calibration_dir": "/cal/a",
+                "calibrated": False,
+            },
+            {
+                "alias": "follower_b",
+                "type": "so101_follower",
+                "port": _LEADER_PORT,
+                "calibration_dir": "/cal/b",
+                "calibrated": False,
+            },
+        ],
+    }
+    followers = _manifest_from_data(tmp_path, manifest).arms
+    with pytest.raises(ActionError, match="one 'left' arm and one 'right' arm"):
+        resolve_bimanual_pair(followers, "followers")
 
 
 # ── Serial number extraction test ────────────────────────────────────

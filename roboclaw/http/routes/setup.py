@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+SETUP_PREVIEW_DIR = Path("/tmp/roboclaw-camera-previews/setup")
+
 
 class ScanRequest(BaseModel):
     model: str = ""
@@ -83,24 +85,35 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
     async def setup_camera_previews() -> list[dict]:
         from roboclaw.embodied.service import EmbodimentBusyError
 
-        output_dir = str(Path("/tmp/roboclaw-camera-previews"))
+        output_dir = str(SETUP_PREVIEW_DIR)
         try:
-            return await asyncio.to_thread(
+            previews = await asyncio.to_thread(
                 service.setup.capture_previews, output_dir,
             )
+            return [
+                {
+                    **preview,
+                    "preview_url": f"/api/setup/previews/by-key/{preview['preview_key']}",
+                }
+                for preview in previews
+            ]
         except EmbodimentBusyError:
             raise
         except RuntimeError as exc:
             raise HTTPException(400, str(exc)) from exc
 
-    @app.get("/api/setup/previews/{index}")
-    async def setup_camera_preview_image(index: int):
+    @app.get("/api/setup/previews/by-key/{preview_key}")
+    async def setup_camera_preview_image(preview_key: str):
         from fastapi.responses import FileResponse
 
-        preview_dir = Path("/tmp/roboclaw-camera-previews")
-        for f in preview_dir.glob(f"{index:02d}_*.jpg"):
-            return FileResponse(str(f), media_type="image/jpeg")
-        raise HTTPException(404, f"Preview not found for camera index {index}")
+        preview_path = SETUP_PREVIEW_DIR / f"{preview_key}.jpg"
+        if preview_path.exists():
+            return FileResponse(
+                str(preview_path),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "no-store"},
+            )
+        raise HTTPException(404, f"Preview not found for key {preview_key}")
 
     @app.post("/api/setup/motion/start")
     async def motion_start() -> dict[str, Any]:

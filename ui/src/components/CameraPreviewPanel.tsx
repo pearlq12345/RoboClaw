@@ -3,7 +3,7 @@ import { useI18n } from '../controllers/i18n'
 import { postJson } from '../controllers/api'
 
 export function CameraPreviewPanel({ cameras, busy }: { cameras: any[]; busy: boolean }) {
-  const [previews, setPreviews] = useState<Record<number, string>>({})
+  const [previews, setPreviews] = useState<Record<string, string>>({})
   const [capturing, setCapturing] = useState(false)
   const { t } = useI18n()
 
@@ -11,15 +11,20 @@ export function CameraPreviewPanel({ cameras, busy }: { cameras: any[]; busy: bo
     if (busy || capturing) return
     setCapturing(true)
     try {
-      await postJson('/api/setup/previews')
+      const data = await postJson('/api/hardware/previews')
       const ts = Date.now()
-      const map: Record<number, string> = {}
-      cameras.forEach((_: any, i: number) => {
-        map[i] = `/api/setup/previews/${i}?t=${ts}`
+      const map: Record<string, string> = {}
+      data.forEach((preview: any) => {
+        if (preview.alias && preview.preview_url) {
+          map[preview.alias] = `${preview.preview_url}?t=${ts}`
+        }
       })
       setPreviews(map)
-    } catch { /* network failure is visible via empty preview */ }
-    setCapturing(false)
+    } catch {
+      setPreviews({})
+    } finally {
+      setCapturing(false)
+    }
   }, [busy, capturing, cameras])
 
   return (
@@ -36,13 +41,19 @@ export function CameraPreviewPanel({ cameras, busy }: { cameras: any[]; busy: bo
       </div>
       {Object.keys(previews).length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {cameras.filter((c: any) => c.connected).map((_: any, i: number) => (
-            <div key={i} className="flex-1 min-w-[180px] max-w-[360px] relative rounded-lg overflow-hidden border border-bd/30">
-              <img
-                src={previews[i] || ''}
-                alt={`Camera ${i}`}
-                className="w-full aspect-video object-contain bg-tx/5"
-              />
+          {cameras.filter((c: any) => c.connected).map((camera: any) => (
+            <div key={camera.alias} className="flex-1 min-w-[180px] max-w-[360px] relative rounded-lg overflow-hidden border border-bd/30">
+              {previews[camera.alias] ? (
+                <img
+                  src={previews[camera.alias]}
+                  alt={camera.alias}
+                  className="w-full aspect-video object-contain bg-tx/5"
+                />
+              ) : (
+                <div className="w-full aspect-video bg-tx/5 flex items-center justify-center text-sm text-tx3">
+                  {t('noCameraFeed')}
+                </div>
+              )}
             </div>
           ))}
         </div>

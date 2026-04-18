@@ -244,12 +244,15 @@ class Manifest:
     # ── Write methods ─────────────────────────────────────────────────
 
     def set_arm(
-        self, alias: str, arm_type: str, interface: SerialInterface,
+        self, alias: str, arm_type: str, interface: SerialInterface, side: str = "",
     ) -> Binding:
+        from roboclaw.embodied.embodiment.manifest.binding import validate_arm_side
+
         if arm_type not in _ARM_TYPES:
             raise ValueError(f"Invalid arm_type '{arm_type}'. Must be one of {_ARM_TYPES}.")
         if not alias:
             raise ValueError("Arm alias is required.")
+        validate_arm_side(side, alias)
         port = interface.address
         if not port:
             raise ValueError("Arm interface has no usable address.")
@@ -259,6 +262,7 @@ class Manifest:
         _migrate_none_calibration_file(calibration_dir, serial)
 
         with self._lock:
+            existing = self._bindings.get(alias)
             for binding in self._bindings.values():
                 if binding.kind != "arm":
                     continue
@@ -272,11 +276,19 @@ class Manifest:
                 guard=self._guard_for_binding(interface),
                 calibration_dir=str(calibration_dir),
                 calibrated=_has_calibration_file(calibration_dir, serial),
+                side=side,
                 _kind="arm",
                 _type_name=arm_type,
             )
             self._store_binding(binding)
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                if existing is None:
+                    self._bindings.pop(alias, None)
+                else:
+                    self._bindings[alias] = existing
+                raise
 
         self._emit("arm_added", alias)
         return binding
@@ -311,12 +323,18 @@ class Manifest:
                 calibration_dir=arm.calibration_dir,
                 calibrated=arm.calibrated,
                 slave_id=arm.slave_id,
+                side=arm.side,
                 _kind=arm.kind,
                 _type_name=arm.type_name,
             )
             del self._bindings[old_alias]
             self._bindings[new_alias] = renamed
-            self._persist()
+            try:
+                self._persist()
+            except Exception:
+                del self._bindings[new_alias]
+                self._bindings[old_alias] = arm
+                raise
             result = self._snapshot_unlocked()
 
         self._emit("arm_renamed", new_alias)
@@ -325,7 +343,7 @@ class Manifest:
     def mark_arm_calibrated(self, alias: str) -> dict[str, Any]:
         with self._lock:
             arm = self._require_binding(alias, "arm")
-            self._bindings[alias] = Binding(
+            updated = Binding(
                 alias=arm.alias,
                 spec=arm.spec,
                 interface=arm.interface,
@@ -333,10 +351,16 @@ class Manifest:
                 calibration_dir=arm.calibration_dir,
                 calibrated=True,
                 slave_id=arm.slave_id,
+                side=arm.side,
                 _kind=arm.kind,
                 _type_name=arm.type_name,
             )
-            self._persist()
+            self._bindings[alias] = updated
+            try:
+                self._persist()
+            except Exception:
+                self._bindings[alias] = arm
+                raise
             result = self._snapshot_unlocked()
 
         refresh_bimanual_cal_dirs(result)

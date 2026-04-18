@@ -15,14 +15,22 @@ from roboclaw.embodied.embodiment.interface.video import VideoInterface
 _VALID_SIDES = ("left", "right")
 
 
-def validate_camera_side(side: str, alias: str = "") -> None:
+def validate_side(side: str, alias: str = "", *, kind: str) -> None:
     """Raise ValueError if *side* is not '', 'left', or 'right'."""
     if side and side not in _VALID_SIDES:
-        label = f" for camera {alias!r}" if alias else ""
+        label = f" for {kind} {alias!r}" if alias else ""
         raise ValueError(
-            f"Invalid camera side {side!r}{label}; "
+            f"Invalid {kind} side {side!r}{label}; "
             "expected 'left', 'right', or empty (single arm)."
         )
+
+
+def validate_camera_side(side: str, alias: str = "") -> None:
+    validate_side(side, alias, kind="camera")
+
+
+def validate_arm_side(side: str, alias: str = "") -> None:
+    validate_side(side, alias, kind="arm")
 
 
 @dataclass
@@ -94,13 +102,16 @@ class Binding:
                 "slave_id": self.slave_id,
             }
         # Arm
-        return {
+        data = {
             "alias": self.alias,
             "type": self.type_name,
             "port": self.interface.address,
             "calibration_dir": self.calibration_dir,
             "calibrated": self.calibrated,
         }
+        if self.side:
+            data["side"] = self.side
+        return data
 
     def _camera_dict(self) -> dict[str, Any]:
         """Serialize camera binding."""
@@ -146,6 +157,8 @@ class Binding:
         cls, data: dict[str, Any], guards: dict[str, InterfaceGuard],
     ) -> Binding:
         arm_type = data["type"]
+        side = data.get("side", "")
+        validate_arm_side(side, data.get("alias", ""))
         interface = SerialInterface(
             by_id=data.get("port", ""),
             dev=data.get("dev", ""),
@@ -157,6 +170,7 @@ class Binding:
             guard=guard,
             calibration_dir=data.get("calibration_dir", ""),
             calibrated=data.get("calibrated", False),
+            side=side,
             _kind="arm",
             _type_name=arm_type,
         )

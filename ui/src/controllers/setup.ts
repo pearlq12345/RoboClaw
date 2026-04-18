@@ -264,14 +264,28 @@ export const useSetup = create<SetupStore>((set, get) => ({
 
   doCapturePreview: async () => {
     try {
-      await postJson(`${SETUP}/previews`)
+      const previews = await postJson(`${SETUP}/previews`)
+      const ts = Date.now()
+      const previewByStableId = new Map<string, string>()
+      ;(previews || []).forEach((preview: any) => {
+        if (preview.stable_id && preview.preview_url) {
+          previewByStableId.set(preview.stable_id, `${preview.preview_url}?t=${ts}`)
+        }
+      })
       set((s) => ({
         scannedCameras: s.scannedCameras.map((c) => ({
           ...c,
-          preview_url: `${SETUP}/previews/${c.index}?t=${Date.now()}`,
+          preview_url: previewByStableId.get(c.stable_id) ?? null,
         })),
       }))
-    } catch { /* ignore */ }
+    } catch {
+      set((s) => ({
+        scannedCameras: s.scannedCameras.map((c) => ({
+          ...c,
+          preview_url: null,
+        })),
+      }))
+    }
   },
 
   // -- Motion detection -------------------------------------------------------

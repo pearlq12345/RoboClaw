@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 from roboclaw.embodied.embodiment.interface.serial import SerialInterface
 from roboclaw.embodied.embodiment.interface.video import VideoInterface
 from roboclaw.embodied.embodiment.manifest import Manifest
+from roboclaw.http.routes import setup as setup_routes
 from roboclaw.http.routes.setup import register_setup_routes
 
 
@@ -115,6 +117,46 @@ def test_scan_returns_ports_and_cameras() -> None:
     assert len(data["ports"]) == 1
     assert data["ports"][0]["motor_ids"] == [1, 2, 3, 4, 5, 6]
     assert len(data["cameras"]) == 1
+
+
+def test_setup_previews_return_keyed_urls() -> None:
+    app = _make_app()
+    client = TestClient(app)
+    svc = app.state.embodied_service
+    svc.setup.capture_previews = MagicMock(return_value=[
+        {
+            "stable_id": "/dev/v4l/by-path/cam0",
+            "preview_key": "00-preview",
+            "image_path": "/tmp/roboclaw-camera-previews/setup/00-preview.jpg",
+        },
+    ])
+
+    resp = client.post("/api/setup/previews")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data == [
+        {
+            "stable_id": "/dev/v4l/by-path/cam0",
+            "preview_key": "00-preview",
+            "image_path": "/tmp/roboclaw-camera-previews/setup/00-preview.jpg",
+            "preview_url": "/api/setup/previews/by-key/00-preview",
+        },
+    ]
+
+
+def test_setup_preview_image_lookup_uses_exact_key(tmp_path: Path) -> None:
+    app = _make_app()
+    client = TestClient(app)
+    setup_routes.SETUP_PREVIEW_DIR = tmp_path
+    (tmp_path / "00-preview.jpg").write_bytes(b"jpeg-data")
+    (tmp_path / "00-stale.jpg").write_bytes(b"stale-data")
+
+    resp = client.get("/api/setup/previews/by-key/00-preview")
+
+    assert resp.status_code == 200
+    assert resp.content == b"jpeg-data"
+    assert resp.headers["cache-control"] == "no-store"
 
 
 def test_motion_start_after_scan() -> None:
