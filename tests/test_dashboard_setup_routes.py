@@ -29,6 +29,7 @@ _RAW_PORTS = [
         by_path="/dev/serial/by-path/pci-0:2.1",
         by_id="/dev/serial/by-id/usb-ABC-if00",
         dev="/dev/ttyACM0",
+        motor_ids=(1, 2, 3, 4, 5, 6),
     ),
 ]
 
@@ -290,6 +291,24 @@ def test_device_rename_and_remove_routes(tmp_path: Path) -> None:
     assert remove.status_code == 200
     assert remove.json() == {"status": "removed", "alias": "front"}
     assert devices.json()["cameras"] == []
+
+def test_setup_session_returns_busy_fields(tmp_path: Path) -> None:
+    app = _make_app(tmp_path, session_busy=True)
+    client = TestClient(app)
+    resp = client.get("/api/setup/session")
+    assert resp.status_code == 200
+    assert resp.json()["busy"] is True
+    assert resp.json()["busy_reason"] == "recording"
+
+
+def test_setup_reset_calls_service_reset(tmp_path: Path) -> None:
+    app = _make_app(tmp_path)
+    client = TestClient(app)
+    with patch.object(app.state.embodied_service.setup, "reset") as reset:
+        resp = client.post("/api/setup/session/reset")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "reset"}
+    reset.assert_called_once_with()
 
 
 def test_scan_returns_409_when_recording(tmp_path: Path) -> None:

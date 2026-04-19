@@ -428,7 +428,13 @@ class EmbodiedToolGroup(Tool):
         svc = _get_service(self.embodied_service)
         return await _run_with_service(
             svc,
-            lambda manifest: svc.replay.replay(manifest, kwargs, self._tty_handoff),
+            lambda _: svc.run_replay(
+                dataset_name=kwargs.get("dataset_name", "default"),
+                episode=kwargs.get("episode", 0),
+                fps=kwargs.get("fps", 30),
+                arms=kwargs.get("arms", ""),
+                tty_handoff=self._tty_handoff,
+            ),
         )
 
     async def _execute_train(self, kwargs: dict[str, Any]) -> str | list:
@@ -443,7 +449,17 @@ class EmbodiedToolGroup(Tool):
         svc = _get_service(self.embodied_service)
         return await _run_with_service(
             svc,
-            lambda manifest: svc.infer.run_policy(manifest, kwargs, self._tty_handoff),
+            lambda _: svc.run_inference(
+                checkpoint_path=kwargs.get("checkpoint_path", ""),
+                source_dataset=kwargs.get("source_dataset", ""),
+                dataset_name=kwargs.get("dataset_name", ""),
+                task=kwargs.get("task", "eval"),
+                num_episodes=kwargs.get("num_episodes", 1),
+                episode_time_s=kwargs.get("episode_time_s", 60),
+                arms=kwargs.get("arms", ""),
+                use_cameras=kwargs.get("use_cameras", True),
+                tty_handoff=self._tty_handoff,
+            ),
         )
 
     async def _execute_hub(self, kwargs: dict[str, Any]) -> str | list:

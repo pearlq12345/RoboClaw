@@ -107,21 +107,27 @@ class EmbodiedService:
     @property
     def busy(self) -> bool:
         with self._lock:
-            active = self._active_session is not None and self._active_session.busy
-            return active or self._embodiment_owner != ""
+            busy, _ = self._busy_state_unlocked()
+            return busy
 
     @property
     def busy_reason(self) -> str:
         with self._lock:
-            if self._active_session and self._active_session.busy:
-                return self.board.state.get("state", "unknown")
-            return self._embodiment_owner
+            _, reason = self._busy_state_unlocked(default_reason="unknown")
+            return reason
+
+    def _busy_state_unlocked(self, default_reason: str = "") -> tuple[bool, str]:
+        """Return (busy, reason) using the active session's state or the owner string."""
+        if self._active_session is not None and self._active_session.busy:
+            return True, self.board.state.get("state", default_reason)
+        if self._embodiment_owner:
+            return True, self._embodiment_owner
+        return False, ""
 
     def acquire_embodiment(self, owner: str) -> None:
         with self._lock:
-            active = self._active_session is not None and self._active_session.busy
-            if active or self._embodiment_owner:
-                reason = self.board.state.get("state", "") if active else self._embodiment_owner
+            busy, reason = self._busy_state_unlocked()
+            if busy:
                 raise EmbodimentBusyError(f"Embodiment busy: {reason}")
             self._file_lock.acquire_exclusive(owner)  # cross-process
             self._embodiment_owner = owner
@@ -150,18 +156,66 @@ class EmbodiedService:
     def clear_logs(self) -> None:
         self.board.clear_logs()
 
-    def _on_session_exit(self) -> None:
-        """Called when a subprocess exits unexpectedly (not via stop())."""
-        self.release_embodiment()
-        self._active_session = None
+    def _clear_recording_tracking(self, session: Session | None) -> None:
+        if session is self.record or (session is None and self._recording_started):
+            self._recording_started = False
+            if self._monitor is not None:
+                self._monitor.set_recording_active(False)
+
+    def _finish_managed_session(self, session: Session | None, owner: str = "") -> None:
+        """Clear service session bookkeeping and release embodiment ownership."""
+        with self._lock:
+            if session is None or self._active_session is session:
+                self._active_session = None
+        self._clear_recording_tracking(session)
+        self.release_embodiment(owner)
+
+    def _on_session_exit(self, session: Session) -> None:
+        """Called when a subprocess exits naturally (not via stop())."""
+        self._finish_managed_session(session)
+
+    async def _start_managed_session(
+        self,
+        session: Session,
+        *,
+        owner: str,
+        argv: list[str],
+    ) -> None:
+        self.acquire_embodiment(owner)
+        self._active_session = session
+        try:
+            await session.start(argv)
+        except Exception:
+            self._finish_managed_session(session, owner)
+            raise
+
+    async def _run_managed_session(
+        self,
+        session: Session,
+        *,
+        owner: str,
+        argv: list[str],
+        tty_handoff: Any | None = None,
+    ) -> str:
+        await self._start_managed_session(session, owner=owner, argv=argv)
+        if tty_handoff:
+            from roboclaw.embodied.toolkit.tty import TtySession
+
+            try:
+                return await TtySession(tty_handoff).run(session)
+            finally:
+                self._finish_managed_session(session, owner)
+        try:
+            await session.wait()
+            return session.result()
+        finally:
+            self._finish_managed_session(session, owner)
 
     # -- Operations (Web entry points) --
 
     async def start_teleop(self, *, fps: int = 30, arms: str = "") -> None:
-        self.acquire_embodiment("teleop")
         argv = CommandBuilder.teleop(self.manifest, fps=fps, arms=arms)
-        self._active_session = self.teleop
-        await self.teleop.start(argv)
+        await self._start_managed_session(self.teleop, owner="teleop", argv=argv)
 
     async def start_recording(
         self,
@@ -185,9 +239,7 @@ class EmbodiedService:
             use_cameras=use_cameras,
             arms=arms,
         )
-        self.acquire_embodiment("recording")
-        self._active_session = self.record
-        await self.record.start(argv)
+        await self._start_managed_session(self.record, owner="recording", argv=argv)
         await self.board.update(target_episodes=num_episodes, dataset=dataset_name)
         self._recording_started = True
         if self._monitor is not None:
@@ -200,48 +252,92 @@ class EmbodiedService:
         dataset_name: str = "default",
         episode: int = 0,
         fps: int = 30,
+        arms: str = "",
     ) -> None:
         argv = CommandBuilder.replay(
-            self.manifest, dataset_name=dataset_name, episode=episode, fps=fps,
+            self.manifest, dataset_name=dataset_name, episode=episode, fps=fps, arms=arms,
         )
-        self.acquire_embodiment("replaying")
-        self._active_session = self.replay
-        await self.replay.start(argv)
+        await self._start_managed_session(self.replay, owner="replaying", argv=argv)
 
     async def start_inference(
         self,
         *,
         checkpoint_path: str = "",
+        source_dataset: str = "",
         dataset_name: str = "",
         task: str = "eval",
         num_episodes: int = 1,
         episode_time_s: int = 60,
+        arms: str = "",
+        use_cameras: bool = True,
     ) -> None:
         argv = CommandBuilder.infer(
             self.manifest,
             checkpoint_path=checkpoint_path,
+            source_dataset=source_dataset,
             dataset_name=dataset_name,
             task=task,
             num_episodes=num_episodes,
             episode_time_s=episode_time_s,
+            arms=arms,
+            use_cameras=use_cameras,
         )
-        self.acquire_embodiment("inferring")
-        self._active_session = self.infer
-        await self.infer.start(argv)
+        await self._start_managed_session(self.infer, owner="inferring", argv=argv)
+
+    async def run_replay(
+        self,
+        *,
+        dataset_name: str = "default",
+        episode: int = 0,
+        fps: int = 30,
+        arms: str = "",
+        tty_handoff: Any | None = None,
+    ) -> str:
+        argv = CommandBuilder.replay(
+            self.manifest, dataset_name=dataset_name, episode=episode, fps=fps, arms=arms,
+        )
+        return await self._run_managed_session(
+            self.replay, owner="replaying", argv=argv, tty_handoff=tty_handoff,
+        )
+
+    async def run_inference(
+        self,
+        *,
+        checkpoint_path: str = "",
+        source_dataset: str = "",
+        dataset_name: str = "",
+        task: str = "eval",
+        num_episodes: int = 1,
+        episode_time_s: int = 60,
+        arms: str = "",
+        use_cameras: bool = True,
+        tty_handoff: Any | None = None,
+    ) -> str:
+        argv = CommandBuilder.infer(
+            self.manifest,
+            checkpoint_path=checkpoint_path,
+            source_dataset=source_dataset,
+            dataset_name=dataset_name,
+            task=task,
+            num_episodes=num_episodes,
+            episode_time_s=episode_time_s,
+            arms=arms,
+            use_cameras=use_cameras,
+        )
+        return await self._run_managed_session(
+            self.infer, owner="inferring", argv=argv, tty_handoff=tty_handoff,
+        )
 
     async def dismiss_error(self) -> None:
         """Clear error state and release embodiment lock so user can retry."""
-        self._on_session_exit()
+        self._finish_managed_session(self._active_session)
         await self.board.update(**IDLE_STATE)
 
     async def stop(self) -> None:
-        if self._active_session:
-            await self._active_session.stop()
-            self.release_embodiment()
-            if self._recording_started:
-                self._recording_started = False
-                if self._monitor is not None:
-                    self._monitor.set_recording_active(False)
+        session = self._active_session
+        if session:
+            await session.stop()
+            self._finish_managed_session(session)
 
     async def save_episode(self) -> None:
         if self._active_session:
@@ -282,9 +378,8 @@ class EmbodiedService:
     # -- Manifest mutations (kept identical) --
 
     def _require_not_busy(self) -> None:
-        active = self._active_session is not None and self._active_session.busy
-        if active or self._embodiment_owner:
-            reason = self.board.state.get("state", "") if active else self._embodiment_owner
+        busy, reason = self._busy_state_unlocked()
+        if busy:
             raise EmbodimentBusyError(f"Cannot modify config while busy: {reason}")
 
     def bind_arm(self, alias: str, arm_type: str, interface: Any, side: str = "") -> Binding:

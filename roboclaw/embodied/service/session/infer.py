@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from roboclaw.embodied.board import Board, OutputConsumer, SessionState
-from roboclaw.embodied.command import CommandBuilder
 from roboclaw.embodied.service.session.base import Session
 
 if TYPE_CHECKING:
-    from roboclaw.embodied.embodiment.manifest import Manifest
     from roboclaw.embodied.service import EmbodiedService
 
 
@@ -57,36 +55,14 @@ class InferOutputConsumer(OutputConsumer):
 class InferSession(Session):
     """Policy inference session.
 
-    CLI entry: run_policy(manifest, kwargs, tty_handoff)
     Web entry: EmbodiedService.start_inference() -> start(argv)
     """
 
     def __init__(self, parent: EmbodiedService) -> None:
         super().__init__(board=parent.board, manifest=parent.manifest)
-        self._parent = parent
 
     def _make_output_consumer(self, board: Board, stdout: asyncio.StreamReader) -> OutputConsumer:
         return InferOutputConsumer(board, stdout)
-
-    # ── CLI entry point ──────────────────────────────────────────────────
-
-    async def run_policy(
-        self,
-        manifest: Manifest,
-        kwargs: dict[str, Any],
-        tty_handoff: Any,
-    ) -> str:
-        self._parent.acquire_embodiment("inferring")
-        try:
-            argv = CommandBuilder.infer(manifest, **_filter_infer_kwargs(kwargs))
-            await self.start(argv)
-            if tty_handoff:
-                from roboclaw.embodied.toolkit.tty import TtySession
-
-                return await TtySession(tty_handoff).run(self)
-            return "Inference started."
-        finally:
-            self._parent.release_embodiment()
 
     # ── CLI protocol ─────────────────────────────────────────────────────
 
@@ -112,16 +88,3 @@ class InferSession(Session):
         if s.get("error"):
             return f"Inference failed: {s['error']}"
         return "Inference finished."
-
-
-# ── Private helpers ──────────────────────────────────────────────────────
-
-_INFER_KEYS = frozenset({
-    "checkpoint_path", "dataset_name",
-    "task", "num_episodes", "episode_time_s", "arms", "use_cameras",
-})
-
-
-def _filter_infer_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Extract only the kwargs that CommandBuilder.infer accepts."""
-    return {k: v for k, v in kwargs.items() if k in _INFER_KEYS}

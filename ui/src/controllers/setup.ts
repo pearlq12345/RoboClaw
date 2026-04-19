@@ -85,6 +85,30 @@ export interface PermissionStatus {
   hint?: string
 }
 
+type SetupPhase = 'idle' | 'discovering' | 'assigning' | 'identifying' | 'committed'
+
+interface SetupCandidate {
+  stable_id: string
+  interface_type: string
+  label?: string
+  by_id?: string
+  by_path?: string
+  dev?: string
+  motor_ids?: number[]
+  width?: number
+  height?: number
+}
+
+interface SetupSessionPayload {
+  phase: SetupPhase
+  model: string
+  candidates: SetupCandidate[]
+  assignments: Assignment[]
+  unassigned: string[]
+  busy: boolean
+  busy_reason: string
+}
+
 interface SetupStore {
   // Catalog
   catalog: Catalog | null
@@ -99,6 +123,10 @@ interface SetupStore {
   // Wizard state
   wizardActive: boolean
   wizardStep: WizardStep
+  wizardRequested: boolean
+  sessionPhase: SetupPhase
+  busy: boolean
+  busyReason: string
   selectedCategory: string
   selectedModel: string
   startWizard: () => void
@@ -142,12 +170,139 @@ interface SetupStore {
 
 let motionTimer: ReturnType<typeof setInterval> | null = null
 
+function clearMotionTimer(): void {
+  if (!motionTimer) {
+    return
+  }
+  clearInterval(motionTimer)
+  motionTimer = null
+}
+
+function syncMotionTimer(phase: SetupPhase, pollMotion: () => Promise<void>): void {
+  if (phase !== 'identifying') {
+    clearMotionTimer()
+    return
+  }
+  if (motionTimer) {
+    return
+  }
+  motionTimer = window.setInterval(() => {
+    void pollMotion()
+  }, 300)
+}
+
+function isSessionActive(session: SetupSessionPayload): boolean {
+  return (
+    session.phase !== 'idle'
+    || session.assignments.length > 0
+    || session.candidates.length > 0
+  )
+}
+
+function deriveWizardStep(
+  currentStep: WizardStep,
+  session: SetupSessionPayload,
+): WizardStep {
+  if (session.phase === 'identifying') {
+    return 'identify'
+  }
+  if (
+    session.phase === 'committed'
+    || (session.assignments.length > 0 && session.unassigned.length === 0)
+  ) {
+    return 'review'
+  }
+  if (session.phase === 'assigning' || session.phase === 'discovering') {
+    if (currentStep === 'identify') {
+      return 'identify'
+    }
+    if (currentStep === 'review' && session.unassigned.length > 0) {
+      return 'identify'
+    }
+    return session.candidates.length > 0 ? 'scan' : 'select'
+  }
+  return 'select'
+}
+
+interface ClearableState {
+  sessionPhase: SetupPhase
+  busy: boolean
+  assignments: Assignment[]
+  scannedPorts: ScannedPort[]
+  scannedCameras: ScannedCamera[]
+}
+
+function isSessionCleared(state: ClearableState): boolean {
+  return (
+    state.sessionPhase === 'idle'
+    && !state.busy
+    && state.assignments.length === 0
+    && state.scannedPorts.length === 0
+    && state.scannedCameras.length === 0
+  )
+}
+
+const CLEARED_WIZARD_STATE = {
+  wizardRequested: false,
+  wizardActive: false,
+  wizardStep: 'select' as WizardStep,
+  selectedCategory: '',
+  selectedModel: '',
+}
+
+function buildScannedPorts(
+  candidates: SetupCandidate[],
+  currentPorts: ScannedPort[],
+): ScannedPort[] {
+  return candidates
+    .filter((candidate) => candidate.interface_type === 'serial')
+    .map((candidate) => {
+      const existing = currentPorts.find((port) => port.stable_id === candidate.stable_id)
+      return {
+        stable_id: candidate.stable_id || candidate.by_id || candidate.dev || '',
+        label: candidate.label || candidate.dev || '?',
+        by_id: candidate.by_id || '',
+        by_path: candidate.by_path || '',
+        dev: candidate.dev || '',
+        motor_ids: candidate.motor_ids || [],
+        delta: existing?.delta ?? 0,
+        moved: existing?.moved ?? false,
+      }
+    })
+}
+
+function buildScannedCameras(
+  candidates: SetupCandidate[],
+  currentCameras: ScannedCamera[],
+): ScannedCamera[] {
+  return candidates
+    .filter((candidate) => candidate.interface_type === 'video')
+    .map((candidate, index) => {
+      const existing = currentCameras.find((camera) => camera.stable_id === candidate.stable_id)
+      return {
+        stable_id: candidate.stable_id || candidate.by_path || candidate.by_id || candidate.dev || '',
+        label: candidate.label || candidate.dev || '?',
+        index,
+        by_path: candidate.by_path || '',
+        by_id: candidate.by_id || '',
+        dev: candidate.dev || '',
+        width: candidate.width || 640,
+        height: candidate.height || 480,
+        preview_url: existing?.preview_url ?? null,
+      }
+    })
+}
+
 export const useSetup = create<SetupStore>((set, get) => ({
   catalog: null,
   permissions: null,
   permFixing: false,
   wizardActive: false,
   wizardStep: 'select' as WizardStep,
+  wizardRequested: false,
+  sessionPhase: 'idle',
+  busy: false,
+  busyReason: '',
   selectedCategory: '',
   selectedModel: '',
   scanning: false,
@@ -163,9 +318,10 @@ export const useSetup = create<SetupStore>((set, get) => ({
   checkPermissions: async () => {
     try {
       const data: PermissionStatus = await api(`${SETUP}/permissions`)
-      set({ permissions: data })
+      set({ permissions: data, error: null })
       return data
-    } catch {
+    } catch (e: unknown) {
+      set({ error: (e as Error).message })
       return null
     }
   },
@@ -174,9 +330,12 @@ export const useSetup = create<SetupStore>((set, get) => ({
     set({ permFixing: true })
     try {
       const data: PermissionStatus = await postJson(`${SETUP}/permissions/fix`)
-      set({ permissions: data })
-    } catch { /* ignore */ }
-    set({ permFixing: false })
+      set({ permissions: data, error: null })
+    } catch (e: unknown) {
+      set({ error: (e as Error).message })
+    } finally {
+      set({ permFixing: false })
+    }
   },
 
   // -- Catalog ----------------------------------------------------------------
@@ -194,6 +353,7 @@ export const useSetup = create<SetupStore>((set, get) => ({
 
   startWizard: () => {
     set({
+      wizardRequested: true,
       wizardActive: true,
       wizardStep: 'select',
       selectedCategory: '',
@@ -203,22 +363,21 @@ export const useSetup = create<SetupStore>((set, get) => ({
       assignments: [],
       error: null,
     })
+    void get().refreshSession()
   },
 
   cancelWizard: async () => {
-    if (get().motionActive) await get().stopMotion()
+    clearMotionTimer()
+    set({ error: null })
     try {
       await postJson(`${SETUP}/session/reset`)
-    } catch { /* ignore */ }
-    set({
-      wizardActive: false,
-      wizardStep: 'select',
-      selectedCategory: '',
-      selectedModel: '',
-      scannedPorts: [],
-      scannedCameras: [],
-      assignments: [],
-    })
+    } catch (e: unknown) {
+      set({ error: (e as Error).message })
+    }
+    await get().refreshSession()
+    if (isSessionCleared(get())) {
+      set(CLEARED_WIZARD_STATE)
+    }
   },
 
   setCategory: (c) => set({ selectedCategory: c }),
@@ -229,37 +388,34 @@ export const useSetup = create<SetupStore>((set, get) => ({
 
   doScan: async () => {
     const model = get().selectedModel
-    set({ scanning: true, error: null, scannedPorts: [], scannedCameras: [] })
+    set({
+      scanning: true,
+      error: null,
+      wizardRequested: true,
+      wizardStep: 'scan',
+      scannedPorts: [],
+      scannedCameras: [],
+    })
     try {
       const data = await postJson(`${SETUP}/scan`, { model })
-      const ports: ScannedPort[] = (data.ports || []).map((p: any) => ({
-        stable_id: p.stable_id || p.by_id || p.dev || '',
-        label: p.label || p.dev || '?',
-        by_id: p.by_id || '',
-        by_path: p.by_path || '',
-        dev: p.dev || '',
-        motor_ids: p.motor_ids || [],
-        delta: 0,
-        moved: false,
+      const portCandidates: SetupCandidate[] = (data.ports || []).map((p: any) => ({
+        ...p, interface_type: 'serial',
       }))
-      const cameras: ScannedCamera[] = (data.cameras || []).map((c: any, i: number) => ({
-        stable_id: c.stable_id || c.by_path || c.by_id || c.dev || '',
-        label: c.label || c.dev || '?',
-        index: i,
-        by_path: c.by_path || '',
-        by_id: c.by_id || '',
-        dev: c.dev || '',
-        width: c.width || 640,
-        height: c.height || 480,
-        preview_url: null,
+      const cameraCandidates: SetupCandidate[] = (data.cameras || []).map((c: any) => ({
+        ...c, interface_type: 'video',
       }))
-      set({ scannedPorts: ports, scannedCameras: cameras })
-      if (cameras.length > 0) get().doCapturePreview()
+      const ports = buildScannedPorts(portCandidates, [])
+      const cameras = buildScannedCameras(cameraCandidates, [])
+      set({ scannedPorts: ports, scannedCameras: cameras, error: null })
+      if (cameras.length > 0) {
+        await get().doCapturePreview()
+      }
     } catch (e: unknown) {
       set({ error: (e as Error).message })
     } finally {
       set({ scanning: false })
     }
+    await get().refreshSession()
   },
 
   doCapturePreview: async () => {
@@ -278,8 +434,9 @@ export const useSetup = create<SetupStore>((set, get) => ({
           preview_url: previewByStableId.get(c.stable_id) ?? null,
         })),
       }))
-    } catch {
+    } catch (e: unknown) {
       set((s) => ({
+        error: (e as Error).message,
         scannedCameras: s.scannedCameras.map((c) => ({
           ...c,
           preview_url: null,
@@ -292,12 +449,12 @@ export const useSetup = create<SetupStore>((set, get) => ({
 
   startMotion: async () => {
     if (get().motionActive) return
-    if (motionTimer) { clearInterval(motionTimer); motionTimer = null }
+    clearMotionTimer()
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         await postJson(`${SETUP}/motion/start`)
-        set({ motionActive: true, error: null })
-        motionTimer = setInterval(() => get().pollMotion(), 300)
+        set({ error: null })
+        await get().refreshSession()
         return
       } catch (e: unknown) {
         const msg = (e as Error).message || ''
@@ -306,6 +463,7 @@ export const useSetup = create<SetupStore>((set, get) => ({
           continue
         }
         set({ error: msg })
+        await get().refreshSession()
       }
     }
   },
@@ -327,18 +485,22 @@ export const useSetup = create<SetupStore>((set, get) => ({
         })
         return changed ? { scannedPorts: updated } : {}
       })
-    } catch { /* ignore */ }
+    } catch (e: unknown) {
+      clearMotionTimer()
+      set({ error: (e as Error).message })
+      await get().refreshSession()
+    }
   },
 
   stopMotion: async () => {
-    if (motionTimer) {
-      clearInterval(motionTimer)
-      motionTimer = null
-    }
-    set({ motionActive: false })
+    clearMotionTimer()
     try {
       await postJson(`${SETUP}/motion/stop`)
-    } catch { /* ignore */ }
+      set({ error: null })
+    } catch (e: unknown) {
+      set({ error: (e as Error).message })
+    }
+    await get().refreshSession()
   },
 
   // -- Session assign/commit --------------------------------------------------
@@ -369,21 +531,60 @@ export const useSetup = create<SetupStore>((set, get) => ({
   },
 
   sessionCommit: async () => {
+    set({ error: null })
     try {
-      if (get().motionActive) await get().stopMotion()
       await postJson(`${SETUP}/session/commit`)
       await get().loadDevices()
-      set({ wizardActive: false, assignments: [] })
+      if (get().error) {
+        await get().refreshSession()
+        return
+      }
+      await postJson(`${SETUP}/session/reset`)
     } catch (e: unknown) {
       set({ error: (e as Error).message })
+    }
+    await get().refreshSession()
+    if (isSessionCleared(get())) {
+      set(CLEARED_WIZARD_STATE)
     }
   },
 
   refreshSession: async () => {
     try {
-      const data = await api(`${SETUP}/session`)
-      set({ assignments: data.assignments || [] })
-    } catch { /* ignore */ }
+      const data = await api(`${SETUP}/session`) as SetupSessionPayload
+      const session: SetupSessionPayload = {
+        phase: data.phase || 'idle',
+        model: data.model || '',
+        candidates: Array.isArray(data.candidates) ? data.candidates : [],
+        assignments: Array.isArray(data.assignments) ? data.assignments : [],
+        unassigned: Array.isArray(data.unassigned) ? data.unassigned : [],
+        busy: Boolean(data.busy),
+        busy_reason: data.busy_reason || '',
+      }
+      syncMotionTimer(session.phase, get().pollMotion)
+      set((state) => {
+        const wizardActive = state.wizardRequested || isSessionActive(session)
+        return {
+          assignments: session.assignments,
+          busy: session.busy,
+          busyReason: session.busy_reason,
+          error:
+            session.phase === 'idle' && session.busy && session.busy_reason
+              ? `Embodiment busy: ${session.busy_reason}`
+              : state.error,
+          motionActive: session.phase === 'identifying',
+          scannedPorts: buildScannedPorts(session.candidates, state.scannedPorts),
+          scannedCameras: buildScannedCameras(session.candidates, state.scannedCameras),
+          selectedModel: session.model || state.selectedModel,
+          sessionPhase: session.phase,
+          wizardActive,
+          wizardStep: wizardActive ? deriveWizardStep(state.wizardStep, session) : 'select',
+        }
+      })
+    } catch (e: unknown) {
+      clearMotionTimer()
+      set({ error: (e as Error).message })
+    }
   },
 
   // -- Device CRUD ------------------------------------------------------------
@@ -410,8 +611,12 @@ export const useSetup = create<SetupStore>((set, get) => ({
             port: h.port || h.interface?.by_id || '',
           })),
         },
+        error: null,
       })
-    } catch { /* ignore */ }
+    } catch (e: unknown) {
+      set({ error: (e as Error).message })
+    }
+    await get().refreshSession()
   },
 
   removeArm: async (alias) => {

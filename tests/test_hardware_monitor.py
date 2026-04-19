@@ -13,7 +13,7 @@ from roboclaw.embodied.embodiment.hardware.monitor import (
     _check_cameras,
     _fault_key,
 )
-from roboclaw.embodied.embodiment.manifest.binding import Binding
+from roboclaw.embodied.embodiment.manifest.binding import load_binding
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ class TestHardwareFault:
 
 class TestCheckArms:
     @staticmethod
-    def _arm_binding(port: str, calibrated: bool) -> Binding:
-        return Binding.from_dict(
+    def _arm_binding(port: str, calibrated: bool):
+        return load_binding(
             {
                 "alias": "follower",
                 "type": "so101_follower",
@@ -114,8 +114,8 @@ class TestCheckArms:
 
 class TestCheckCameras:
     @staticmethod
-    def _camera_binding(port: str) -> Binding:
-        return Binding.from_dict(
+    def _camera_binding(port: str):
+        return load_binding(
             {"alias": "wrist_cam", "port": port, "width": 640, "height": 480},
             "camera",
             {},
@@ -148,7 +148,7 @@ class TestCheckCameras:
         assert faults == []
 
     def test_empty_port_no_fault(self):
-        cams = [Binding.from_dict({"alias": "cam", "port": "", "width": 640, "height": 480}, "camera", {})]
+        cams = [load_binding({"alias": "cam", "port": "", "width": 640, "height": 480}, "camera", {})]
         faults: list[HardwareFault] = []
         _check_cameras(cams, time.time(), faults, recording_active=False)
         assert faults == []

@@ -288,6 +288,7 @@ class SetupSession:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize session state for API responses."""
+        busy = self._parent.busy
         return {
             "phase": self._phase.value,
             "model": self._model,
@@ -305,6 +306,8 @@ class SetupSession:
                 for a in self._assignments
             ],
             "unassigned": [c.stable_id for c in self.unassigned],
+            "busy": busy,
+            "busy_reason": self._parent.busy_reason if busy else "",
         }
 
     # -- Prompting protocol (used by TtySession) ----------------------------
@@ -778,7 +781,8 @@ class SetupSession:
 
     def _validate_arm_sides_before_commit(self, manifest: Any) -> None:
         """Reject ambiguous bimanual arm assignments before writing manifest."""
-        from roboclaw.embodied.embodiment.arm.registry import all_arm_types
+        from roboclaw.embodied.embodiment.arm.registry import all_arm_types, get_role
+        from roboclaw.embodied.embodiment.manifest.binding import ArmRole
 
         existing_arms = list(manifest.arms)
         pending_arms = [
@@ -786,13 +790,13 @@ class SetupSession:
             if assignment.spec_name in all_arm_types()
         ]
         roles: dict[str, list[str]] = {
-            "followers": [arm.side for arm in existing_arms if arm.is_follower],
-            "leaders": [arm.side for arm in existing_arms if arm.is_leader],
+            "followers": [arm.side for arm in existing_arms if arm.role is ArmRole.FOLLOWER],
+            "leaders": [arm.side for arm in existing_arms if arm.role is ArmRole.LEADER],
         }
         for assignment in pending_arms:
-            if "follower" in assignment.spec_name:
+            if get_role(assignment.spec_name) == ArmRole.FOLLOWER.value:
                 roles["followers"].append(assignment.side)
-            elif "leader" in assignment.spec_name:
+            else:
                 roles["leaders"].append(assignment.side)
         for role, sides in roles.items():
             if len(sides) == 2 and set(sides) != {"left", "right"}:

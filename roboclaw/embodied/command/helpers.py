@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from roboclaw.embodied.embodiment.manifest.binding import Binding
+from roboclaw.embodied.embodiment.manifest.binding import ArmBinding, ArmRole, CameraBinding
 
 _DATASET_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
@@ -15,16 +15,16 @@ class ActionError(RuntimeError):
     """User-facing embodied action error."""
 
 
-def group_arms(arms: list[Binding]) -> dict[str, list[Binding]]:
+def group_arms(arms: list[ArmBinding]) -> dict[str, list[ArmBinding]]:
     """Split arms into followers and leaders.
 
     For bimanual arms with explicit sides, keep left before right.
     """
-    grouped: dict[str, list[Binding]] = {"followers": [], "leaders": []}
+    grouped: dict[str, list[ArmBinding]] = {"followers": [], "leaders": []}
     for arm in arms:
-        if arm.is_follower:
+        if arm.role is ArmRole.FOLLOWER:
             grouped["followers"].append(arm)
-        elif arm.is_leader:
+        elif arm.role is ArmRole.LEADER:
             grouped["leaders"].append(arm)
     for role in ("followers", "leaders"):
         if len(grouped[role]) == 2 and {arm.side for arm in grouped[role]} == {"left", "right"}:
@@ -32,7 +32,9 @@ def group_arms(arms: list[Binding]) -> dict[str, list[Binding]]:
     return grouped
 
 
-def resolve_bimanual_pair(arms: list[Binding], role: str) -> tuple[Binding, Binding]:
+def resolve_bimanual_pair(
+    arms: list[ArmBinding], role: str,
+) -> tuple[ArmBinding, ArmBinding]:
     """Return the left/right pair for a bimanual role."""
     if len(arms) != 2:
         raise ActionError(
@@ -85,7 +87,7 @@ def logs_dir() -> Path:
     return get_roboclaw_home() / "workspace" / "embodied" / "jobs"
 
 
-def resolve_cameras(cameras: list[Binding]) -> dict[str, dict[str, Any]]:
+def resolve_cameras(cameras: list[CameraBinding]) -> dict[str, dict[str, Any]]:
     """Build camera config dict for lerobot CLI from manifest camera bindings."""
     result: dict[str, dict[str, Any]] = {}
     for cam in cameras:
@@ -104,7 +106,7 @@ def resolve_cameras(cameras: list[Binding]) -> dict[str, dict[str, Any]]:
     return result
 
 
-def resolve_action_arms(manifest: Any, arms_filter: str = "") -> list[Binding]:
+def resolve_action_arms(manifest: Any, arms_filter: str = "") -> list[ArmBinding]:
     """Resolve arms from manifest, optionally filtered by alias or port."""
     configured = manifest.arms
     if not configured:

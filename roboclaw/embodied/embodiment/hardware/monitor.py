@@ -10,7 +10,6 @@ import asyncio
 import time
 from dataclasses import asdict, dataclass
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
 from loguru import logger
 
 from roboclaw.embodied.board.channels import CH_FAULT_DETECTED, CH_FAULT_RESOLVED
-from roboclaw.embodied.embodiment.manifest.binding import Binding
+from roboclaw.embodied.embodiment.manifest.binding import ArmBinding, CameraBinding
 
 _CHECK_INTERVAL_SECONDS = 5
 
@@ -77,23 +76,24 @@ class CameraStatus:
         return asdict(self)
 
 
-def check_arm_status(arm: Binding) -> ArmStatus:
+def check_arm_status(arm: ArmBinding) -> ArmStatus:
     """Check a single arm's connectivity and calibration state."""
-    alias = arm.alias
-    connected = bool(arm.port and Path(arm.port).exists())
-    calibrated = arm.calibrated
-    arm_type = arm.type_name
-    role = "follower" if arm.is_follower else "leader" if arm.is_leader else ""
-    return ArmStatus(alias=alias, arm_type=arm_type, role=role, connected=connected, calibrated=calibrated)
+    return ArmStatus(
+        alias=arm.alias,
+        arm_type=arm.arm_type,
+        role=arm.role.value,
+        connected=arm.connected,
+        calibrated=arm.calibrated,
+    )
 
 
-def check_camera_status(cam: Binding) -> CameraStatus:
+def check_camera_status(cam: CameraBinding) -> CameraStatus:
     """Check a single camera's connectivity."""
-    alias = cam.alias
-    connected = bool(cam.port and Path(cam.port).exists())
     return CameraStatus(
-        alias=alias, connected=connected,
-        width=cam.interface.width, height=cam.interface.height,
+        alias=cam.alias,
+        connected=cam.connected,
+        width=cam.interface.width,
+        height=cam.interface.height,
     )
 
 
@@ -188,7 +188,7 @@ class HardwareMonitor:
 
 
 def _check_arms(
-    arms: list[Binding], now: float, faults: list[HardwareFault],
+    arms: list[ArmBinding], now: float, faults: list[HardwareFault],
 ) -> None:
     """Check arm connectivity and calibration state."""
     for arm in arms:
@@ -211,7 +211,7 @@ def _check_arms(
 
 
 def _check_cameras(
-    cameras: list[Binding],
+    cameras: list[CameraBinding],
     now: float,
     faults: list[HardwareFault],
     recording_active: bool,
@@ -228,4 +228,3 @@ def _check_cameras(
                 message=f"Camera '{status.alias}' device not found",
                 timestamp=now,
             ))
-

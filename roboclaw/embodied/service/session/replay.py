@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from roboclaw.embodied.board import Board, OutputConsumer, SessionState
-from roboclaw.embodied.command import CommandBuilder
 from roboclaw.embodied.service.session.base import Session
 
 if TYPE_CHECKING:
-    from roboclaw.embodied.embodiment.manifest import Manifest
     from roboclaw.embodied.service import EmbodiedService
 
 
@@ -54,48 +52,14 @@ class ReplayOutputConsumer(OutputConsumer):
 class ReplaySession(Session):
     """Dataset replay session.
 
-    CLI entry: replay(manifest, kwargs, tty_handoff)
     Web entry: EmbodiedService.start_replay() -> start(argv)
     """
 
     def __init__(self, parent: EmbodiedService) -> None:
         super().__init__(board=parent.board, manifest=parent.manifest)
-        self._parent = parent
 
     def _make_output_consumer(self, board: Board, stdout: asyncio.StreamReader) -> OutputConsumer:
         return ReplayOutputConsumer(board, stdout)
-
-    # -- CLI entry point ---------------------------------------------------
-
-    async def replay(
-        self,
-        manifest: Manifest,
-        kwargs: dict[str, Any],
-        tty_handoff: Any,
-    ) -> str:
-        self._parent.acquire_embodiment("replaying")
-        try:
-            argv = CommandBuilder.replay(manifest, **self._replay_kwargs(kwargs))
-            await self.start(argv)
-            if tty_handoff:
-                from roboclaw.embodied.toolkit.tty import TtySession
-
-                return await TtySession(tty_handoff).run(self)
-            return "Replay started."
-        finally:
-            self._parent.release_embodiment()
-
-    def _replay_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        return {
-            k: v
-            for k, v in kwargs.items()
-            if k in ("dataset_name", "episode", "fps", "arms")
-        }
-
-    async def _wait_process(self) -> None:
-        """Release embodiment lock on natural subprocess exit (web path)."""
-        await super()._wait_process()
-        self._parent.release_embodiment()
 
     # -- CLI protocol ------------------------------------------------------
 
