@@ -61,12 +61,12 @@ export default function HardwareSettingsPage() {
       await loadDevices()
     }
     void bootstrap()
-    fetchHardwareStatus()
-    checkPermissions()
+    void fetchHardwareStatus()
+    void checkPermissions()
 
     const hwInterval = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        fetchHardwareStatus()
+        void fetchHardwareStatus()
       }
     }, 5000)
 
@@ -136,7 +136,6 @@ export default function HardwareSettingsPage() {
             accent={warningsCount === 0 ? 'gn' : 'yl'}
           />
         </div>
-
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)]">
           <div className="space-y-6">
             <section className="rounded-2xl border border-bd/30 bg-sf p-5 shadow-card">

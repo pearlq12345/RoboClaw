@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppShell from '@/app/shell/AppShell'
 import ControlPage from '@/domains/control/pages/ControlPage'
+import RecoveryCenterPage from '@/domains/recovery/pages/RecoveryCenterPage'
 import DatasetsPage from '@/domains/datasets/pages/DatasetsPage'
 import DatasetExplorerPage from '@/domains/datasets/explorer/pages/DatasetExplorerPage'
 import QualityValidationPage from '@/domains/curation/quality/pages/QualityValidationPage'
@@ -18,6 +19,7 @@ function App() {
         <Route path="/" element={<AppShell />}>
           <Route index element={<Navigate to="/control" replace />} />
           <Route path="control" element={<ControlPage />} />
+          <Route path="recovery" element={<RecoveryCenterPage />} />
           <Route path="datasets" element={<DatasetsPage />} />
           <Route path="datasets/explorer" element={<DatasetExplorerPage />} />
           <Route path="curation" element={<Navigate to="/curation/quality" replace />} />

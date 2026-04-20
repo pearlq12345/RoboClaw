@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useChatSocket } from '@/domains/chat/store/useChatSocket'
 import { useHardwareStore } from '@/domains/hardware/store/useHardwareStore'
+import { useRecoveryStore } from '@/domains/recovery/store/useRecoveryStore'
 import { useI18n } from '@/i18n'
 import { cn } from '@/shared/lib/cn'
 import ChatPanel from '@/domains/chat/components/ChatPanel'
@@ -22,6 +23,13 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <ellipse cx="12" cy="5" rx="9" ry="3" />
       <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
       <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+    </svg>
+  ),
+  '/recovery': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+      <path d="M12 7v5l3 3" />
     </svg>
   ),
   '/curation': (
@@ -48,6 +56,8 @@ export default function AppShell() {
   const location = useLocation()
   const { connect, disconnect, connected, messages } = useChatSocket()
   const fetchHardwareStatus = useHardwareStore((state) => state.fetchHardwareStatus)
+  const fetchRecoveryFaults = useRecoveryStore((state) => state.fetchFaults)
+  const recoveryFaults = useRecoveryStore((state) => state.faults)
   const { t } = useI18n()
   const [chatOpen, setChatOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -59,10 +69,12 @@ export default function AppShell() {
 
   useEffect(() => {
     fetchHardwareStatus()
-  }, [fetchHardwareStatus, location.pathname])
+    void fetchRecoveryFaults()
+  }, [fetchHardwareStatus, fetchRecoveryFaults, location.pathname])
 
   const navItems = [
     { path: '/control', label: t('controlCenter') },
+    { path: '/recovery', label: t('recoveryNav'), badge: recoveryFaults.length || undefined },
     { path: '/datasets', label: t('datasetsNav') },
     { path: '/curation', label: t('curationNav') },
     { path: '/settings', label: t('settings') },
@@ -106,6 +118,15 @@ export default function AppShell() {
                   {NAV_ICONS[item.path]}
                 </span>
                 {!sidebarCollapsed && <span className="app-sidebar__link-label">{item.label}</span>}
+                {!sidebarCollapsed && item.badge && (
+                  <span className={cn(
+                    'ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold',
+                    active ? 'bg-white/20 text-white' : 'bg-rd/10 text-rd',
+                  )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             )
           })}

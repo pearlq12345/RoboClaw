@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from unittest.mock import patch, PropertyMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from roboclaw.embodied.embodiment.hardware.monitor import ArmStatus, CameraStatus
+from roboclaw.embodied.embodiment.hardware.monitor import (
+    ArmStatus, CameraStatus, FaultType, HardwareFault,
+)
 from roboclaw.embodied.service import EmbodiedService
 from roboclaw.embodied.embodiment.interface.serial import SerialInterface
 from roboclaw.embodied.embodiment.interface.video import VideoInterface
 from roboclaw.http.routes import hardware as hardware_routes
+from roboclaw.http.routes import recovery as recovery_routes
 from roboclaw.http.routes import register_all_routes
 
 
@@ -160,6 +164,35 @@ class TestHardwareStatus:
 
         assert resp.status_code == 400
         assert resp.json()["detail"] == "No cameras configured"
+
+    def test_recovery_faults_return_current_faults(self, client, app):
+        fault = HardwareFault(
+            fault_type=FaultType.CAMERA_DISCONNECTED,
+            device_alias="wrist",
+            message="Camera 'wrist' device not found",
+            timestamp=time.time(),
+        )
+        app.state.hardware_monitor._active_faults = {"camera_disconnected:wrist": fault}
+
+        resp = client.get("/api/recovery/faults")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "faults": [{
+                "fault_type": "camera_disconnected",
+                "device_alias": "wrist",
+                "message": "Camera 'wrist' device not found",
+                "timestamp": fault.timestamp,
+            }],
+        }
+
+    def test_recovery_restart_dashboard_schedules_process_restart(self, client):
+        with patch.object(recovery_routes, "schedule_dashboard_restart") as restart:
+            resp = client.post("/api/recovery/restart-dashboard")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "restarting"}
+        restart.assert_called_once_with()
 
     def test_hardware_previews_return_alias_keyed_urls(self, client, app):
         app.state.embodied_service.bind_camera("top", VideoInterface(dev="/dev/video0"))
