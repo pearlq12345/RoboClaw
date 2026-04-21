@@ -164,6 +164,8 @@ def scan_cameras() -> list[VideoInterface]:
 
     saved = suppress_stderr()
     try:
+        if sys.platform == "darwin":
+            return _probe_cameras_mac(cv2)
         by_path = _read_symlink_map("/dev/v4l/by-path")
         by_id = _read_symlink_map("/dev/v4l/by-id")
         return _probe_cameras(cv2, by_path, by_id)
@@ -261,6 +263,41 @@ def _probe_cameras(cv2, by_path: dict, by_id: dict) -> list[VideoInterface]:
         if info:
             raw.append(info)
     return _dedupe_by_usb_device(raw)
+
+
+def _probe_cameras_mac(cv2) -> list[VideoInterface]:
+    """Probe cameras on macOS via OpenCV + AVFoundation."""
+    avf = getattr(cv2, "CAP_AVFOUNDATION", None)
+    result: list[VideoInterface] = []
+    for index in range(10):
+        cam = _try_open_camera_mac(cv2, index, avf)
+        if cam:
+            result.append(cam)
+    return result
+
+
+def _try_open_camera_mac(cv2, index: int, backend=None) -> VideoInterface | None:
+    """Open a single camera by index on macOS, return VideoInterface or None."""
+    cap = cv2.VideoCapture(index, backend) if backend else cv2.VideoCapture(index)
+    try:
+        if not cap.isOpened():
+            return None
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps < 30:
+            cap.set(cv2.CAP_PROP_FPS, 30)
+        return VideoInterface(
+            by_path="",
+            by_id="",
+            dev=str(index),
+            width=w,
+            height=h,
+            fps=int(fps),
+        )
+    finally:
+        cap.release()
 
 
 def _usb_device_key(by_path_str: str) -> str:
