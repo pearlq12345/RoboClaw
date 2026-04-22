@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import os
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from threading import Event
 from typing import Any
@@ -22,6 +20,7 @@ from roboclaw.embodied.embodiment.manifest.binding import ArmBinding
 
 POSITION_MIN = 0
 POSITION_MAX = 4095
+HALF_TURN_TICKS = 2047  # (sts3215 resolution - 1) // 2 — matches lerobot's set_half_turn_homings
 
 DEFAULT_PROBE_STEP_TICKS = 20
 DEFAULT_PROBE_INTERVAL_S = 0.04
@@ -29,15 +28,18 @@ DEFAULT_CURRENT_LIMIT_RAW = 400
 DEFAULT_SATURATION_DELTA = 2
 DEFAULT_SATURATION_CYCLES = 6
 DEFAULT_SAFETY_MARGIN_TICKS = 20
-DEFAULT_MOVE_STEP_TICKS = 8
-DEFAULT_MOVE_TOLERANCE_TICKS = 20
+DEFAULT_MOVE_STEP_TICKS = 16
+DEFAULT_MOVE_INTERVAL_S = 0.02
+DEFAULT_MOVE_TOLERANCE_TICKS = 60
 MIN_VALID_RANGE_TICKS = 500
 
 EEPROM_COMMIT_DELAY_S = 0.05
 TORQUE_NUM_RETRY = 3
 GOAL_WRITE_NUM_RETRY = 2
 SAFE_START_MARGIN_TICKS = 300
-EEPROM_BACKUP_PATH = "/tmp/auto_calibrate_eeprom_backup.txt"
+
+TRANSIENT_RETRY_ATTEMPTS = 5
+TRANSIENT_RETRY_DELAY_S = 0.05
 
 SO101_SAFE_WINDOWS: dict[str, tuple[int, int]] = {
     "shoulder_pan": (800, 3600),
@@ -52,6 +54,42 @@ class AutoCalibrationStopped(RuntimeError):
     """Raised when a running auto-calibration batch is stopped."""
 
 
+def _bus_retry(description: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Retry a bus op on transient comm/packet errors (e.g., voltage glitches)."""
+    for attempt in range(TRANSIENT_RETRY_ATTEMPTS - 1):
+        try:
+            return fn(*args, **kwargs)
+        except AutoCalibrationStopped:
+            raise
+        except (ConnectionError, RuntimeError) as exc:
+            logger.warning(
+                "Transient bus error on {}: {} (attempt {}/{})",
+                description, exc, attempt + 1, TRANSIENT_RETRY_ATTEMPTS,
+            )
+            time.sleep(TRANSIENT_RETRY_DELAY_S)
+    return fn(*args, **kwargs)
+
+
+class _RetryingBus:
+    """Proxy around a motor bus that auto-retries read/write/torque ops on transient errors."""
+
+    _WRAPPED = frozenset({"read", "write", "disable_torque", "enable_torque"})
+
+    def __init__(self, inner: Any) -> None:
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._inner, name)
+        if name not in self._WRAPPED or not callable(attr):
+            return attr
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            tag = args[0] if args else ""
+            return _bus_retry(f"{name} {tag}".strip(), attr, *args, **kwargs)
+
+        return wrapped
+
+
 @dataclass(frozen=True)
 class ProbeResult:
     motor_id: int
@@ -60,6 +98,8 @@ class ProbeResult:
     hard_max: int
     applied_min: int
     applied_max: int
+    homing_offset: int = 0
+    drive_mode: int = 0
 
 
 class Worker(ABC):
@@ -291,12 +331,22 @@ class _SO101AutoCalibrator:
     }
     GRIPPER_NAME = "gripper"
     GRIPPER_ID = 6
+    WRIST_ROLL_NAME = "wrist_roll"
+    WRIST_ROLL_ID = 5
     ACTIVE_MOTORS: tuple[str, ...] = (
         "shoulder_pan",
         "shoulder_lift",
         "elbow_flex",
         "wrist_flex",
         "gripper",
+    )
+    ALL_MOTORS: tuple[str, ...] = (
+        "shoulder_pan",
+        "shoulder_lift",
+        "elbow_flex",
+        "wrist_flex",
+        "gripper",
+        "wrist_roll",
     )
 
     def __init__(
@@ -325,23 +375,30 @@ class _SO101AutoCalibrator:
             model="sts3215",
             norm_mode=MotorNormMode.RANGE_0_100,
         )
-        self._bus = FeetechMotorsBus(port=port, motors=motors)
+        motors[self.WRIST_ROLL_NAME] = Motor(
+            id=self.WRIST_ROLL_ID,
+            model="sts3215",
+            norm_mode=MotorNormMode.RANGE_0_100,
+        )
+        self._bus = _RetryingBus(FeetechMotorsBus(port=port, motors=motors))
 
     def calibrate(self) -> dict[str, ProbeResult]:
         self._bus.connect(handshake=True)
         orig_limits: dict[str, tuple[int, int]] = {}
+        orig_homings: dict[str, int] = {}
+        temp_homings: dict[str, int] = {}
+        initial_actuals: dict[str, int] = {}
         try:
             self._check_stopped()
-            for name in self.ACTIVE_MOTORS:
-                orig_limits[name] = self._widen_eeprom(name)
-            self._persist_backup(orig_limits)
-            hard = self._run_sequence(orig_limits)
-            results = self._finalize(hard, orig_limits)
-            self._clear_backup()
+            for name in self.ALL_MOTORS:
+                self._prepare_motor(name, orig_limits, orig_homings, temp_homings, initial_actuals)
+            hard = self._run_sequence()
+            results = self._build_results(hard, temp_homings)
+            self._apply_results(results)
             return results
         except Exception:
-            logger.exception("Auto-calibration failed; restoring original EEPROM limits")
-            self._restore_via_fresh_bus(orig_limits)
+            logger.exception("Auto-calibration failed; restoring original EEPROM")
+            self._restore_via_fresh_bus(orig_limits, orig_homings, initial_actuals)
             raise
         finally:
             try:
@@ -349,11 +406,45 @@ class _SO101AutoCalibrator:
             except Exception as exc:
                 logger.warning("disconnect raised during cleanup: {}", exc)
 
+    def _prepare_motor(
+        self,
+        name: str,
+        orig_limits: dict[str, tuple[int, int]],
+        orig_homings: dict[str, int],
+        temp_homings: dict[str, int],
+        initial_actuals: dict[str, int],
+    ) -> None:
+        """Snapshot orig EEPROM + pose, then temp-shift Homing_Offset so current pose reads
+        HALF_TURN_TICKS and widen Min/Max to the full range so the probe has room in both directions."""
+        self._check_stopped()
+        self._bus.disable_torque(name, num_retry=TORQUE_NUM_RETRY)
+        orig_h = int(self._bus.read("Homing_Offset", name, normalize=False))
+        orig_min = int(self._bus.read("Min_Position_Limit", name, normalize=False))
+        orig_max = int(self._bus.read("Max_Position_Limit", name, normalize=False))
+        current_present = int(self._bus.read("Present_Position", name, normalize=False))
+        actual = current_present + orig_h
+        temp_h = actual - HALF_TURN_TICKS
+        orig_limits[name] = (orig_min, orig_max)
+        orig_homings[name] = orig_h
+        temp_homings[name] = temp_h
+        initial_actuals[name] = actual
+        self._bus.write("Homing_Offset", name, temp_h, normalize=False)
+        time.sleep(EEPROM_COMMIT_DELAY_S)
+        self._bus.write("Min_Position_Limit", name, POSITION_MIN, normalize=False)
+        time.sleep(EEPROM_COMMIT_DELAY_S)
+        self._bus.write("Max_Position_Limit", name, POSITION_MAX, normalize=False)
+        time.sleep(EEPROM_COMMIT_DELAY_S)
+
     def _check_stopped(self) -> None:
         if self._stop_event and self._stop_event.is_set():
             raise AutoCalibrationStopped("Stopped by user.")
 
-    def _restore_via_fresh_bus(self, orig_limits: dict[str, tuple[int, int]]) -> None:
+    def _restore_via_fresh_bus(
+        self,
+        orig_limits: dict[str, tuple[int, int]],
+        orig_homings: dict[str, int],
+        initial_actuals: dict[str, int],
+    ) -> None:
         try:
             self._bus.disconnect(disable_torque=True)
         except Exception as exc:
@@ -366,38 +457,47 @@ class _SO101AutoCalibrator:
             return
         for name, (orig_min, orig_max) in orig_limits.items():
             try:
-                self._write_eeprom(name, orig_min, orig_max)
+                self._write_eeprom(name, orig_min, orig_max, orig_homings.get(name, 0))
             except Exception:
-                logger.exception("{}: restore write failed — see backup at {}", name, EEPROM_BACKUP_PATH)
+                logger.exception("{}: restore write failed", name)
+        # After orig Homing_Offset restored, Present_Position = Actual - orig_h;
+        # so user's original pose corresponds to Goal = initial_actual - orig_h in this frame.
+        goals_orig = {
+            name: actual - orig_homings.get(name, 0)
+            for name, actual in initial_actuals.items()
+            if name != self.WRIST_ROLL_NAME
+        }
+        self._restore_initial_pose(goals_orig)
 
-    def _run_sequence(self, orig_limits: dict[str, tuple[int, int]]) -> dict[str, tuple[int, int]]:
+    def _run_sequence(self) -> dict[str, tuple[int, int]]:
         gripper_state: dict[str, int] = {}
-        gripper_worker = SequentialWorker(self._gripper_plan(gripper_state, orig_limits))
-
-        def with_gripper(*main_workers: Worker) -> None:
-            run_concurrent([*main_workers, gripper_worker], stop_event=self._stop_event)
+        gripper_worker = SequentialWorker(self._gripper_plan(gripper_state))
+        self._run([gripper_worker])
 
         self._ensure_safe_start("wrist_flex", -1)
         probe_m4_neg = self._probe("wrist_flex", -1)
-        with_gripper(probe_m4_neg)
+        self._run([probe_m4_neg])
         m4_min = probe_m4_neg.stall_position
 
         self._ensure_safe_start("shoulder_pan", -1)
         probe_m1_neg = self._probe("shoulder_pan", -1)
-        with_gripper(probe_m1_neg)
+        self._run([probe_m1_neg])
         m1_min = probe_m1_neg.stall_position
 
         self._ensure_safe_start("shoulder_pan", +1)
         probe_m1_pos = self._probe("shoulder_pan", +1)
-        with_gripper(probe_m1_pos)
+        self._run([probe_m1_pos])
         m1_max = probe_m1_pos.stall_position
-        with_gripper(self._move("shoulder_pan", (m1_min + m1_max) // 2))
+        self._run(
+            [self._move("shoulder_pan", (m1_min + m1_max) // 2)],
+            interval_s=DEFAULT_MOVE_INTERVAL_S,
+        )
 
         self._ensure_safe_start("elbow_flex", +1)
         self._ensure_safe_start("shoulder_lift", -1)
         probe_m3_pos = self._probe("elbow_flex", +1)
         probe_m2_neg = self._probe("shoulder_lift", -1)
-        with_gripper(probe_m3_pos, probe_m2_neg)
+        self._run([probe_m3_pos, probe_m2_neg])
         m3_max = probe_m3_pos.stall_position
         m2_min = probe_m2_neg.stall_position
 
@@ -405,23 +505,26 @@ class _SO101AutoCalibrator:
         self._ensure_safe_start("shoulder_lift", +1)
         probe_m3_neg = self._probe("elbow_flex", -1)
         probe_m2_pos = self._probe("shoulder_lift", +1)
-        with_gripper(probe_m3_neg, probe_m2_pos)
+        self._run([probe_m3_neg, probe_m2_pos])
         m3_min = probe_m3_neg.stall_position
         m2_max = probe_m2_pos.stall_position
 
-        with_gripper(
-            self._move("elbow_flex", (m3_min + m3_max) // 2),
-            self._move("shoulder_lift", (m2_min + m2_max) // 2),
+        self._run(
+            [
+                self._move("elbow_flex", (m3_min + m3_max) // 2),
+                self._move("shoulder_lift", (m2_min + m2_max) // 2),
+            ],
+            interval_s=DEFAULT_MOVE_INTERVAL_S,
         )
 
         self._ensure_safe_start("wrist_flex", +1)
         probe_m4_pos = self._probe("wrist_flex", +1)
-        with_gripper(probe_m4_pos)
+        self._run([probe_m4_pos])
         m4_max = probe_m4_pos.stall_position
-        with_gripper(self._move("wrist_flex", (m4_min + m4_max) // 2))
-
-        if not gripper_worker.done:
-            run_concurrent([gripper_worker], stop_event=self._stop_event)
+        self._run(
+            [self._move("wrist_flex", (m4_min + m4_max) // 2)],
+            interval_s=DEFAULT_MOVE_INTERVAL_S,
+        )
 
         return {
             "shoulder_pan": (m1_min, m1_max),
@@ -434,9 +537,7 @@ class _SO101AutoCalibrator:
     def _gripper_plan(
         self,
         state: dict[str, int],
-        orig_limits: dict[str, tuple[int, int]],
     ) -> Iterator[Worker]:
-        del orig_limits
         self._ensure_safe_start(self.GRIPPER_NAME, -1)
         probe_min = self._probe(self.GRIPPER_NAME, -1)
         yield probe_min
@@ -446,6 +547,14 @@ class _SO101AutoCalibrator:
         yield probe_max
         state["max"] = probe_max.stall_position
         yield self._move(self.GRIPPER_NAME, (state["min"] + state["max"]) // 2)
+
+    def _run(
+        self,
+        workers: list[Worker],
+        *,
+        interval_s: float = DEFAULT_PROBE_INTERVAL_S,
+    ) -> None:
+        run_concurrent(workers, interval_s=interval_s, stop_event=self._stop_event)
 
     def _ensure_safe_start(self, name: str, direction: int) -> None:
         self._check_stopped()
@@ -468,7 +577,13 @@ class _SO101AutoCalibrator:
             safe_max,
         )
         move = MoveWorker(self._bus, name, safe_target, step_ticks=self._move_step)
-        run_concurrent([move], stop_event=self._stop_event)
+        self._run([move], interval_s=DEFAULT_MOVE_INTERVAL_S)
+
+    def _capture_positions(self, names: tuple[str, ...]) -> dict[str, int]:
+        return {
+            name: int(self._bus.read("Present_Position", name, normalize=False))
+            for name in names
+        }
 
     def _probe(self, motor_name: str, direction: int) -> ProbeWorker:
         return ProbeWorker(
@@ -482,65 +597,81 @@ class _SO101AutoCalibrator:
     def _move(self, motor_name: str, target: int) -> MoveWorker:
         return MoveWorker(self._bus, motor_name, target, step_ticks=self._move_step)
 
-    def _widen_eeprom(self, name: str) -> tuple[int, int]:
-        self._check_stopped()
-        self._bus.disable_torque(name, num_retry=TORQUE_NUM_RETRY)
-        orig_min = int(self._bus.read("Min_Position_Limit", name, normalize=False))
-        orig_max = int(self._bus.read("Max_Position_Limit", name, normalize=False))
-        if orig_min <= POSITION_MIN + 1 and orig_max >= POSITION_MAX - 1:
-            raise RuntimeError(
-                f"{name}: EEPROM already at [0, 4095]. A previous auto-cal run likely failed "
-                f"to restore. Check {EEPROM_BACKUP_PATH} before re-running."
-            )
-        self._bus.write("Min_Position_Limit", name, POSITION_MIN, normalize=False)
-        time.sleep(EEPROM_COMMIT_DELAY_S)
-        self._bus.write("Max_Position_Limit", name, POSITION_MAX, normalize=False)
-        time.sleep(EEPROM_COMMIT_DELAY_S)
-        return orig_min, orig_max
-
-    def _persist_backup(self, orig_limits: dict[str, tuple[int, int]]) -> None:
-        with open(EEPROM_BACKUP_PATH, "w", encoding="utf-8") as handle:
-            json.dump({name: [lo, hi] for name, (lo, hi) in orig_limits.items()}, handle)
-
-    def _clear_backup(self) -> None:
-        if os.path.exists(EEPROM_BACKUP_PATH):
-            os.remove(EEPROM_BACKUP_PATH)
-
-    def _write_eeprom(self, name: str, min_limit: int, max_limit: int) -> None:
+    def _write_eeprom(self, name: str, min_limit: int, max_limit: int, homing_offset: int) -> None:
         self._check_stopped()
         self._bus.disable_torque(name, num_retry=TORQUE_NUM_RETRY)
         self._bus.write("Min_Position_Limit", name, min_limit, normalize=False)
         time.sleep(EEPROM_COMMIT_DELAY_S)
         self._bus.write("Max_Position_Limit", name, max_limit, normalize=False)
         time.sleep(EEPROM_COMMIT_DELAY_S)
+        self._bus.write("Homing_Offset", name, homing_offset, normalize=False)
+        time.sleep(EEPROM_COMMIT_DELAY_S)
 
-    def _finalize(
+    def _build_results(
         self,
         hard: dict[str, tuple[int, int]],
-        orig_limits: dict[str, tuple[int, int]],
+        temp_homings: dict[str, int],
     ) -> dict[str, ProbeResult]:
+        """Translate probe results (in the temp-shifted Present frame) into EEPROM values
+        (in the final frame where the *true* mechanical midpoint maps to HALF_TURN_TICKS)."""
         results: dict[str, ProbeResult] = {}
         for name in self.ACTIVE_MOTORS:
             self._check_stopped()
-            hard_min, hard_max = hard[name]
-            self._validate_range(name, hard_min, hard_max)
-            applied_min = hard_min + self._safety_margin
-            applied_max = hard_max - self._safety_margin
+            hard_min_ts, hard_max_ts = hard[name]
+            self._validate_range(name, hard_min_ts, hard_max_ts)
+            temp_h = temp_homings[name]
+            hard_min_actual = hard_min_ts + temp_h
+            hard_max_actual = hard_max_ts + temp_h
+            midpoint_actual = (hard_min_actual + hard_max_actual) // 2
+            final_h = midpoint_actual - HALF_TURN_TICKS
+            half_range = (hard_max_actual - hard_min_actual) // 2
+            applied_min = HALF_TURN_TICKS - half_range + self._safety_margin
+            applied_max = HALF_TURN_TICKS + half_range - self._safety_margin
             if applied_min >= applied_max:
                 raise RuntimeError(
                     f"{name}: safety margin collapses range: "
-                    f"hard=[{hard_min}, {hard_max}] margin={self._safety_margin}"
+                    f"hard=[{hard_min_actual}, {hard_max_actual}] margin={self._safety_margin}"
                 )
-            self._write_eeprom(name, applied_min, applied_max)
             results[name] = ProbeResult(
                 motor_id=(self.ARM_MOTORS.get(name) or self.GRIPPER_ID),
                 motor_name=name,
-                hard_min=hard_min,
-                hard_max=hard_max,
+                hard_min=hard_min_actual,
+                hard_max=hard_max_actual,
                 applied_min=applied_min,
                 applied_max=applied_max,
+                homing_offset=final_h,
+                drive_mode=0,
             )
+        # wrist_roll has no hardstops: user's current pose becomes centre (final_h = temp_h),
+        # range is the full 12-bit span.
+        results[self.WRIST_ROLL_NAME] = ProbeResult(
+            motor_id=self.WRIST_ROLL_ID,
+            motor_name=self.WRIST_ROLL_NAME,
+            hard_min=POSITION_MIN,
+            hard_max=POSITION_MAX,
+            applied_min=POSITION_MIN,
+            applied_max=POSITION_MAX,
+            homing_offset=temp_homings[self.WRIST_ROLL_NAME],
+            drive_mode=0,
+        )
         return results
+
+    def _apply_results(self, results: dict[str, ProbeResult]) -> None:
+        for name, result in results.items():
+            self._check_stopped()
+            self._write_eeprom(name, result.applied_min, result.applied_max, result.homing_offset)
+
+    def _restore_initial_pose(self, initial_positions: dict[str, int]) -> None:
+        if not initial_positions:
+            return
+        workers = [
+            self._move(name, position)
+            for name, position in initial_positions.items()
+            if name != self.WRIST_ROLL_NAME
+        ]
+        if not workers:
+            return
+        run_concurrent(workers, interval_s=DEFAULT_MOVE_INTERVAL_S)
 
     def _validate_range(self, name: str, hard_min: int, hard_max: int) -> None:
         if hard_max - hard_min < MIN_VALID_RANGE_TICKS:
@@ -558,14 +689,6 @@ class _SO101AutoCalibrator:
 
 
 class SO101AutoCalibrationStrategy:
-    RANGE_MOTORS: tuple[str, ...] = (
-        "shoulder_pan",
-        "shoulder_lift",
-        "elbow_flex",
-        "wrist_flex",
-        "gripper",
-    )
-
     def recalibrate(
         self,
         arm: ArmBinding,
@@ -573,27 +696,17 @@ class SO101AutoCalibrationStrategy:
         *,
         stop_event: Event | None = None,
     ) -> CalibrationProfile:
-        baseline = store.load_profile(arm)
-        self._validate_baseline(arm, baseline)
-
+        del store  # no baseline needed — homing, range, drive_mode all computed from probe
         calibrator = _SO101AutoCalibrator(arm.port, stop_event=stop_event)
         probed = calibrator.calibrate()
-
-        merged = dict(baseline.motors)
-        for motor_name, result in probed.items():
-            original = merged[motor_name]
-            merged[motor_name] = MotorCalibrationProfile(
-                id=original.id,
-                drive_mode=original.drive_mode,
-                homing_offset=original.homing_offset,
+        motors = {
+            name: MotorCalibrationProfile(
+                id=result.motor_id,
+                drive_mode=result.drive_mode,
+                homing_offset=result.homing_offset,
                 range_min=result.applied_min,
                 range_max=result.applied_max,
             )
-        return CalibrationProfile(merged)
-
-    def _validate_baseline(self, arm: ArmBinding, profile: CalibrationProfile) -> None:
-        missing = [name for name in (*self.RANGE_MOTORS, "wrist_roll") if name not in profile.motors]
-        if missing:
-            raise RuntimeError(
-                f"Calibration profile for {arm.alias} is missing baseline motors: {', '.join(missing)}"
-            )
+            for name, result in probed.items()
+        }
+        return CalibrationProfile(motors)
