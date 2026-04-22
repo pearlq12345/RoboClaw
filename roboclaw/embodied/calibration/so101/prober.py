@@ -39,6 +39,8 @@ RETREAT_TICKS = 50
 PROBE_MAX_TICKS = 250
 MOVE_MAX_TICKS = 500
 EEPROM_COMMIT_DELAY = 0.05
+PROBE_TORQUE_LIMIT = 600    # RAM cap during probing — prevents bus-voltage collapse
+                            # when two motors draw concurrently; reset in ``release``
 
 TRANSIENT_ATTEMPTS = 5
 TRANSIENT_DELAY = 0.05
@@ -117,6 +119,7 @@ class MotorProber:
         self._orig_min: int | None = None
         self._orig_max: int | None = None
         self._orig_homing: int | None = None
+        self._orig_torque_limit: int | None = None
         self._probe = _ProbeState()
 
     # ---------- state snapshot ----------
@@ -168,6 +171,10 @@ class MotorProber:
             f"read Homing_Offset {self._name}",
             self._bus.read, "Homing_Offset", self._name, normalize=False,
         ))
+        self._orig_torque_limit = int(_retry(
+            f"read Torque_Limit {self._name}",
+            self._bus.read, "Torque_Limit", self._name, normalize=False,
+        ))
         _retry(f"Torque_Enable=128 {self._name}", self._bus.write,
                "Torque_Enable", self._name, 128, normalize=False, num_retry=2)
         time.sleep(0.1)
@@ -178,6 +185,11 @@ class MotorProber:
         _retry(f"write Max_Position_Limit {self._name}", self._bus.write,
                "Max_Position_Limit", self._name, POSITION_MAX, normalize=False)
         time.sleep(EEPROM_COMMIT_DELAY)
+        # RAM cap — limits peak current during probing so two concurrent-driving motors
+        # cannot collapse the bus voltage. Reset to orig in ``release``.
+        _retry(f"write Torque_Limit {self._name}", self._bus.write,
+               "Torque_Limit", self._name, PROBE_TORQUE_LIMIT, normalize=False)
+        time.sleep(EEPROM_COMMIT_DELAY)
         _retry(f"write Operating_Mode {self._name}", self._bus.write,
                "Operating_Mode", self._name, 0, normalize=False)
         self._min_pos = HALF_TURN
@@ -185,8 +197,8 @@ class MotorProber:
         self._min_real = False
         self._max_real = False
         logger.info(
-            "[cal:prep] {} orig[min={} max={} h={}]",
-            self._name, self._orig_min, self._orig_max, self._orig_homing,
+            "[cal:prep] {} orig[min={} max={} h={} torque={}]",
+            self._name, self._orig_min, self._orig_max, self._orig_homing, self._orig_torque_limit,
         )
 
     def reset_center(self) -> None:
@@ -253,7 +265,8 @@ class MotorProber:
         self._max_real = True
 
     def restore_orig_limits(self) -> None:
-        """Write the snapshot taken in ``prepare()`` back to EEPROM. Used on failure."""
+        """Write the snapshot taken in ``prepare()`` back to EEPROM (+ RAM Torque_Limit).
+        Used on failure."""
         if self._orig_min is None or self._orig_max is None:
             return
         try:
@@ -267,6 +280,10 @@ class MotorProber:
             if self._orig_homing is not None:
                 _retry(f"write Homing_Offset {self._name}", self._bus.write,
                        "Homing_Offset", self._name, self._orig_homing, normalize=False)
+                time.sleep(EEPROM_COMMIT_DELAY)
+            if self._orig_torque_limit is not None:
+                _retry(f"write Torque_Limit {self._name}", self._bus.write,
+                       "Torque_Limit", self._name, self._orig_torque_limit, normalize=False)
                 time.sleep(EEPROM_COMMIT_DELAY)
             logger.info("[cal:prober] {} restored orig limits", self._name)
         except Exception:
@@ -419,8 +436,18 @@ class MotorProber:
             logger.warning("[cal:prober] {} refresh_hold failed: {}", self._name, e)
 
     def release(self) -> None:
-        """Disable torque."""
+        """Restore orig Torque_Limit (RAM) so runtime torque is back to user's configured
+        value, then disable torque."""
         logger.info("[cal:prober] {} release", self._name)
+        if self._orig_torque_limit is not None:
+            try:
+                _retry(
+                    f"restore Torque_Limit {self._name}",
+                    self._bus.write, "Torque_Limit", self._name,
+                    self._orig_torque_limit, normalize=False,
+                )
+            except Exception as e:
+                logger.warning("[cal:prober] {} Torque_Limit restore failed: {}", self._name, e)
         try:
             _retry(f"disable_torque {self._name}", self._bus.disable_torque, self._name, num_retry=3)
         except Exception as e:
