@@ -273,7 +273,7 @@ export default function ControlPage() {
       return
     }
     const password = window.prompt(t('enterManagePassword'))
-    if (password === 'yekai666') {
+    if (password === 'zhaobo666') {
       setManageMode(true)
       return
     }
