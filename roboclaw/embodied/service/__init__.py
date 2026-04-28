@@ -26,7 +26,11 @@ from roboclaw.embodied.service.session import (
 from roboclaw.embodied.service.session.calibrate import CalibrationSession
 from roboclaw.embodied.embodiment.doctor import DoctorService
 from roboclaw.embodied.service.session.setup import SetupSession
-from roboclaw.embodied.verification import PreflightVerifier, VerificationRequest, Verifier
+from roboclaw.embodied.service.verification import (
+    PreflightVerifier,
+    VerificationRequest,
+    Verifier,
+)
 
 
 class EmbodiedService:

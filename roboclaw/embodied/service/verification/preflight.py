@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Protocol, Sequence
 
-from roboclaw.embodied.verification.types import (
+from roboclaw.embodied.service.verification.types import (
     VerificationRequest,
     VerificationResult,
     Violation,

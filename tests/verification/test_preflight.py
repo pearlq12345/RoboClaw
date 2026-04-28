@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from roboclaw.embodied.verification import PreflightVerifier, VerificationRequest
+from roboclaw.embodied.service.verification import PreflightVerifier, VerificationRequest
 
 
 def _checkpoint(path: Path) -> Path:
