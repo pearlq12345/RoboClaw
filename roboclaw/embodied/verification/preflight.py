@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Protocol, Sequence
 
 from roboclaw.embodied.verification.types import (
     VerificationRequest,
@@ -26,6 +26,13 @@ _WEIGHT_PATTERNS = (
 )
 _MAX_INFERENCE_EPISODES = 1_000
 _MAX_EPISODE_TIME_S = 3_600
+
+
+class Verifier(Protocol):
+    """Validate information available before a managed session starts."""
+
+    def verify(self, request: VerificationRequest) -> VerificationResult:
+        """Return violations that should stop launch."""
 
 
 class PreflightVerifier:
