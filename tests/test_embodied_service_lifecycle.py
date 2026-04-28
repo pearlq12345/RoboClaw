@@ -41,6 +41,7 @@ from roboclaw.embodied.embodiment.interface.serial import SerialInterface
 from roboclaw.embodied.embodiment.interface.video import VideoInterface
 from roboclaw.embodied.embodiment.lock import EmbodimentFileLock
 from roboclaw.embodied.embodiment.manifest import Manifest
+from roboclaw.embodied.command import ActionError
 from roboclaw.embodied.service import EmbodiedService
 
 _MANIFEST_DATA = {
@@ -151,6 +152,20 @@ def _infer_argv(tmp_path: Path, checkpoint: Path, *, num_episodes: int = 1) -> l
     ]
 
 
+def _replay_argv(tmp_path: Path, *, episode: int = 0, fps: int = 30) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "roboclaw.embodied.command.wrapper",
+        "replay",
+        "--robot.type=so101_follower",
+        "--dataset.repo_id=local/demo",
+        f"--dataset.root={tmp_path / 'datasets' / 'local' / 'demo'}",
+        f"--dataset.episode={episode}",
+        f"--dataset.fps={fps}",
+    ]
+
+
 def _single_follower_status() -> list[ArmStatus]:
     return [ArmStatus("follower", "so101_follower", "follower", True, True)]
 
@@ -200,6 +215,28 @@ async def test_run_replay_waits_for_process_completion_without_tty(tmp_path: Pat
 
     assert result == "Replay finished."
     assert service.replay.argv == ["replay-cmd"]
+    assert not service.busy
+    assert not service.embodiment_busy
+    assert service._active_session is None
+
+
+@pytest.mark.asyncio
+async def test_run_replay_rejects_preflight_before_session_start(tmp_path: Path) -> None:
+    service = _make_service(tmp_path)
+    _bind_replay_setup(service)
+    _write_runtime_dataset(tmp_path / "datasets", "demo")
+    service.replay = ControlledSession(service.board, "Replay finished.")
+    run_replay = getattr(service, "run_replay")
+    replay_argv = _replay_argv(tmp_path, episode=-1, fps=0)
+
+    with patch("roboclaw.embodied.service.check_arm_status", side_effect=_single_follower_status()), patch(
+        "roboclaw.embodied.service.CommandBuilder.replay",
+        return_value=replay_argv,
+    ):
+        with pytest.raises(ActionError, match="episode must be >= 0 for replay"):
+            await run_replay(dataset_name="demo", episode=-1, fps=0)
+
+    assert not service.replay.started.is_set()
     assert not service.busy
     assert not service.embodiment_busy
     assert service._active_session is None
