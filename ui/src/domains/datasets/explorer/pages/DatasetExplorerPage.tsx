@@ -17,8 +17,8 @@ import {
   type ModalityItem,
 } from '@/domains/datasets/explorer/store/useExplorerStore'
 import { useWorkflow } from '@/domains/curation/store/useCurationStore'
+import { ActionButton, GlassPanel } from '@/shared/ui'
 import { DatasetInsightStack } from '@/domains/datasets/explorer/components/DatasetInsightStack'
-import { ActionButton, GlassPanel, MetricCard } from '@/shared/ui'
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ')
@@ -1486,17 +1486,20 @@ export default function DatasetExplorerView() {
       )}
 
       {currentDataset && (datasetSummary || dashboardForSource || episodePageForSource) && (
-        <div className="quality-layout">
-          <div className="quality-layout__main">
-            {/* KPIs */}
-            <div className="quality-kpis">
-              <MetricCard label={t('totalEpisodes')} value={datasetSummary?.total_episodes ?? '--'} />
-              <MetricCard label="Frames" value={datasetSummary?.total_frames ?? '--'} accent="sage" />
-              <MetricCard label="FPS" value={datasetSummary?.fps ?? '--'} accent="amber" />
-              <MetricCard label={t('parquetFiles')} value={dashboardForSource?.files.parquet_files ?? '--'} accent="teal" />
-              <MetricCard label={t('videoFiles')} value={dashboardForSource?.files.video_files ?? '--'} accent="coral" />
-            </div>
-
+        <div className="dataset-explorer-workspace">
+          <div className="dataset-explorer-workspace__main">
+            {datasetSummary && (
+              <div className="dataset-explorer-summary-strip" aria-label="Dataset summary">
+                <span>{prepareStatus || summaryForSource!.dataset}</span>
+                <span>{datasetSummary.total_episodes} {t('episodes')}</span>
+                <span>{datasetSummary.total_frames.toLocaleString()} frames</span>
+                <span>{datasetSummary.fps} fps</span>
+                {datasetSummary.robot_type && <span>{datasetSummary.robot_type}</span>}
+                {dashboardForSource && (
+                  <span>{dashboardForSource.files.parquet_files} parquet / {dashboardForSource.files.video_files} videos</span>
+                )}
+              </div>
+            )}
             <DatasetInsightStack
               summary={datasetSummary}
               dashboard={dashboardForSource}
@@ -1508,38 +1511,15 @@ export default function DatasetExplorerView() {
               typeDistributionNode={typeDistributionNode}
             />
           </div>
-
-          {/* Sidebar */}
-          <GlassPanel className="quality-layout__sidebar">
-            <div className="quality-sidebar__section">
+          <aside className="dataset-explorer-workspace__episodes" aria-label={t('episodeBrowser')}>
+            <div className="dataset-explorer-episodes__header">
               <h3>{t('episodeBrowser')}</h3>
-              <EpisodeBrowser datasetRef={datasetRef} />
-            </div>
-
-            <div className="quality-sidebar__section">
-              <h3>{t('fileInventory')}</h3>
-              {dashboardForSource ? (
-                <div className="explorer-sidebar-stats">
-                  <div><span className="explorer-sidebar-stats__label">{t('totalFiles')}</span> <span>{dashboardForSource.files.total_files}</span></div>
-                  <div><span className="explorer-sidebar-stats__label">{t('parquetFiles')}</span> <span>{dashboardForSource.files.parquet_files}</span></div>
-                  <div><span className="explorer-sidebar-stats__label">{t('videoFiles')}</span> <span>{dashboardForSource.files.video_files}</span></div>
-                  <div><span className="explorer-sidebar-stats__label">{t('metaFiles')}</span> <span>{dashboardForSource.files.meta_files}</span></div>
-                  <div><span className="explorer-sidebar-stats__label">{t('otherFiles')}</span> <span>{dashboardForSource.files.other_files}</span></div>
-                </div>
-              ) : (
-                <div className="explorer-empty">{dashboardLoadingForSource ? t('running') : (dashboardErrorForSource || t('noStats'))}</div>
+              {episodePageForSource && (
+                <span>{episodePageForSource.total_episodes} total</span>
               )}
             </div>
-
-            {dashboardForSource?.dataset_stats.row_count != null && (
-              <div className="quality-sidebar__section">
-                <div className="explorer-sidebar-stats">
-                  <div><span className="explorer-sidebar-stats__label">Total rows</span> <span>{dashboardForSource.dataset_stats.row_count.toLocaleString()}</span></div>
-                  <div><span className="explorer-sidebar-stats__label">{t('vectorFeatures')}</span> <span>{dashboardForSource.dataset_stats.vector_features}</span></div>
-                </div>
-              </div>
-            )}
-          </GlassPanel>
+            <EpisodeBrowser datasetRef={datasetRef} />
+          </aside>
         </div>
       )}
     </div>
