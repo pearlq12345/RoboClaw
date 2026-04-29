@@ -36,7 +36,7 @@ const translations = {
     datasetExplorer: '数据集浏览',
     qualityWorkbench: '质量验证',
     workflow: '工作流',
-    pipelineNav: 'Pipeline',
+    pipelineNav: '数据中心',
     curationNav: '数据策展',
     connected: '已连接',
     disconnected: '未连接',
