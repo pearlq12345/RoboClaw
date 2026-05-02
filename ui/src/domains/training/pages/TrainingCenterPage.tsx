@@ -114,6 +114,27 @@ function managedRemoteBackendLabel(
   return ''
 }
 
+function providerDisplayName(
+  provider: string,
+  fallback: string,
+  t: (key: any) => string,
+) {
+  if (provider === 'aliyun') return t('aliyunProvider')
+  if (provider === 'autodl') return t('autodlProvider')
+  if (provider === 'local') return t('currentMachineProvider')
+  return fallback
+}
+
+function presetDisplayName(
+  preset: TrainingPresetCapability,
+  t: (key: any) => string,
+) {
+  if (preset.backend_preset === 'aliyun-a10-recommended') {
+    return t('aliyunA10RecommendedPreset')
+  }
+  return preset.label
+}
+
 function providerDetailSummary(providerData: TrainingStatusData['provider_data']) {
   if (!providerData || typeof providerData !== 'object') return ''
   for (const key of ['failure_reason', 'reason', 'error', 'detail']) {
@@ -379,7 +400,11 @@ export default function TrainingCenterPage() {
                       {configuredRemoteProviders.length > 0 ? (
                         configuredRemoteProviders.map((provider) => (
                           <option key={provider} value={provider}>
-                            {capabilities.providers[provider]?.display_name || provider}
+                            {providerDisplayName(
+                              provider,
+                              capabilities.providers[provider]?.display_name || provider,
+                              t,
+                            )}
                           </option>
                         ))
                       ) : (
@@ -479,7 +504,7 @@ export default function TrainingCenterPage() {
                     className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac"
                   >
                     {aliyunPresets.map((preset: TrainingPresetCapability) => (
-                      <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      <option key={preset.id} value={preset.id}>{presetDisplayName(preset, t)}</option>
                     ))}
                   </select>
                 </label>
