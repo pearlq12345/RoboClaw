@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from roboclaw.embodied.command import logs_dir
 from roboclaw.embodied.training.types import TrainingJobRecord
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingJobStore:
@@ -36,9 +39,9 @@ class TrainingJobStore:
         for path in sorted(self.root.glob("*.json")):
             try:
                 record = TrainingJobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, json.JSONDecodeError):
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                logger.warning("Skipping corrupt training metadata record %s: %s", path.name, exc)
                 continue
             records.append(record)
         records.sort(key=lambda record: record.created_at, reverse=True)
         return records
-

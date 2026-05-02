@@ -208,7 +208,7 @@ class AliyunCloudTrainer:
         job_id = str(response.body.job_id)
         marker_key = f"{self.config.oss_prefix}/markers/{job_id}.txt"
         self._oss.put_object(marker_key, output_prefix.encode("utf-8"))
-        logger.info("Submitted Aliyun PAI-DLC job {} ({})", job_id, job_name)
+        logger.info("Submitted Aliyun PAI-DLC job %s (%s)", job_id, job_name)
         return job_id
 
     def get_job_status(self, job_id: str) -> JobStatus:

@@ -154,7 +154,8 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     try {
       const response = await api(`${TRAIN}/capabilities`) as TrainingCapabilities
       set({ trainingCapabilities: response })
-    } catch {
+    } catch (error) {
+      console.error('Failed to load training capabilities:', error)
       set({ trainingCapabilities: null })
     }
   },

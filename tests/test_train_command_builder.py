@@ -38,7 +38,7 @@ def test_train_uses_lerobot_train_from_current_python_env(tmp_path: Path, monkey
 
 def test_rewrite_train_argv_normalizes_local_lerobot_train_path() -> None:
     argv = [
-        "/Users/pearl/anaconda3/envs/roboclaw312/bin/lerobot-train",
+        "/usr/local/bin/lerobot-train",
         "--dataset.root=/tmp/local-dataset",
         "--output_dir=/tmp/local-output",
         "--steps=20",
