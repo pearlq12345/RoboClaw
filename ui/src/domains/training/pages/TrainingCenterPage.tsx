@@ -105,6 +105,15 @@ function remoteModeHint(
   return t('remoteTrainingBackendUnavailableHint')
 }
 
+function managedRemoteBackendLabel(
+  mode: TrainingCapabilities['locations']['remote_backend']['mode'],
+  t: (key: any) => string,
+) {
+  if (mode === 'managed') return t('cloudTrainingService')
+  if (mode === 'unavailable') return t('remoteBackendUnavailable')
+  return ''
+}
+
 function providerDetailSummary(providerData: TrainingStatusData['provider_data']) {
   if (!providerData || typeof providerData !== 'object') return ''
   for (const key of ['failure_reason', 'reason', 'error', 'detail']) {
@@ -358,25 +367,34 @@ export default function TrainingCenterPage() {
                 </select>
               </label>
               {trainingLocation === 'remote_backend' ? (
-                <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono">
-                  {t('remoteBackend')}
-                  <select
-                    value={remoteProvider}
-                    onChange={(e) => setRemoteProvider(e.target.value as 'aliyun' | 'autodl')}
-                    disabled={!configuredRemoteProviders.length}
-                    className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac disabled:opacity-50"
-                  >
-                    {configuredRemoteProviders.length > 0 ? (
-                      configuredRemoteProviders.map((provider) => (
-                        <option key={provider} value={provider}>
-                          {capabilities.providers[provider]?.display_name || provider}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">{t('remoteBackendUnavailable')}</option>
-                    )}
-                  </select>
-                </label>
+                remoteBackendMode === 'self_hosted' ? (
+                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono">
+                    {t('remoteBackend')}
+                    <select
+                      value={remoteProvider}
+                      onChange={(e) => setRemoteProvider(e.target.value as 'aliyun' | 'autodl')}
+                      disabled={!configuredRemoteProviders.length}
+                      className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac disabled:opacity-50"
+                    >
+                      {configuredRemoteProviders.length > 0 ? (
+                        configuredRemoteProviders.map((provider) => (
+                          <option key={provider} value={provider}>
+                            {capabilities.providers[provider]?.display_name || provider}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">{t('remoteBackendUnavailable')}</option>
+                      )}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono">
+                    {t('cloudTraining')}
+                    <div className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm">
+                      {managedRemoteBackendLabel(remoteBackendMode, t)}
+                    </div>
+                  </label>
+                )
               ) : (
                 <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono">
                   {t('device')}
