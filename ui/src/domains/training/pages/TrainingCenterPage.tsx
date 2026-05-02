@@ -10,22 +10,11 @@ import { useI18n } from '@/i18n'
 const TRAINING_LOCATIONS = ['current_machine', 'remote_backend'] as const
 const REMOTE_PROVIDER_ORDER = ['aliyun', 'autodl'] as const
 const ALIYUN_IMAGE_STORAGE_KEY = 'roboclaw.aliyunTrainingImage'
-const POLICY_TYPES = [
-  'act',
-  'diffusion',
-  'groot',
-  'multi_task_dit',
-  'pi0',
-  'pi0_fast',
-  'pi05',
-  'reward_classifier',
-  'sac',
-  'sarm',
-  'smolvla',
-  'tdmpc',
-  'vqbet',
-  'wall_x',
-  'xvla',
+const POLICY_TYPE_GROUPS: ReadonlyArray<{ groupKey: string; models: ReadonlyArray<string> }> = [
+  { groupKey: 'policyGroupVla', models: ['pi0', 'pi0_fast', 'pi05', 'smolvla', 'groot', 'xvla'] },
+  { groupKey: 'policyGroupClassic', models: ['act', 'diffusion', 'vqbet', 'tdmpc', 'multi_task_dit'] },
+  { groupKey: 'policyGroupRl', models: ['sac', 'sarm'] },
+  { groupKey: 'policyGroupOther', models: ['reward_classifier', 'wall_x'] },
 ]
 
 function loadAliyunImage() {
@@ -448,9 +437,13 @@ export default function TrainingCenterPage() {
               )}
             </div>
             {hasActiveTraining && (
-              <div className="mb-3 rounded-lg border border-yl/30 bg-yl/8 px-3 py-2 text-[11px] text-tx2">
-                <div className="font-medium text-yl mb-1">{t('activeTrainingLabel')}</div>
-                <div>{t('activeTrainingNotice')}</div>
+              <div
+                role="alert"
+                aria-live="polite"
+                className="mb-3 rounded-lg border-l-4 border-yl bg-yl/10 px-3 py-2.5 text-xs text-tx"
+              >
+                <div className="mb-0.5 font-semibold text-yl">⚠ {t('activeTrainingLabel')}</div>
+                <div className="text-tx2">{t('activeTrainingNotice')}</div>
               </div>
             )}
             <div className={`grid gap-3 mb-3 ${trainingLocation === 'remote_backend' && effectiveProvider === 'aliyun' ? 'grid-cols-3 max-[700px]:grid-cols-1' : 'grid-cols-2 max-[700px]:grid-cols-1'}`}>
@@ -461,8 +454,12 @@ export default function TrainingCenterPage() {
                   onChange={(e) => setPolicyType(e.target.value)}
                   className="bg-bg border border-bd text-tx px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-ac"
                 >
-                  {POLICY_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
+                  {POLICY_TYPE_GROUPS.map((group) => (
+                    <optgroup key={group.groupKey} label={t(group.groupKey as Parameters<typeof t>[0])}>
+                      {group.models.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
@@ -471,6 +468,7 @@ export default function TrainingCenterPage() {
                 <input
                   type="number"
                   min={1}
+                  placeholder="100000"
                   value={trainStepsInput}
                   onChange={(e) => {
                     const next = e.target.value
@@ -656,7 +654,12 @@ export default function TrainingCenterPage() {
                   {showRemoteJobId && <StatusRow label="Remote Job ID" value={remoteJobId} />}
                   {trainProvider && <StatusRow label={t('trainingProvider')} value={trainProvider} />}
                   {showMessage && <StatusRow label="Message" value={trainStatusMessage} />}
-                  {(trainStatus?.output_dir || parsedTrainStatus.output_dir) && <StatusRow label="Output" value={String(trainStatus?.output_dir || parsedTrainStatus.output_dir)} />}
+                  {(trainStatus?.output_dir || parsedTrainStatus.output_dir) && (
+                    <StatusRow
+                      label="Output"
+                      value={tildifyHomePath(String(trainStatus?.output_dir || parsedTrainStatus.output_dir))}
+                    />
+                  )}
                 </div>
                 {(failureSummary || logTail) && (
                   <div className="mt-3 space-y-2">
@@ -762,6 +765,11 @@ export default function TrainingCenterPage() {
       </div>
     </div>
   )
+}
+
+function tildifyHomePath(path: string): string {
+  if (!path) return path
+  return path.replace(/^\/(Users|home)\/[^/]+\//, '~/')
 }
 
 function StatusRow({ label, value }: { label: string; value: string }) {
