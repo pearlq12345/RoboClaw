@@ -274,8 +274,13 @@ class AliyunCloudTrainer:
         specs: list[Any] = []
         page_number = 1
         page_size = 100
+        request_type = getattr(dlc_models, "ListEcsSpecsRequest", None)
         while True:
-            request = dlc_models.ListEcsSpecsRequest(page_number=page_number, page_size=page_size)
+            request = (
+                request_type(page_number=page_number, page_size=page_size)
+                if request_type is not None
+                else None
+            )
             response = self._dlc.list_ecs_specs(request)
             page_specs = list(getattr(response.body, "ecs_specs", None) or [])
             if not page_specs:
