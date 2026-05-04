@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import time
 from typing import Any
 
 from roboclaw.embodied.embodiment.arm.registry import ArmRuntimeSpec, get_runtime_spec
@@ -42,6 +43,10 @@ def _motor_config_from_arm(
     }
 
 
+_CONNECT_RETRIES = 3
+_CONNECT_RETRY_DELAY = 0.05  # seconds; bus may be briefly unavailable after episode reset
+
+
 def _read_arm(
     arm: Binding,
     spec: ArmRuntimeSpec,
@@ -55,22 +60,35 @@ def _read_arm(
     }
     bus_class = _import_bus_class(spec)
     bus = bus_class(port=arm.port, motors=motors)
-    try:
-        bus.connect()
-        positions = {
-            name: int(bus.read("Present_Position", name, normalize=False))
-            for name in motor_config
-        }
-        temperatures = {
-            name: (
-                int(bus.read("Present_Temperature", name, normalize=False))
-                if spec.supports_temperature else None
-            )
-            for name in motor_config
-        }
-        return {"positions": positions, "temperatures": temperatures}
-    finally:
-        bus.disconnect()
+    last_exc: Exception | None = None
+    for attempt in range(_CONNECT_RETRIES):
+        try:
+            bus.connect()
+            positions = {
+                name: int(bus.read("Present_Position", name, normalize=False))
+                for name in motor_config
+            }
+            temperatures = {
+                name: (
+                    int(bus.read("Present_Temperature", name, normalize=False))
+                    if spec.supports_temperature else None
+                )
+                for name in motor_config
+            }
+            return {"positions": positions, "temperatures": temperatures}
+        except Exception as exc:
+            last_exc = exc
+            try:
+                bus.disconnect()
+            except Exception:
+                pass
+            if attempt < _CONNECT_RETRIES - 1:
+                time.sleep(_CONNECT_RETRY_DELAY)
+        else:
+            bus.disconnect()
+    raise RuntimeError(
+        f"Failed to read Present_Position on {arm.port} after {_CONNECT_RETRIES} attempts"
+    ) from last_exc
 
 
 def read_servo_positions(arms: list[Binding]) -> dict[str, Any]:

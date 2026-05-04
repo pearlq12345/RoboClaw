@@ -68,11 +68,12 @@ class RecordPhaseController:
     async def observe_recording_episode(self, episode: int) -> None:
         saved = self.board.get("saved_episodes", 0)
         self._phase_before_stop = None
-        if self.phase in (
-            RecordPhase.SAVE_REQUESTED,
-            RecordPhase.RESETTING,
-            RecordPhase.SKIP_RESET_REQUESTED,
-        ):
+        # SKIP_RESET_REQUESTED is intentionally excluded: the episode was already
+        # counted when the RESETTING prompt was observed.  Counting it again here
+        # caused a double-increment that left lerobot's internal episode boundary
+        # one step ahead of add_frame, triggering "add_episode called without
+        # add_frame" (issue #66).
+        if self.phase in (RecordPhase.SAVE_REQUESTED, RecordPhase.RESETTING):
             saved += 1
         await self.board.update(
             state=SessionState.RECORDING,
