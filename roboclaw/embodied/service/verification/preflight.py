@@ -390,7 +390,9 @@ def _validate_record_manifest(manifest: Any) -> list[Violation]:
 # Train preflight
 # ---------------------------------------------------------------------------
 
-_SUPPORTED_POLICY_TYPES = frozenset({"act", "diffusion", "tdmpc", "vqbet"})
+from roboclaw.embodied.command.builder import TRAIN_POLICY_TYPES as _TRAIN_POLICY_TYPES
+
+_SUPPORTED_POLICY_TYPES = _TRAIN_POLICY_TYPES
 _MIN_STEPS = 1
 _MAX_STEPS = 10_000_000
 
