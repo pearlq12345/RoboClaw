@@ -33,7 +33,7 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
                 steps=body.steps,
                 device=body.device,
             )
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
 
     @app.post("/api/train/stop")

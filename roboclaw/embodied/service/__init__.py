@@ -333,7 +333,10 @@ class EmbodiedService:
             steps=steps,
             device=device,
         )
-        dataset = self.datasets.require_local_dataset(dataset_name)
+        _matches = [r for r in self.datasets.list_local_datasets() if r.runtime and r.runtime.name == dataset_name]
+        if not _matches:
+            raise ValueError(f"Dataset '{dataset_name}' not found")
+        dataset = _matches[0]
         argv = CommandBuilder.train(
             self.manifest,
             dataset=dataset.runtime,
@@ -341,18 +344,10 @@ class EmbodiedService:
             steps=steps,
             device=device,
         )
-        result = await self.train.train(
-            manifest=self.manifest,
-            kwargs={
-                "dataset_name": dataset_name,
-                "policy_type": policy_type,
-                "steps": steps,
-                "device": device,
-            },
-            tty_handoff=None,
-        )
-        job_id = result.rsplit("Job ID:", 1)[-1].strip() if "Job ID:" in result else ""
-        return {"message": result, "job_id": job_id}
+        from roboclaw.embodied.executor import SubprocessExecutor
+        from roboclaw.embodied.command import logs_dir
+        job_id = await SubprocessExecutor().run_detached(argv=argv, log_dir=logs_dir())
+        return {"message": f"Training started. Job ID: {job_id}", "job_id": job_id}
 
     async def start_replay(
         self,
