@@ -33,6 +33,14 @@ const NAV_ICONS: Record<string, JSX.Element> = {
       <path d="M17 6h3v3" />
     </svg>
   ),
+  '/models': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="6" rx="1.5" />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" />
+      <line x1="7" y1="7" x2="7.01" y2="7" />
+      <line x1="7" y1="17" x2="7.01" y2="17" />
+    </svg>
+  ),
   '/recovery': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-2.64-6.36" />
@@ -104,6 +112,7 @@ export default function AppShell() {
   ]
   const navItemsAfterPipeline: NavItem[] = [
     { path: '/training', label: t('trainingCenter') },
+    { path: '/models', label: t('modelLibraryNav') },
     { path: '/settings', label: t('settings') },
     { path: '/logs', label: t('logs') },
   ]

@@ -67,6 +67,9 @@ brainco = [
 langsmith = [
     "langsmith>=0.1.0",
 ]
+policy = [
+    "huggingface-hub>=0.20.0",
+]
 
 [dependency-groups]
 dev = [
