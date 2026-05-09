@@ -8,17 +8,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from roboclaw.embodied.service import EmbodiedService
+from roboclaw.embodied.workflow import RecordWorkflowConfig
 
 
-class RecordStartRequest(BaseModel):
-    task: str
-    num_episodes: int = 10
-    fps: int = 30
-    episode_time_s: int = 300
-    reset_time_s: int = 10
-    dataset_name: str = ""
-    use_cameras: bool = True
-    arms: str = ""
+RecordStartRequest = RecordWorkflowConfig
 
 
 class TeleopStartRequest(BaseModel):
@@ -74,7 +67,7 @@ def register_session_routes(app: FastAPI, service: EmbodiedService) -> None:
                 use_cameras=body.use_cameras,
                 arms=body.arms,
             )
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"status": "recording", "dataset_name": dataset_name}
 

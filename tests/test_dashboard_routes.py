@@ -115,6 +115,39 @@ class TestSessionLifecycle:
         resp = client.post("/api/record/stop")
         assert resp.status_code == 200
 
+    def test_infer_start_passes_unified_workflow_fields(self, client, app):
+        service = app.state.embodied_service
+
+        async def fake_start_inference(**kwargs):
+            assert kwargs == {
+                "checkpoint_path": "/models/pi0",
+                "source_dataset": "pick_cube_v1",
+                "dataset_name": "eval_pick_cube_v1",
+                "task": "eval",
+                "num_episodes": 2,
+                "episode_time_s": 75,
+                "use_cameras": False,
+                "arms": "",
+            }
+
+        with patch.object(service, "start_inference", side_effect=fake_start_inference) as start:
+            resp = client.post(
+                "/api/infer/start",
+                json={
+                    "checkpoint_path": "/models/pi0",
+                    "source_dataset": "pick_cube_v1",
+                    "dataset_name": "eval_pick_cube_v1",
+                    "task": "eval",
+                    "num_episodes": 2,
+                    "episode_time_s": 75,
+                    "use_cameras": False,
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "inferring"}
+        start.assert_called_once()
+
     def test_save_episode_no_subprocess(self, client):
         resp = client.post("/api/record/episode/save")
         assert resp.status_code == 200

@@ -37,6 +37,7 @@ from roboclaw.embodied.service.verification import (
     VerificationRequest,
     Verifier,
 )
+from roboclaw.embodied.workflow import InferWorkflowConfig, RecordWorkflowConfig
 
 
 class EmbodiedService:
@@ -244,21 +245,25 @@ class EmbodiedService:
         use_cameras: bool = True,
         arms: str = "",
     ) -> str:
-        self._require_capability("record" if use_cameras else "record_without_cameras")
-        dataset = self.datasets.prepare_recording_dataset(dataset_name, prefix="rec")
-        argv = CommandBuilder.record(
-            self.manifest,
-            dataset=dataset.runtime,
+        request = RecordWorkflowConfig(
             task=task,
             num_episodes=num_episodes,
             fps=fps,
             episode_time_s=episode_time_s,
             reset_time_s=reset_time_s,
+            dataset_name=dataset_name,
             use_cameras=use_cameras,
             arms=arms,
         )
+        self._require_capability("record" if request.use_cameras else "record_without_cameras")
+        dataset = self.datasets.prepare_recording_dataset(request.dataset_name, prefix="rec")
+        argv = CommandBuilder.record(
+            self.manifest,
+            dataset=dataset.runtime,
+            **request.command_kwargs(),
+        )
         await self._start_managed_session(self.record, owner="recording", argv=argv)
-        await self.board.update(target_episodes=num_episodes, dataset=dataset.runtime.name)
+        await self.board.update(target_episodes=request.num_episodes, dataset=dataset.runtime.name)
         self._recording_started = True
         if self._monitor is not None:
             self._monitor.set_recording_active(True)
@@ -291,26 +296,32 @@ class EmbodiedService:
         arms: str = "",
         use_cameras: bool = True,
     ) -> None:
-        self._require_capability("infer" if use_cameras else "infer_without_cameras")
-        output_dataset = self.datasets.prepare_recording_dataset(dataset_name, prefix="eval")
-        source = self.datasets.resolve_runtime_dataset(source_dataset) if source_dataset else None
-        argv = CommandBuilder.infer(
-            self.manifest,
-            dataset=output_dataset.runtime,
+        request = InferWorkflowConfig(
             checkpoint_path=checkpoint_path,
-            source_dataset=source.runtime if source else None,
+            source_dataset=source_dataset,
+            dataset_name=dataset_name,
             task=task,
             num_episodes=num_episodes,
             episode_time_s=episode_time_s,
             arms=arms,
             use_cameras=use_cameras,
         )
+        self._require_capability("infer" if request.use_cameras else "infer_without_cameras")
+        output_dataset = self.datasets.prepare_recording_dataset(request.dataset_name, prefix="eval")
+        source = self.datasets.resolve_runtime_dataset(request.source_dataset) if request.source_dataset else None
+        argv = CommandBuilder.infer(
+            self.manifest,
+            dataset=output_dataset.runtime,
+            checkpoint_path=request.checkpoint_path,
+            source_dataset=source.runtime if source else None,
+            **request.command_kwargs(),
+        )
         self._verify_inference_preflight(
             argv=argv,
             dataset=output_dataset.runtime,
-            num_episodes=num_episodes,
-            episode_time_s=episode_time_s,
-            use_cameras=use_cameras,
+            num_episodes=request.num_episodes,
+            episode_time_s=request.episode_time_s,
+            use_cameras=request.use_cameras,
         )
         await self._start_managed_session(self.infer, owner="inferring", argv=argv)
 
@@ -345,26 +356,32 @@ class EmbodiedService:
         use_cameras: bool = True,
         tty_handoff: Any | None = None,
     ) -> str:
-        self._require_capability("infer" if use_cameras else "infer_without_cameras")
-        output_dataset = self.datasets.prepare_recording_dataset(dataset_name, prefix="eval")
-        source = self.datasets.resolve_runtime_dataset(source_dataset) if source_dataset else None
-        argv = CommandBuilder.infer(
-            self.manifest,
-            dataset=output_dataset.runtime,
+        request = InferWorkflowConfig(
             checkpoint_path=checkpoint_path,
-            source_dataset=source.runtime if source else None,
+            source_dataset=source_dataset,
+            dataset_name=dataset_name,
             task=task,
             num_episodes=num_episodes,
             episode_time_s=episode_time_s,
             arms=arms,
             use_cameras=use_cameras,
         )
+        self._require_capability("infer" if request.use_cameras else "infer_without_cameras")
+        output_dataset = self.datasets.prepare_recording_dataset(request.dataset_name, prefix="eval")
+        source = self.datasets.resolve_runtime_dataset(request.source_dataset) if request.source_dataset else None
+        argv = CommandBuilder.infer(
+            self.manifest,
+            dataset=output_dataset.runtime,
+            checkpoint_path=request.checkpoint_path,
+            source_dataset=source.runtime if source else None,
+            **request.command_kwargs(),
+        )
         self._verify_inference_preflight(
             argv=argv,
             dataset=output_dataset.runtime,
-            num_episodes=num_episodes,
-            episode_time_s=episode_time_s,
-            use_cameras=use_cameras,
+            num_episodes=request.num_episodes,
+            episode_time_s=request.episode_time_s,
+            use_cameras=request.use_cameras,
         )
         return await self._run_managed_session(
             self.infer, owner="inferring", argv=argv, tty_handoff=tty_handoff,

@@ -6,7 +6,12 @@ import { useDatasetsStore } from '@/domains/datasets/store/useDatasetsStore'
 import { useTrainingStore } from '@/domains/training/store/useTrainingStore'
 import { useI18n } from '@/i18n'
 import { CameraPreviewPanel } from '@/domains/control/components/CameraPreviewPanel'
-import { fetchControlRecordConfig, saveControlRecordConfig } from '@/domains/control/api/controlConfigApi'
+import {
+  fetchControlInferConfig,
+  fetchControlRecordConfig,
+  saveControlInferConfig,
+  saveControlRecordConfig,
+} from '@/domains/control/api/controlConfigApi'
 import { ServoPanel } from '@/domains/hardware/components/ServoPanel'
 
 const blockedCapability: OperationCapability = { ready: false, missing: [] }
@@ -22,6 +27,7 @@ function canDo(
   state: SessionState,
   capabilities: HardwareCapabilities | undefined,
   useRecordCameras: boolean,
+  useInferCameras: boolean,
 ) {
   const canStart = state === 'idle' || state === 'error'
   const tele = state === 'teleoperating'
@@ -32,7 +38,10 @@ function canDo(
     capabilities,
     useRecordCameras ? 'record' : 'record_without_cameras',
   )
-  const inferCapability = capabilityOf(capabilities, 'infer')
+  const inferCapability = capabilityOf(
+    capabilities,
+    useInferCameras ? 'infer' : 'infer_without_cameras',
+  )
   return {
     teleopStart: canStart && capabilityOf(capabilities, 'teleop').ready,
     teleopStop: tele,
@@ -130,27 +139,32 @@ export default function ControlPage() {
   // Merged record/infer card
   type OpMode = 'record' | 'infer'
   const [mode, setMode] = useState<OpMode>('record')
-  const [task, setTask] = useState('')
-  const [numEp, setNumEp] = useState(10)
-  const [episodeTime, setEpisodeTime] = useState(300)
-  const [resetTime, setResetTime] = useState(10)
-  const [datasetName, setDatasetName] = useState('')
-  const [fps, setFps] = useState(30)
-  const [useCameras, setUseCameras] = useState(true)
+  const [recordTask, setRecordTask] = useState('')
+  const [recordNumEp, setRecordNumEp] = useState(10)
+  const [recordEpisodeTime, setRecordEpisodeTime] = useState(300)
+  const [recordResetTime, setRecordResetTime] = useState(10)
+  const [recordDatasetName, setRecordDatasetName] = useState('')
+  const [recordFps, setRecordFps] = useState(30)
+  const [recordUseCameras, setRecordUseCameras] = useState(true)
+  const [inferNumEp, setInferNumEp] = useState(1)
+  const [inferEpisodeTime, setInferEpisodeTime] = useState(60)
+  const [inferDatasetName, setInferDatasetName] = useState('')
+  const [inferUseCameras, setInferUseCameras] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [inferCheckpoint, setInferCheckpoint] = useState('')
   const [manageMode, setManageMode] = useState(false)
   const [recordConfigReady, setRecordConfigReady] = useState(false)
+  const [inferConfigReady, setInferConfigReady] = useState(false)
   // Replay
   const [replayDataset, setReplayDataset] = useState('')
   const [replayEpisode, setReplayEpisode] = useState(0)
   const hwReady = hwStatus?.ready ?? false
   const capabilities = hwStatus?.capabilities
-  const ok = canDo(state, capabilities, useCameras)
+  const ok = canDo(state, capabilities, recordUseCameras, inferUseCameras)
   const teleopCapability = capabilityOf(capabilities, 'teleop')
-  const recordCapability = capabilityOf(capabilities, useCameras ? 'record' : 'record_without_cameras')
+  const recordCapability = capabilityOf(capabilities, recordUseCameras ? 'record' : 'record_without_cameras')
   const replayCapability = capabilityOf(capabilities, 'replay')
-  const inferCapability = capabilityOf(capabilities, 'infer')
+  const inferCapability = capabilityOf(capabilities, inferUseCameras ? 'infer' : 'infer_without_cameras')
 
   useEffect(() => {
     void loadDatasets()
@@ -167,17 +181,18 @@ export default function ControlPage() {
 
   useEffect(() => {
     let cancelled = false
+
     async function loadRecordConfig() {
       try {
         const config = await fetchControlRecordConfig()
         if (cancelled) return
-        setTask(config.task)
-        setNumEp(config.num_episodes)
-        setEpisodeTime(config.episode_time_s)
-        setResetTime(config.reset_time_s)
-        setDatasetName(config.dataset_name)
-        setFps(config.fps)
-        setUseCameras(config.use_cameras)
+        setRecordTask(config.task)
+        setRecordNumEp(config.num_episodes)
+        setRecordEpisodeTime(config.episode_time_s)
+        setRecordResetTime(config.reset_time_s)
+        setRecordDatasetName(config.dataset_name)
+        setRecordFps(config.fps)
+        setRecordUseCameras(config.use_cameras)
       } catch (error) {
         console.error('Failed to load control record config', error)
       } finally {
@@ -195,15 +210,71 @@ export default function ControlPage() {
   useEffect(() => {
     if (!recordConfigReady) return
     void saveControlRecordConfig({
-      task,
-      num_episodes: numEp,
-      episode_time_s: episodeTime,
-      reset_time_s: resetTime,
-      dataset_name: datasetName,
-      fps,
-      use_cameras: useCameras,
+      task: recordTask,
+      num_episodes: recordNumEp,
+      episode_time_s: recordEpisodeTime,
+      reset_time_s: recordResetTime,
+      dataset_name: recordDatasetName,
+      fps: recordFps,
+      use_cameras: recordUseCameras,
     })
-  }, [datasetName, episodeTime, fps, numEp, recordConfigReady, resetTime, task, useCameras])
+  }, [
+    recordConfigReady,
+    recordDatasetName,
+    recordEpisodeTime,
+    recordFps,
+    recordNumEp,
+    recordResetTime,
+    recordTask,
+    recordUseCameras,
+  ])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadInferConfig() {
+      try {
+        const config = await fetchControlInferConfig()
+        if (cancelled) return
+        setInferCheckpoint(config.checkpoint_path)
+        setInferNumEp(config.num_episodes)
+        setInferEpisodeTime(config.episode_time_s)
+        setInferDatasetName(config.dataset_name)
+        setInferUseCameras(config.use_cameras)
+      } catch (error) {
+        console.error('Failed to load control infer config', error)
+      } finally {
+        if (!cancelled) {
+          setInferConfigReady(true)
+        }
+      }
+    }
+
+    void loadInferConfig()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!inferConfigReady) return
+    void saveControlInferConfig({
+      checkpoint_path: inferCheckpoint,
+      source_dataset: '',
+      dataset_name: inferDatasetName,
+      task: 'eval',
+      num_episodes: inferNumEp,
+      episode_time_s: inferEpisodeTime,
+      use_cameras: inferUseCameras,
+    })
+  }, [
+    inferCheckpoint,
+    inferConfigReady,
+    inferDatasetName,
+    inferEpisodeTime,
+    inferNumEp,
+    inferUseCameras,
+  ])
 
   useEffect(() => {
     if (!manageMode) {
@@ -251,19 +322,19 @@ export default function ControlPage() {
   const [taskError, setTaskError] = useState(false)
 
   function handleRecordStart() {
-    if (!task.trim()) {
+    if (!recordTask.trim()) {
       setTaskError(true)
       setTimeout(() => setTaskError(false), 1500)
       return
     }
     void doRecordStart({
-      task: task.trim(),
-      num_episodes: numEp,
-      episode_time_s: episodeTime,
-      reset_time_s: resetTime,
-      dataset_name: datasetName.trim() || undefined,
-      fps,
-      use_cameras: useCameras,
+      task: recordTask.trim(),
+      num_episodes: recordNumEp,
+      episode_time_s: recordEpisodeTime,
+      reset_time_s: recordResetTime,
+      dataset_name: recordDatasetName.trim() || undefined,
+      fps: recordFps,
+      use_cameras: recordUseCameras,
     })
   }
 
@@ -432,8 +503,8 @@ export default function ControlPage() {
             {/* Mode-specific input */}
             {mode === 'record' ? (
               <input
-                value={task}
-                onChange={(e) => { setTask(e.target.value); setTaskError(false) }}
+                value={recordTask}
+                onChange={(e) => { setRecordTask(e.target.value); setTaskError(false) }}
                 readOnly={!manageMode}
                 placeholder="Pick up the red block"
                 className={`w-full bg-sf2 border text-tx px-3 py-2 rounded-lg text-sm
@@ -460,20 +531,43 @@ export default function ControlPage() {
             <div className="flex gap-2 items-end flex-wrap">
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
                 {t('numEpisodes')}
-                <input type="number" value={numEp} onChange={(e) => setNumEp(Number(e.target.value) || 10)} min={1}
+                <input
+                  type="number"
+                  value={mode === 'record' ? recordNumEp : inferNumEp}
+                  onChange={(e) => {
+                    const next = Number(e.target.value) || (mode === 'record' ? 10 : 1)
+                    if (mode === 'record') {
+                      setRecordNumEp(next)
+                      return
+                    }
+                    setInferNumEp(next)
+                  }}
+                  min={1}
                   readOnly={!manageMode}
                   className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
               </label>
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
                 {t('epTime')}
-                <input type="number" value={episodeTime} onChange={(e) => setEpisodeTime(Number(e.target.value) || 300)} min={1}
+                <input
+                  type="number"
+                  value={mode === 'record' ? recordEpisodeTime : inferEpisodeTime}
+                  onChange={(e) => {
+                    const fallback = mode === 'record' ? 300 : 60
+                    const next = Number(e.target.value) || fallback
+                    if (mode === 'record') {
+                      setRecordEpisodeTime(next)
+                      return
+                    }
+                    setInferEpisodeTime(next)
+                  }}
+                  min={1}
                   readOnly={!manageMode}
                   className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
               </label>
               {mode === 'record' && (
                 <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[80px]">
                   {t('resetTime')}
-                  <input type="number" value={resetTime} onChange={(e) => setResetTime(Number(e.target.value) || 10)} min={0}
+                  <input type="number" value={recordResetTime} onChange={(e) => setRecordResetTime(Number(e.target.value) || 10)} min={0}
                     readOnly={!manageMode}
                     className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono focus:outline-none focus:border-ac" />
                 </label>
@@ -506,8 +600,14 @@ export default function ControlPage() {
                 <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono flex-1 min-w-[120px]">
                   {t('datasetName')}
                   <input
-                    value={datasetName}
-                    onChange={(e) => setDatasetName(e.target.value)}
+                    value={mode === 'record' ? recordDatasetName : inferDatasetName}
+                    onChange={(e) => {
+                      if (mode === 'record') {
+                        setRecordDatasetName(e.target.value)
+                        return
+                      }
+                      setInferDatasetName(e.target.value)
+                    }}
                     placeholder="rec_20260410_..."
                     className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
                       focus:outline-none focus:border-ac placeholder:text-tx3"
@@ -517,8 +617,8 @@ export default function ControlPage() {
                   <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
                     {t('fps')}
                     <input
-                      type="number" value={fps}
-                      onChange={(e) => setFps(Number(e.target.value) || 30)} min={1} max={120}
+                      type="number" value={recordFps}
+                      onChange={(e) => setRecordFps(Number(e.target.value) || 30)} min={1} max={120}
                       className="bg-sf2 border border-bd text-tx px-2 py-1.5 rounded text-sm font-mono
                         focus:outline-none focus:border-ac"
                     />
@@ -526,8 +626,15 @@ export default function ControlPage() {
                 )}
                 <label className="flex items-center gap-2 text-2xs text-tx3 font-mono cursor-pointer self-center pb-1.5">
                   <input
-                    type="checkbox" checked={useCameras}
-                    onChange={(e) => setUseCameras(e.target.checked)}
+                    type="checkbox"
+                    checked={mode === 'record' ? recordUseCameras : inferUseCameras}
+                    onChange={(e) => {
+                      if (mode === 'record') {
+                        setRecordUseCameras(e.target.checked)
+                        return
+                      }
+                      setInferUseCameras(e.target.checked)
+                    }}
                     className="w-4 h-4 rounded border-bd accent-ac"
                   />
                   {t('useCameras')}
@@ -553,8 +660,11 @@ export default function ControlPage() {
                     onClick={() => {
                       void doInferStart({
                         checkpoint_path: inferCheckpoint,
-                        num_episodes: numEp,
-                        episode_time_s: episodeTime,
+                        dataset_name: inferDatasetName.trim() || undefined,
+                        task: 'eval',
+                        num_episodes: inferNumEp,
+                        episode_time_s: inferEpisodeTime,
+                        use_cameras: inferUseCameras,
                       })
                     }}
                     title={busy ? busyReason : capabilityReason(inferCapability) || undefined}>

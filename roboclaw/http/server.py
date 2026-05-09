@@ -20,6 +20,7 @@ from loguru import logger
 
 from roboclaw.channels.web import WebChannel
 from roboclaw.config.loader import get_config_path, load_config, load_runtime_config, save_config
+from roboclaw.embodied.workflow import InferWorkflowConfig, RecordWorkflowConfig, TrainWorkflowConfig
 from roboclaw.providers.factory import build_provider
 from roboclaw.providers.registry import PROVIDERS
 from roboclaw.utils.helpers import sync_workspace_templates
@@ -182,32 +183,34 @@ def _register_system_routes(app: FastAPI, runtime: WebRuntime) -> None:
         return config.control_center.record.model_dump()
 
     @app.post("/api/system/control-record-config")
-    async def save_control_record_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    async def save_control_record_config(payload: RecordWorkflowConfig = Body(...)) -> dict[str, Any]:
+        return _save_control_workflow_config("record", payload)
+
+    @app.get("/api/system/control-train-config")
+    async def control_train_config() -> dict[str, Any]:
         config = load_config(get_config_path())
-        record = config.control_center.record
-        task = payload.get("task")
-        if isinstance(task, str):
-            record.task = task
-        num_episodes = payload.get("num_episodes")
-        if isinstance(num_episodes, int):
-            record.num_episodes = num_episodes
-        episode_time_s = payload.get("episode_time_s")
-        if isinstance(episode_time_s, int):
-            record.episode_time_s = episode_time_s
-        reset_time_s = payload.get("reset_time_s")
-        if isinstance(reset_time_s, int):
-            record.reset_time_s = reset_time_s
-        dataset_name = payload.get("dataset_name")
-        if isinstance(dataset_name, str):
-            record.dataset_name = dataset_name
-        fps = payload.get("fps")
-        if isinstance(fps, int):
-            record.fps = fps
-        use_cameras = payload.get("use_cameras")
-        if isinstance(use_cameras, bool):
-            record.use_cameras = use_cameras
-        save_config(config, get_config_path())
-        return {"status": "ok", **record.model_dump()}
+        return config.control_center.train.model_dump()
+
+    @app.post("/api/system/control-train-config")
+    async def save_control_train_config(payload: TrainWorkflowConfig = Body(...)) -> dict[str, Any]:
+        return _save_control_workflow_config("train", payload)
+
+    @app.get("/api/system/control-infer-config")
+    async def control_infer_config() -> dict[str, Any]:
+        config = load_config(get_config_path())
+        return config.control_center.infer.model_dump()
+
+    @app.post("/api/system/control-infer-config")
+    async def save_control_infer_config(payload: InferWorkflowConfig = Body(...)) -> dict[str, Any]:
+        return _save_control_workflow_config("infer", payload)
+
+
+def _save_control_workflow_config(section: str, payload: Any) -> dict[str, Any]:
+    """Persist one control-center workflow section and echo the saved model."""
+    config = load_config(get_config_path())
+    setattr(config.control_center, section, payload)
+    save_config(config, get_config_path())
+    return {"status": "ok", **payload.model_dump()}
 
 
 async def _handle_save_provider(payload: dict[str, Any], runtime: WebRuntime) -> dict[str, Any]:

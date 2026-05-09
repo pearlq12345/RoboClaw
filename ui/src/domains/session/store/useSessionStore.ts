@@ -103,8 +103,13 @@ interface SessionStore {
   doReplayStop: () => Promise<void>
   doInferStart: (params: {
     checkpoint_path?: string
+    source_dataset?: string
+    dataset_name?: string
+    task?: string
     num_episodes?: number
     episode_time_s?: number
+    use_cameras?: boolean
+    arms?: string
   }) => Promise<void>
   doInferStop: () => Promise<void>
   doAutoCalibrationStart: () => Promise<void>

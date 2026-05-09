@@ -3,6 +3,7 @@ import { useDatasetsStore } from '@/domains/datasets/store/useDatasetsStore'
 import { useSessionStore } from '@/domains/session/store/useSessionStore'
 import { useTrainingStore } from '@/domains/training/store/useTrainingStore'
 import { useHubTransferStore } from '@/domains/hub/store/useHubTransferStore'
+import { fetchControlTrainConfig, saveControlTrainConfig } from '@/domains/control/api/controlConfigApi'
 import { LossCurvePanel } from '@/domains/training/components/LossCurvePanel'
 import { TrainingProgressPanel } from '@/domains/training/components/TrainingProgressPanel'
 import { useI18n } from '@/i18n'
@@ -49,12 +50,49 @@ export default function TrainingCenterPage() {
   const [trainSteps, setTrainSteps] = useState(100000)
   const [trainDevice, setTrainDevice] = useState('cuda')
   const [pullPolicyRepo, setPullPolicyRepo] = useState('')
+  const [trainConfigReady, setTrainConfigReady] = useState(false)
 
   useEffect(() => {
     void loadDatasets()
     void loadPolicies()
     void restoreCurrentTrainJob()
   }, [loadDatasets, loadPolicies, restoreCurrentTrainJob])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadTrainConfig() {
+      try {
+        const config = await fetchControlTrainConfig()
+        if (cancelled) return
+        setTrainDataset(config.dataset_name)
+        setPolicyType(config.policy_type)
+        setTrainSteps(config.steps)
+        setTrainDevice(config.device)
+      } catch (error) {
+        console.error('Failed to load control train config', error)
+      } finally {
+        if (!cancelled) {
+          setTrainConfigReady(true)
+        }
+      }
+    }
+
+    void loadTrainConfig()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!trainConfigReady) return
+    void saveControlTrainConfig({
+      dataset_name: trainDataset,
+      policy_type: policyType,
+      steps: trainSteps,
+      device: trainDevice,
+    })
+  }, [policyType, trainConfigReady, trainDataset, trainDevice, trainSteps])
 
   const promptPushPolicy = (value: string) => {
     const repoId = prompt(t('enterRepoId'))

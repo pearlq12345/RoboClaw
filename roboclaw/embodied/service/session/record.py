@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from roboclaw.embodied.board import Board, Command, InputConsumer, OutputConsumer, SessionState
 from roboclaw.embodied.command import CommandBuilder
 from roboclaw.embodied.service.session.base import Session
+from roboclaw.embodied.workflow import RecordWorkflowConfig
 
 if TYPE_CHECKING:
     from roboclaw.embodied.embodiment.manifest import Manifest
@@ -240,23 +241,24 @@ class RecordSession(Session):
         kwargs: dict[str, Any],
         tty_handoff: Any,
     ) -> str:
-        self._kwargs = kwargs
+        request = RecordWorkflowConfig.model_validate(kwargs)
+        self._kwargs = request.model_dump()
         if tty_handoff:
             self._parent.acquire_embodiment("recording")
             try:
                 dataset = self._parent.datasets.prepare_recording_dataset(
-                    kwargs.get("dataset_name", ""),
+                    request.dataset_name,
                     prefix="rec",
                 )
                 argv = CommandBuilder.record(
                     manifest,
                     dataset=dataset.runtime,
-                    **self._record_kwargs(kwargs),
+                    **request.command_kwargs(),
                 )
                 self._dataset_name = dataset.runtime.name
                 await self.start(argv)
                 await self.board.update(
-                    target_episodes=kwargs.get("num_episodes", 10),
+                    target_episodes=request.num_episodes,
                     dataset=self._dataset_name,
                 )
                 from roboclaw.embodied.toolkit.tty import TtySession
@@ -265,15 +267,6 @@ class RecordSession(Session):
             finally:
                 self._parent.release_embodiment()
         return "This action requires a local terminal."
-
-    def _record_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Extract CommandBuilder.record() keyword args from raw kwargs."""
-        return {
-            k: v
-            for k, v in kwargs.items()
-            if k in ("task", "num_episodes", "fps",
-                     "episode_time_s", "reset_time_s", "arms", "use_cameras")
-        }
 
     async def _wait_process(self) -> None:
         """Release embodiment lock on natural subprocess exit (web path)."""

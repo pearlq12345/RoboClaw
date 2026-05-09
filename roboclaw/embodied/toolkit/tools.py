@@ -240,6 +240,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                     "type": "integer",
                     "description": "Number of training steps.",
                 },
+                "policy_type": {
+                    "type": "string",
+                    "description": "Policy type to train (e.g. act, diffusion, pi0, xvla).",
+                },
                 "device": {
                     "type": "string",
                     "description": "Device for training.",
@@ -293,6 +297,10 @@ _TOOL_GROUPS: dict[str, dict[str, Any]] = {
                 "num_episodes": {
                     "type": "integer",
                     "description": "Number of rollout episodes to run.",
+                },
+                "episode_time_s": {
+                    "type": "integer",
+                    "description": "Duration of each rollout episode in seconds.",
                 },
             },
             "required": ["action"],

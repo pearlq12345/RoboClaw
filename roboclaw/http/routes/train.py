@@ -9,13 +9,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from roboclaw.embodied.service import EmbodiedService
+from roboclaw.embodied.workflow import TrainWorkflowConfig
 
 
-class TrainStartRequest(BaseModel):
-    dataset_name: str
-    policy_type: str = "act"
-    steps: int = 100_000
-    device: str = "cuda"
+TrainStartRequest = TrainWorkflowConfig
 
 
 class TrainStopRequest(BaseModel):
@@ -26,16 +23,14 @@ def register_train_routes(app: FastAPI, service: EmbodiedService) -> None:
 
     @app.post("/api/train/start")
     async def train_start(body: TrainStartRequest) -> dict[str, Any]:
-        result = await service.train.train(
-            manifest=service.manifest,
-            kwargs={
-                "dataset_name": body.dataset_name,
-                "policy_type": body.policy_type,
-                "steps": body.steps,
-                "device": body.device,
-            },
-            tty_handoff=None,
-        )
+        try:
+            result = await service.train.train(
+                manifest=service.manifest,
+                kwargs=body.command_kwargs(),
+                tty_handoff=None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         job_id = result.rsplit("Job ID:", 1)[-1].strip() if "Job ID:" in result else ""
         return {"message": result, "job_id": job_id}
 

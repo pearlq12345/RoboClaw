@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from roboclaw.embodied.command import CommandBuilder, logs_dir
+from roboclaw.embodied.workflow import TrainWorkflowConfig
 
 if TYPE_CHECKING:
     from roboclaw.embodied.embodiment.manifest import Manifest
@@ -32,14 +33,14 @@ class TrainSession:
     ) -> str:
         from roboclaw.embodied.executor import SubprocessExecutor
 
-        dataset_name = kwargs.get("dataset_name", "default")
-        dataset = self._parent.datasets.resolve_runtime_dataset(dataset_name)
+        request = TrainWorkflowConfig.model_validate(kwargs)
+        dataset = self._parent.datasets.resolve_runtime_dataset(request.dataset_name)
         argv = CommandBuilder.train(
             manifest,
             dataset=dataset.runtime,
-            policy_type=kwargs.get("policy_type", "act"),
-            steps=kwargs.get("steps", 100_000),
-            device=kwargs.get("device", "cuda"),
+            policy_type=request.policy_type,
+            steps=request.steps,
+            device=request.device,
         )
         job_id = await SubprocessExecutor().run_detached(argv=argv, log_dir=logs_dir())
         return f"Training started. Job ID: {job_id}"
