@@ -111,3 +111,27 @@ def test_deploy_rynnrcp_state_uses_singleton_bridge(monkeypatch) -> None:
     assert second.status_code == 200
     assert first.json()["state"]["calls"] == 1
     assert second.json()["state"]["calls"] == 2
+
+
+def test_deploy_rynnrcp_go_home_uses_singleton_bridge(monkeypatch) -> None:
+    class FakeBridge:
+        enabled = True
+        settings = RynnRCPSettings(robot_type="so101", lcm_channel="rcp_robotmotion")
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def go_home(self) -> None:
+            self.calls += 1
+
+    fake_bridge = FakeBridge()
+    monkeypatch.setattr(deploy_rcp, "_bridge", fake_bridge)
+    app = FastAPI()
+    register_deploy_rcp_routes(app)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/deploy/rynnrcp/go_home")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "rynnrcp go-home request sent"
+    assert fake_bridge.calls == 1

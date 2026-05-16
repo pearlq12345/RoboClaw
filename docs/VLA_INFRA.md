@@ -219,6 +219,7 @@ Routes:
 
 - `POST /deploy/rynnrcp/send`: send `{checkpoint_path, actions, robot_type}` to the configured RynnRCP channel.
 - `GET /deploy/rynnrcp/state`: send a state feedback request and return the latest bridge state.
+- `POST /deploy/rynnrcp/go_home`: send a RynnRCP go-home request to the configured robot.
 
 Configuration:
 

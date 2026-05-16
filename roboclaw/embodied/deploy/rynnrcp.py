@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import threading
 import time
@@ -28,6 +29,8 @@ _COMMAND_MODULE_CANDIDATES = (
     "rcp_framework.lcm.act_command",
     "robot_motion.lcm.act_command",
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,8 @@ class RynnRCPBridge:
         self._last_command: Any | None = None
         self._last_request: Any | None = None
         self._last_state_feedback: dict[str, Any] | None = None
+        if self._lcm_client is None:
+            _LOGGER.warning("RynnRCP LCM client unavailable, bridge disabled")
 
     @property
     def enabled(self) -> bool:

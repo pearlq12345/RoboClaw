@@ -84,3 +84,14 @@ def register_deploy_rcp_routes(app: FastAPI) -> None:
             "enabled": bridge.enabled,
             "state": state,
         }
+
+    @app.post("/deploy/rynnrcp/go_home")
+    async def deploy_rynnrcp_go_home() -> dict[str, Any]:
+        bridge = get_bridge()
+        bridge.go_home()
+        return {
+            "message": "rynnrcp go-home request sent",
+            "enabled": bridge.enabled,
+            "robot_type": bridge.settings.robot_type,
+            "channel": bridge.settings.lcm_channel,
+        }
