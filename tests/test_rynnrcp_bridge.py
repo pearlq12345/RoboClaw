@@ -31,6 +31,7 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_ROBOT_TYPE", "franka")
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_ARM_DOF", "7")
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_HAND_DOF", "6")
+    monkeypatch.setenv("ROBOCLAW_RYNNRCP_HAND_CONTROL_MODE", "hybrid")
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE", "12")
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_INFERENCE_RATE", "50")
     monkeypatch.setenv("ROBOCLAW_RYNNRCP_TIMEOUT_SECONDS", "5")
@@ -42,6 +43,7 @@ def test_settings_from_env(monkeypatch) -> None:
     assert settings.robot_type == "franka"
     assert settings.arm_dof == 7
     assert settings.hand_dof == 6
+    assert settings.hand_control_mode == "hybrid"
     assert settings.action_dim == 13
     assert settings.action_chunk_size == 12
     assert settings.inference_rate == 50
@@ -61,6 +63,22 @@ def test_dexhand_action_dim_property() -> None:
     settings = RynnRCPSettings(arm_dof=6, hand_dof=6)
 
     assert settings.action_dim == 12
+
+
+def test_dexhand_action_chunk_is_segmented() -> None:
+    bridge = RynnRCPBridge(
+        RynnRCPSettings(action_chunk_size=2, arm_dof=2, hand_dof=3, hand_control_mode="force"),
+        lcm_client=FakeLCM(),
+        clock_ns=lambda: 123,
+    )
+
+    bridge.send_action_chunk([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+
+    assert bridge.last_command is not None
+    assert bridge.last_command.actions == [[1.0, 2.0, 3.0, 4.0, 5.0], [6.0, 7.0, 8.0, 9.0, 10.0]]
+    assert bridge.last_command.arm_actions == [[1.0, 2.0], [6.0, 7.0]]
+    assert bridge.last_command.hand_actions == [[3.0, 4.0, 5.0], [8.0, 9.0, 10.0]]
+    assert bridge.last_command.hand_control_mode == "force"
 
 
 def test_send_action_chunk_shape_validation() -> None:

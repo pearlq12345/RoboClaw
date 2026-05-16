@@ -66,7 +66,7 @@ Do not let provider details leak upward into Data or Model choices. Normal users
 
 Use the RynnRCP bridge when a trained policy checkpoint needs to drive a real robot through RobotMotion:
 
-- Environment variables: `ROBOCLAW_RYNNRCP_CHANNEL`, `ROBOCLAW_RYNNRCP_ROBOT_TYPE`, `ROBOCLAW_RYNNRCP_ARM_DOF`, `ROBOCLAW_RYNNRCP_HAND_DOF`, `ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE`.
+- Environment variables: `ROBOCLAW_RYNNRCP_CHANNEL`, `ROBOCLAW_RYNNRCP_ROBOT_TYPE`, `ROBOCLAW_RYNNRCP_ARM_DOF`, `ROBOCLAW_RYNNRCP_HAND_DOF`, `ROBOCLAW_RYNNRCP_HAND_CONTROL_MODE`, `ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE`.
 - Flow: training completes -> `POST /api/vla-rl/deployability` passes -> policy inference emits an action chunk -> `POST /deploy/rynnrcp/send` -> RynnRCP LCM channel -> RobotMotion.
 - State check: `GET /deploy/rynnrcp/state`.
 - Recovery/home request: `POST /deploy/rynnrcp/go_home`.

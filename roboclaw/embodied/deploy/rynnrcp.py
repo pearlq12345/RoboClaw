@@ -41,6 +41,7 @@ class RynnRCPSettings:
     robot_type: str = "so101"
     arm_dof: int = 6
     hand_dof: int = 0
+    hand_control_mode: str = "position"
     action_chunk_size: int = 20
     interpolation: str = "cubic"
 
@@ -57,6 +58,10 @@ class RynnRCPSettings:
             robot_type=os.environ.get("ROBOCLAW_RYNNRCP_ROBOT_TYPE", cls.robot_type).strip() or cls.robot_type,
             arm_dof=_env_int("ROBOCLAW_RYNNRCP_ARM_DOF", cls.arm_dof),
             hand_dof=_env_int("ROBOCLAW_RYNNRCP_HAND_DOF", cls.hand_dof),
+            hand_control_mode=os.environ.get(
+                "ROBOCLAW_RYNNRCP_HAND_CONTROL_MODE", cls.hand_control_mode
+            ).strip()
+            or cls.hand_control_mode,
             action_chunk_size=_env_int("ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE", cls.action_chunk_size),
             interpolation=os.environ.get("ROBOCLAW_RYNNRCP_INTERPOLATION", cls.interpolation).strip()
             or cls.interpolation,
@@ -171,7 +176,12 @@ class RynnRCPBridge:
         _set_field(message, "interpolation", self.settings.interpolation)
         _set_field(message, "action_dim", self.settings.action_dim)
         _set_field(message, "action_chunk_size", self.settings.action_chunk_size)
-        _set_field(message, "actions", [[float(value) for value in action] for action in actions])
+        flat_actions = [[float(value) for value in action] for action in actions]
+        _set_field(message, "actions", flat_actions)
+        if self.settings.hand_dof > 0:
+            _set_field(message, "arm_actions", [action[: self.settings.arm_dof] for action in flat_actions])
+            _set_field(message, "hand_actions", [action[self.settings.arm_dof :] for action in flat_actions])
+            _set_field(message, "hand_control_mode", self.settings.hand_control_mode)
         return message
 
     def _make_act_request(self, request_type: int) -> Any:
