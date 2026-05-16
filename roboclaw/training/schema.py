@@ -54,6 +54,15 @@ class TrainingStopSpec:
 
 
 @dataclass(frozen=True)
+class DeploymentSpec:
+    checkpoint_path: str
+    robot_type: str = "so101"
+    action_dim: int = 6
+    action_chunk_size: int = 20
+    bridge: str = "rynnrcp"
+
+
+@dataclass(frozen=True)
 class TrainingJobStatus:
     job_id: str = ""
     status: str = "idle"

@@ -204,6 +204,29 @@ Checks whether a trained checkpoint is compatible with the target robot before i
 - action schema;
 - required checkpoint/artifact fields.
 
+### RynnRCP Deployment Bridge
+
+RoboClaw now keeps the training and deployment control loops separate:
+
+```text
+Training:   RoboClaw -> EVO_Train -> RLinf/project backend -> checkpoint
+Deployment: checkpoint -> RynnRCPBridge -> LCM -> RynnRCP RobotMotion -> SO-101
+```
+
+`roboclaw.embodied.deploy.rynnrcp.RynnRCPBridge` converts policy action chunks into RynnRCP LCM payloads on `rcp_robotmotion` by default. It is optional at import time: if `lcm` or generated RynnRCP message classes are not installed, RoboClaw can still start, report the bridge as disabled, and validate payload shape before hardware deployment.
+
+Routes:
+
+- `POST /deploy/rynnrcp/send`: send `{checkpoint_path, actions, robot_type}` to the configured RynnRCP channel.
+- `GET /deploy/rynnrcp/state`: send a state feedback request and return the latest bridge state.
+
+Configuration:
+
+- `ROBOCLAW_RYNNRCP_CHANNEL`;
+- `ROBOCLAW_RYNNRCP_ROBOT_TYPE`;
+- `ROBOCLAW_RYNNRCP_ACTION_DIM`;
+- `ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE`.
+
 ## Why This Belongs In RoboClaw
 
 RoboClaw owns the product and AI control plane: user intent, hardware context, datasets, policies, deployment, and safety. EVO_Train owns execution: queueing, provider lifecycle, billing, command materialization, and artifact collection.

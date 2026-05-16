@@ -62,6 +62,16 @@ Keep these layers separate when guiding users or generating backend requests:
 
 Do not let provider details leak upward into Data or Model choices. Normal users choose a model family and GPU SKU, not AutoDL UUIDs.
 
+## Deployment
+
+Use the RynnRCP bridge when a trained policy checkpoint needs to drive a real robot through RobotMotion:
+
+- Environment variables: `ROBOCLAW_RYNNRCP_CHANNEL`, `ROBOCLAW_RYNNRCP_ROBOT_TYPE`, `ROBOCLAW_RYNNRCP_ACTION_DIM`, `ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE`.
+- Flow: training completes -> `POST /api/vla-rl/deployability` passes -> policy inference emits an action chunk -> `POST /deploy/rynnrcp/send` -> RynnRCP LCM channel -> RobotMotion.
+- State check: `GET /deploy/rynnrcp/state`.
+
+Do not send action chunks to hardware until the deployability gate passes and the user confirms the target robot.
+
 Treat benchmark/env choices such as LIBERO, MetaWorld, ManiSkill, RoboSuite, and IsaacLab tasks as task requirements. Treat RLinf, LeRobot, Dexbotic, and custom projects as the built-in backend choices. A single plan may need both.
 
 For anything outside the built-in interfaces, preserve the user's backend name and put concrete runtime needs into `requiredCapabilities`, for example `["cuda121", "mujoco", "sapien", "libero_assets", "rollout_video"]`. The backend list is extensible only through declared launcher, preflight, and artifact contracts.
