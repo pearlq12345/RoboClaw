@@ -1,0 +1,12 @@
+# RynnVLA-001 model group for RoboClaw VLA configs.
+
+model_type: rynnvla
+model_path: path/to/rynnvla_checkpoint
+actionvae_path: path/to/actionvae.pth
+precision: bfloat16
+action_chunk_size: 20
+action_dim: 6
+condition_frame_num: 1
+use_rel_action: true
+mean_std_norm: true
+img_size: 384

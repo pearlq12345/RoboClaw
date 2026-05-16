@@ -26,6 +26,9 @@ _MODEL_ALIASES = {
     "cogact": "cogact",
     "oft": "oft",
     "navila": "navila",
+    "rynnvla-001": "rynnvla",
+    "rynnvla": "rynnvla",
+    "rynn": "rynnvla",
 }
 
 _ROBOT_ALIASES = {
@@ -44,6 +47,7 @@ _DEFAULT_TRAINING_PROFILES = {
     "oft": "roboclaw_rlinf_backend",
     "navila": "roboclaw_rlinf_backend",
     "uni-navid": "roboclaw_rlinf_backend",
+    "rynnvla": "roboclaw_lerobot_backend",
 }
 
 _BACKEND_INTERFACE_CATALOG = {
@@ -242,7 +246,7 @@ _PROFILE_CATALOG = {
         "title": "Generic project-owned LeRobot fine-tuning backend",
         "backendKind": "lerobot",
         "modelFamily": "custom",
-        "policyTypes": ["act", "diffusion", "pi0", "pi05", "groot", "smolvla", "xvla"],
+        "policyTypes": ["act", "diffusion", "pi0", "pi05", "groot", "smolvla", "xvla", "rynnvla"],
         "trainingMode": "supervised_finetune",
         "launchMode": "project_backend",
         "status": "adapter",

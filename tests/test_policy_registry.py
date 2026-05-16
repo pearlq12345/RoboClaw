@@ -33,6 +33,17 @@ def test_policy_registry_returns_registered_builtin_policy() -> None:
     assert "groot" in policy_registry.supported_types()
 
 
+def test_rynnvla_policy_registered() -> None:
+    config = policy_registry.get("rynnvla")
+
+    assert config.policy_type == "rynnvla"
+    args = config.extra_train_args()
+    assert "--action_chunk_size=20" in args
+    assert "--action_dim=6" in args
+    assert "--condition_frame_num=1" in args
+    assert "--precision=bf16" in args
+
+
 def test_policy_registry_raises_for_unknown_policy() -> None:
     with pytest.raises(ValueError, match="Unsupported policy_type 'unknown'"):
         policy_registry.get("unknown")
