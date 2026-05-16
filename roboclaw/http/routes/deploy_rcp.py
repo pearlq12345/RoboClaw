@@ -17,8 +17,6 @@ class RynnRCPSendRequest(BaseModel):
     checkpoint_path: str = ""
     actions: list[list[float]] = Field(default_factory=list)
     robot_type: str = ""
-    action_dim: int = 6
-    action_chunk_size: int = 20
     interpolation: str = "cubic"
     timestamp_ns: int = 0
 
@@ -46,14 +44,6 @@ def register_deploy_rcp_routes(app: FastAPI) -> None:
                 detail=(
                     "robot_type does not match configured RynnRCP bridge. "
                     "Restart the bridge with ROBOCLAW_RYNNRCP_ROBOT_TYPE for a different robot."
-                ),
-            )
-        if body.action_dim != settings.action_dim or body.action_chunk_size != settings.action_chunk_size:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "action_dim/action_chunk_size must match configured RynnRCP bridge "
-                    f"({settings.action_dim}, {settings.action_chunk_size})."
                 ),
             )
         if body.interpolation and body.interpolation != settings.interpolation:
@@ -88,7 +78,7 @@ def register_deploy_rcp_routes(app: FastAPI) -> None:
     @app.post("/deploy/rynnrcp/go_home")
     async def deploy_rynnrcp_go_home() -> dict[str, Any]:
         bridge = get_bridge()
-        bridge.go_home()
+        await asyncio.to_thread(bridge.go_home)
         return {
             "message": "rynnrcp go-home request sent",
             "enabled": bridge.enabled,
