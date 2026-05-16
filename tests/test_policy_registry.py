@@ -41,7 +41,7 @@ def test_rynnvla_policy_registered() -> None:
     assert "--action_chunk_size=20" in args
     assert "--action_dim=6" in args
     assert "--condition_frame_num=1" in args
-    assert "--precision=bf16" in args
+    assert "--precision=bfloat16" in args
 
 
 def test_policy_registry_raises_for_unknown_policy() -> None:

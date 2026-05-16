@@ -1,8 +1,8 @@
 # RynnVLA-001 model group for RoboClaw VLA configs.
 
 model_type: rynnvla
-model_path: path/to/rynnvla_checkpoint
-actionvae_path: path/to/actionvae.pth
+model_path: path/to/rynnvla_checkpoint # injected at runtime by EVO_Train workflow
+actionvae_path: path/to/actionvae.pth # injected at runtime by EVO_Train workflow
 precision: bfloat16
 action_chunk_size: 20
 action_dim: 6

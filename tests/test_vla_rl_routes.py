@@ -85,7 +85,7 @@ def test_vla_rl_plan_normalizes_capabilities_before_evo_train(route_app):
 
 
 def test_normalize_capabilities_detects_rynnvla() -> None:
-    params = normalize_capabilities("用rynnvla训练", {})
+    params = normalize_capabilities("rynnvla", {})
 
     assert params["modelFamily"] == "rynnvla"
     assert params["builtinTrainingProfile"] == "roboclaw_lerobot_backend"

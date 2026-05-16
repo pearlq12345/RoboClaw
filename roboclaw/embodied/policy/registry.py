@@ -55,7 +55,7 @@ class RynnVLAPolicyConfig(BasePolicyConfig):
     action_chunk_size: int = 20
     action_dim: int = 6
     condition_frame_num: int = 1
-    precision: str = "bf16"
+    precision: str = "bfloat16"
 
     def extra_train_args(self) -> list[str]:
         return [
