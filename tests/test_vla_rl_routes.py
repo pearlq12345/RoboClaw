@@ -88,9 +88,10 @@ def test_normalize_capabilities_detects_rynnvla() -> None:
     params = normalize_capabilities("rynnvla", {})
 
     assert params["modelFamily"] == "rynnvla"
-    assert params["builtinTrainingProfile"] == "roboclaw_lerobot_backend"
-    assert params["launcherModule"] == "train"
+    assert params["builtinTrainingProfile"] == "rynnvla_lerobot_backend"
     assert params["scriptPath"] == "train.py"
+    assert params["configPath"] == "configs/lerobot/lerobot_exp.yml"
+    assert params["policyFamily"] == "rynnvla"
     assert params["observationSchema"] == {
         "exteroceptive": ["rgb"],
         "proprioceptive": ["joint_pos"],
@@ -131,6 +132,13 @@ def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):
     assert lerobot_profile["backendKind"] == "lerobot"
     assert lerobot_profile["availableInPolicyRegistry"] is True
     assert "rynnvla" in lerobot_profile["policyTypes"]
+    rynnvla_profile = next(item for item in data["profiles"] if item["id"] == "rynnvla_lerobot_backend")
+    assert rynnvla_profile["backendKind"] == "lerobot"
+    assert rynnvla_profile["modelFamily"] == "rynnvla"
+    assert rynnvla_profile["launcherKind"] == "python_script"
+    assert rynnvla_profile["scriptPath"] == "train.py"
+    assert "scriptPath" in rynnvla_profile["requiredParams"]
+    assert "launcherModule" not in rynnvla_profile["requiredParams"]
     backend_kinds = {item["backendKind"] for item in data["profiles"]}
     assert {"rlinf", "lerobot", "dexbotic", "custom"} <= backend_kinds
     assert data["backendKindExtensible"] is True

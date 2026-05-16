@@ -47,7 +47,7 @@ _DEFAULT_TRAINING_PROFILES = {
     "oft": "roboclaw_rlinf_backend",
     "navila": "roboclaw_rlinf_backend",
     "uni-navid": "roboclaw_rlinf_backend",
-    "rynnvla": "roboclaw_lerobot_backend",
+    "rynnvla": "rynnvla_lerobot_backend",
 }
 
 _BACKEND_INTERFACE_CATALOG = {
@@ -253,6 +253,20 @@ _PROFILE_CATALOG = {
         "requiredParams": ["repoUrl", "launcherModule", "datasetPath", "checkpointPath"],
         "recommendedBackend": "lerobot",
     },
+    "rynnvla_lerobot_backend": {
+        "title": "RynnVLA-001 yaml-driven fine-tuning backend",
+        "backendKind": "lerobot",
+        "modelFamily": "rynnvla",
+        "policyTypes": ["rynnvla"],
+        "trainingMode": "supervised_finetune",
+        "launchMode": "project_backend",
+        "launcherKind": "python_script",
+        "status": "adapter",
+        "scriptPath": "train.py",
+        "configPath": "configs/lerobot/lerobot_exp.yml",
+        "requiredParams": ["repoUrl", "workdir", "scriptPath", "configPath", "datasetPath", "artifactPath", "policyFamily"],
+        "recommendedBackend": "lerobot",
+    },
     "roboclaw_dexbotic_backend": {
         "title": "Dexbotic-style project backend",
         "backendKind": "dexbotic",
@@ -378,8 +392,9 @@ def normalize_capabilities(message: str, params: dict[str, Any]) -> dict[str, An
         enriched.setdefault("rlinfExtModule", "dexbotic.rl.rlinf_registry")
     model_family = str(enriched.get("modelFamily") or "")
     if model_family == "rynnvla":
-        enriched.setdefault("launcherModule", "train")
         enriched.setdefault("scriptPath", "train.py")
+        enriched.setdefault("configPath", "configs/lerobot/lerobot_exp.yml")
+        enriched.setdefault("policyFamily", "rynnvla")
         enriched.setdefault(
             "observationSchema",
             {
