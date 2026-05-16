@@ -12,7 +12,8 @@ from roboclaw.embodied.policy.registry import policy_registry
 @dataclass(frozen=True)
 class RynnVLAPolicyConfig(BasePolicyConfig):
     policy_type: str = field(init=False, default="rynnvla")
-    model_path: str = ""
+    config_file: str = ""
+    exp_dir: str = ""
     actionvae_path: str = ""
     action_chunk_size: int = 20
     action_dim: int = 6
@@ -23,18 +24,27 @@ class RynnVLAPolicyConfig(BasePolicyConfig):
     precision: str = "bfloat16"
 
     def extra_train_args(self) -> list[str]:
-        args = [
-            f"--action_chunk_size={self.action_chunk_size}",
-            f"--action_dim={self.action_dim}",
-            f"--num_cameras={self.num_cameras}",
-            f"--img_size={self.img_size}",
-            f"--condition_frame_num={self.condition_frame_num}",
-            f"--precision={self.precision}",
-        ]
-        if self.use_depth:
-            args.append("--use_depth")
-        if self.model_path:
-            args.append(f"--model_path={self.model_path}")
-        if self.actionvae_path:
-            args.append(f"--actionvae_path={self.actionvae_path}")
+        """Return the launcher args accepted by RynnVLA-001 train.py."""
+
+        args = []
+        if self.config_file:
+            args.append(f"--config_file={self.config_file}")
+        if self.exp_dir:
+            args.append(f"--exp_dir={self.exp_dir}")
         return args
+
+    def config_overrides(self) -> dict[str, object]:
+        """Return fields to inject into the RynnVLA-001 yaml config at runtime."""
+
+        overrides: dict[str, object] = {
+            "action_chunk_size": self.action_chunk_size,
+            "action_dim": self.action_dim,
+            "condition_frame_num": self.condition_frame_num,
+            "precision": self.precision,
+            "num_cameras": self.num_cameras,
+            "use_depth": self.use_depth,
+            "img_size": self.img_size,
+        }
+        if self.actionvae_path:
+            overrides["actionvae_path"] = self.actionvae_path
+        return overrides

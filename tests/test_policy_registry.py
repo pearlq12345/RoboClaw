@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from roboclaw.embodied.policy import BasePolicyConfig, PolicyRegistry, policy_registry
+from roboclaw.embodied.policy.rynnvla import RynnVLAPolicyConfig
 
 
 def test_policy_registry_registers_custom_config() -> None:
@@ -22,6 +23,7 @@ def test_policy_registry_registers_custom_config() -> None:
 
     assert isinstance(config, ExamplePolicyConfig)
     assert config.extra_train_args() == ["--policy.example=true"]
+    assert config.config_overrides() == {}
     assert registry.supported_types() == {"example"}
 
 
@@ -37,22 +39,22 @@ def test_rynnvla_policy_registered() -> None:
     config = policy_registry.get("rynnvla")
 
     assert config.policy_type == "rynnvla"
-    args = config.extra_train_args()
-    assert "--action_chunk_size=20" in args
-    assert "--action_dim=6" in args
-    assert "--num_cameras=2" in args
-    assert "--img_size=384" in args
-    assert "--condition_frame_num=1" in args
-    assert "--precision=bfloat16" in args
-    assert "--use_depth" not in args
-    assert not any(arg.startswith("--model_path=") for arg in args)
-    assert not any(arg.startswith("--actionvae_path=") for arg in args)
+    assert config.extra_train_args() == []
+    overrides = config.config_overrides()
+    assert overrides["action_chunk_size"] == 20
+    assert overrides["action_dim"] == 6
+    assert overrides["num_cameras"] == 2
+    assert overrides["img_size"] == 384
+    assert overrides["condition_frame_num"] == 1
+    assert overrides["precision"] == "bfloat16"
+    assert overrides["use_depth"] is False
+    assert "actionvae_path" not in overrides
 
 
 def test_rynnvla_policy_passes_optional_paths() -> None:
-    config_cls = type(policy_registry.get("rynnvla"))
-    config = config_cls(
-        model_path="/models/rynnvla",
+    config = RynnVLAPolicyConfig(
+        config_file="/tmp/cfg.yaml",
+        exp_dir="/tmp/exp",
         actionvae_path="/models/actionvae.pth",
         num_cameras=3,
         use_depth=True,
@@ -60,12 +62,15 @@ def test_rynnvla_policy_passes_optional_paths() -> None:
     )
 
     args = config.extra_train_args()
+    overrides = config.config_overrides()
 
-    assert "--model_path=/models/rynnvla" in args
-    assert "--actionvae_path=/models/actionvae.pth" in args
-    assert "--num_cameras=3" in args
-    assert "--img_size=512" in args
-    assert "--use_depth" in args
+    assert "--config_file=/tmp/cfg.yaml" in args
+    assert "--exp_dir=/tmp/exp" in args
+    assert len(args) == 2
+    assert overrides["actionvae_path"] == "/models/actionvae.pth"
+    assert overrides["num_cameras"] == 3
+    assert overrides["img_size"] == 512
+    assert overrides["use_depth"] is True
 
 
 def test_policy_registry_raises_for_unknown_policy() -> None:

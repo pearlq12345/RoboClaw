@@ -1,16 +1,17 @@
-# RynnVLA-001 model group for RoboClaw VLA configs.
+# RynnVLA-001 model group: yaml-driven launcher (train.py --config_file).
 
 model_type: rynnvla
-model_path: path/to/rynnvla_checkpoint # injected at runtime by EVO_Train workflow
-actionvae_path: path/to/actionvae.pth # injected at runtime by EVO_Train workflow
-precision: bfloat16
+config_file: "" # injected at runtime by EVO_Train workflow
+exp_dir: "" # injected at runtime by EVO_Train workflow
 action_chunk_size: 20
 action_dim: 6
 arm_dof: 6
 hand_dof: 0
+condition_frame_num: 1
+precision: bfloat16
 num_cameras: 2
 use_depth: false
-condition_frame_num: 1
+img_size: 384
+actionvae_path: "" # injected at runtime by EVO_Train workflow
 use_rel_action: true
 mean_std_norm: true
-img_size: 384

@@ -16,3 +16,7 @@ class BasePolicyConfig(ABC):
     def extra_train_args(self) -> list[str]:
         """Return policy-specific ``lerobot-train`` CLI args."""
 
+    def config_overrides(self) -> dict[str, object]:
+        """Return fields to inject into yaml-driven backend configs."""
+
+        return {}
