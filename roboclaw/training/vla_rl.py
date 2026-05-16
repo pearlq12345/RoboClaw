@@ -377,6 +377,9 @@ def normalize_capabilities(message: str, params: dict[str, Any]) -> dict[str, An
         enriched.setdefault("launcherModule", "dexbotic.rl.model_rl_libero_pi0")
         enriched.setdefault("rlinfExtModule", "dexbotic.rl.rlinf_registry")
     model_family = str(enriched.get("modelFamily") or "")
+    if model_family == "rynnvla":
+        enriched.setdefault("launcherModule", "train")
+        enriched.setdefault("scriptPath", "train.py")
     if model_family in _DEFAULT_TRAINING_PROFILES:
         enriched.setdefault("builtinTrainingProfile", _DEFAULT_TRAINING_PROFILES[model_family])
     return enriched

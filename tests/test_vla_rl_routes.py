@@ -89,6 +89,8 @@ def test_normalize_capabilities_detects_rynnvla() -> None:
 
     assert params["modelFamily"] == "rynnvla"
     assert params["builtinTrainingProfile"] == "roboclaw_lerobot_backend"
+    assert params["launcherModule"] == "train"
+    assert params["scriptPath"] == "train.py"
 
 
 def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):

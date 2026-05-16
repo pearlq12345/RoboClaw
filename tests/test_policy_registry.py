@@ -42,6 +42,18 @@ def test_rynnvla_policy_registered() -> None:
     assert "--action_dim=6" in args
     assert "--condition_frame_num=1" in args
     assert "--precision=bfloat16" in args
+    assert not any(arg.startswith("--model_path=") for arg in args)
+    assert not any(arg.startswith("--actionvae_path=") for arg in args)
+
+
+def test_rynnvla_policy_passes_optional_paths() -> None:
+    config_cls = type(policy_registry.get("rynnvla"))
+    config = config_cls(model_path="/models/rynnvla", actionvae_path="/models/actionvae.pth")
+
+    args = config.extra_train_args()
+
+    assert "--model_path=/models/rynnvla" in args
+    assert "--actionvae_path=/models/actionvae.pth" in args
 
 
 def test_policy_registry_raises_for_unknown_policy() -> None:
