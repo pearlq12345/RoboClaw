@@ -1,0 +1,21 @@
+# RynnVLA-001 model group: yaml-driven launcher (train.py --config_file).
+
+model_type: rynnvla
+config_file: "" # injected at runtime by EVO_Train workflow
+exp_dir: "" # injected at runtime by EVO_Train workflow
+action_chunk_size: 20
+action_dim: 6
+arm_dof: 6
+hand_dof: 0
+condition_frame_num: 1
+precision: bfloat16
+num_cameras: 2
+use_depth: false
+img_size: 384
+use_proprio: true
+proprio_dim: 6
+use_ft_sensor: false
+use_imu: false
+actionvae_path: "" # injected at runtime by EVO_Train workflow
+use_rel_action: true
+mean_std_norm: true

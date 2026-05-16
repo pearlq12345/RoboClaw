@@ -7,6 +7,7 @@ from . import act as _act
 from . import diffusion as _diffusion
 from . import gr00t as _gr00t
 from . import pi0 as _pi0
+from . import rynnvla as _rynnvla
 from . import smolvla as _smolvla
 
 __all__ = [
@@ -14,4 +15,3 @@ __all__ = [
     "PolicyRegistry",
     "policy_registry",
 ]
-

@@ -46,4 +46,3 @@ class PolicyRegistry:
 
 
 policy_registry = PolicyRegistry()
-

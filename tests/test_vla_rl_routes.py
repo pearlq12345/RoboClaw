@@ -14,6 +14,7 @@ from roboclaw.embodied.embodiment.hardware.monitor import HardwareMonitor
 from roboclaw.embodied.embodiment.manifest import Manifest
 from roboclaw.embodied.service import EmbodiedService
 from roboclaw.http.routes.vla_rl import register_vla_rl_routes
+from roboclaw.training.vla_rl import normalize_capabilities
 
 
 class StubBridge:
@@ -83,6 +84,25 @@ def test_vla_rl_plan_normalizes_capabilities_before_evo_train(route_app):
     assert data["vlaPlan"]["deployabilityHints"]
 
 
+def test_normalize_capabilities_detects_rynnvla() -> None:
+    params = normalize_capabilities("rynnvla", {})
+
+    assert params["modelFamily"] == "rynnvla"
+    assert params["builtinTrainingProfile"] == "rynnvla_lerobot_backend"
+    assert params["scriptPath"] == "train.py"
+    assert params["configPath"] == "configs/lerobot/lerobot_exp.yml"
+    assert params["policyFamily"] == "rynnvla"
+    assert params["observationSchema"] == {
+        "exteroceptive": ["rgb"],
+        "proprioceptive": ["joint_pos"],
+    }
+    assert params["actionSchema"] == {
+        "arm_dof": 6,
+        "hand_dof": 0,
+        "control_mode": "position",
+    }
+
+
 def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):
     app, service = route_app
     register_vla_rl_routes(app, service)
@@ -97,6 +117,7 @@ def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):
     assert "pi0" in data["supportedPolicyTypes"]
     assert "pi05" in data["supportedPolicyTypes"]
     assert "groot" in data["supportedPolicyTypes"]
+    assert "rynnvla" in data["supportedPolicyTypes"]
     dm0_profile = next(item for item in data["profiles"] if item["id"] == "dexbotic_dm0_rlinf")
     assert dm0_profile["backendKind"] == "rlinf"
     assert dm0_profile["requiredParams"]
@@ -110,6 +131,14 @@ def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):
     lerobot_profile = next(item for item in data["profiles"] if item["id"] == "roboclaw_lerobot_backend")
     assert lerobot_profile["backendKind"] == "lerobot"
     assert lerobot_profile["availableInPolicyRegistry"] is True
+    assert "rynnvla" in lerobot_profile["policyTypes"]
+    rynnvla_profile = next(item for item in data["profiles"] if item["id"] == "rynnvla_lerobot_backend")
+    assert rynnvla_profile["backendKind"] == "lerobot"
+    assert rynnvla_profile["modelFamily"] == "rynnvla"
+    assert rynnvla_profile["launcherKind"] == "python_script"
+    assert rynnvla_profile["scriptPath"] == "train.py"
+    assert "scriptPath" in rynnvla_profile["requiredParams"]
+    assert "launcherModule" not in rynnvla_profile["requiredParams"]
     backend_kinds = {item["backendKind"] for item in data["profiles"]}
     assert {"rlinf", "lerobot", "dexbotic", "custom"} <= backend_kinds
     assert data["backendKindExtensible"] is True
