@@ -39,9 +39,14 @@ class RynnRCPSettings:
     inference_rate: float = 30.0
     timeout_seconds: float = 30.0
     robot_type: str = "so101"
-    action_dim: int = 6
+    arm_dof: int = 6
+    hand_dof: int = 0
     action_chunk_size: int = 20
     interpolation: str = "cubic"
+
+    @property
+    def action_dim(self) -> int:
+        return self.arm_dof + self.hand_dof
 
     @classmethod
     def from_env(cls) -> "RynnRCPSettings":
@@ -50,7 +55,8 @@ class RynnRCPSettings:
             inference_rate=_env_float("ROBOCLAW_RYNNRCP_INFERENCE_RATE", cls.inference_rate),
             timeout_seconds=_env_float("ROBOCLAW_RYNNRCP_TIMEOUT_SECONDS", cls.timeout_seconds),
             robot_type=os.environ.get("ROBOCLAW_RYNNRCP_ROBOT_TYPE", cls.robot_type).strip() or cls.robot_type,
-            action_dim=_env_int("ROBOCLAW_RYNNRCP_ACTION_DIM", cls.action_dim),
+            arm_dof=_env_int("ROBOCLAW_RYNNRCP_ARM_DOF", cls.arm_dof),
+            hand_dof=_env_int("ROBOCLAW_RYNNRCP_HAND_DOF", cls.hand_dof),
             action_chunk_size=_env_int("ROBOCLAW_RYNNRCP_ACTION_CHUNK_SIZE", cls.action_chunk_size),
             interpolation=os.environ.get("ROBOCLAW_RYNNRCP_INTERPOLATION", cls.interpolation).strip()
             or cls.interpolation,
