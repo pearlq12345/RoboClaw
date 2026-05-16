@@ -16,7 +16,8 @@ from loguru import logger
 from roboclaw.data.curation.features import extract_action_names, extract_state_names
 from roboclaw.data.curation.paths import datasets_root
 
-DatasetKind = Literal["local", "remote"]
+DatasetKind = Literal["local", "remote", "cloud"]
+UploadStatus = Literal["pending", "uploaded", "verified", "error"]
 ImportStatus = Literal["queued", "running", "completed", "error"]
 
 _DATASET_SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
@@ -28,6 +29,7 @@ __all__ = [
     "DatasetRef",
     "DatasetRuntimeRef",
     "DatasetStats",
+    "DatasetCloudRef",
     "datasets_root_from_manifest",
     "extract_action_names",
     "extract_state_names",
@@ -108,6 +110,26 @@ class DatasetRuntimeRef:
 
 
 @dataclass(frozen=True)
+class DatasetCloudRef:
+    provider: str
+    uri: str
+    bucket: str = ""
+    object_key: str = ""
+    upload_status: UploadStatus = "pending"
+    manifest: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "uri": self.uri,
+            "bucket": self.bucket,
+            "objectKey": self.object_key,
+            "uploadStatus": self.upload_status,
+            "manifest": dict(self.manifest or {}),
+        }
+
+
+@dataclass(frozen=True)
 class DatasetRef:
     id: str
     kind: DatasetKind
@@ -118,6 +140,7 @@ class DatasetRef:
     capabilities: DatasetCapabilities
     runtime: DatasetRuntimeRef | None = None
     local_path: Path | None = None
+    cloud: DatasetCloudRef | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +152,7 @@ class DatasetRef:
             "stats": self.stats.to_dict(),
             "capabilities": self.capabilities.to_dict(),
             "runtime": self.runtime.to_dict() if self.runtime else None,
+            "cloud": self.cloud.to_dict() if self.cloud else None,
         }
 
 
@@ -172,6 +196,19 @@ class DatasetCatalog:
         refs = [ref for ref in (self._read_local_dataset(entry) for entry in self._iter_dataset_dirs(root)) if ref]
         return sorted(refs, key=lambda ref: ref.id)
 
+    def list_cloud_datasets(self) -> list[DatasetRef]:
+        registry = self._cloud_registry_dir()
+        if not registry.is_dir():
+            return []
+        refs = [self._read_cloud_dataset(path) for path in sorted(registry.glob("*.json"))]
+        return [ref for ref in refs if ref is not None]
+
+    def list_datasets(self) -> list[DatasetRef]:
+        return sorted(
+            [*self.list_local_datasets(), *self.list_cloud_datasets()],
+            key=lambda ref: ref.id,
+        )
+
     def get_local_dataset(self, dataset_id: str) -> DatasetRef | None:
         target = self.resolve_local_path(dataset_id)
         if not target.is_dir():
@@ -184,11 +221,56 @@ class DatasetCatalog:
             raise ValueError(f"Dataset '{dataset_id}' not found")
         return ref
 
+    def get_cloud_dataset(self, dataset_id: str) -> DatasetRef | None:
+        try:
+            path = self._cloud_ref_path(dataset_id)
+        except ValueError:
+            return None
+        return self._read_cloud_dataset(path)
+
+    def require_cloud_dataset(self, dataset_id: str) -> DatasetRef:
+        ref = self.get_cloud_dataset(dataset_id)
+        if ref is None:
+            raise ValueError(f"Cloud dataset '{dataset_id}' not found")
+        return ref
+
     def resolve_dataset(self, dataset_id: str) -> DatasetRef:
         local = self.get_local_dataset(dataset_id)
         if local is not None:
             return local
+        cloud = self.get_cloud_dataset(dataset_id)
+        if cloud is not None:
+            return cloud
         return self.resolve_remote_dataset(dataset_id)
+
+    def record_cloud_dataset(
+        self,
+        *,
+        dataset_id: str,
+        provider: str,
+        cloud_uri: str,
+        bucket: str = "",
+        object_key: str = "",
+        manifest: dict[str, Any] | None = None,
+        upload_status: UploadStatus = "uploaded",
+    ) -> DatasetRef:
+        slug = dataset_id.strip().removeprefix("cloud/")
+        validate_dataset_slug(slug)
+        payload = {
+            "id": f"cloud/{slug}",
+            "label": slug,
+            "slug": slug,
+            "provider": provider,
+            "cloud_uri": cloud_uri,
+            "bucket": bucket,
+            "object_key": object_key,
+            "upload_status": upload_status,
+            "manifest": dict(manifest or {}),
+        }
+        path = self._cloud_ref_path(f"cloud/{slug}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return self.require_cloud_dataset(f"cloud/{slug}")
 
     def resolve_runtime_dataset(self, runtime_name: str) -> DatasetRef:
         validate_dataset_slug(runtime_name)
@@ -386,6 +468,46 @@ class DatasetCatalog:
             source_dataset=str(payload.get("source_dataset") or dataset_id),
             stats=stats,
             capabilities=DatasetCapabilities(can_pull=True),
+        )
+
+    def _cloud_registry_dir(self) -> Path:
+        return self.root / ".cloud_datasets"
+
+    def _cloud_ref_path(self, dataset_id: str) -> Path:
+        slug = dataset_id.strip().removeprefix("cloud/")
+        validate_dataset_slug(slug)
+        return self._cloud_registry_dir() / f"{slug}.json"
+
+    def _read_cloud_dataset(self, path: Path) -> DatasetRef | None:
+        if not path.is_file():
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        manifest = payload.get("manifest") if isinstance(payload.get("manifest"), dict) else {}
+        stats = DatasetStats(
+            total_episodes=int(manifest.get("episodes", 0) or manifest.get("total_episodes", 0) or 0),
+            total_frames=int(manifest.get("total_frames", 0) or 0),
+            fps=int(manifest.get("fps", 0) or 0),
+            robot_type=str(manifest.get("robot_type", "")),
+            features=tuple((manifest.get("modalities") or {}).keys()),
+        )
+        slug = str(payload.get("slug") or path.stem)
+        cloud = DatasetCloudRef(
+            provider=str(payload.get("provider") or "aliyun_oss"),
+            uri=str(payload.get("cloud_uri") or ""),
+            bucket=str(payload.get("bucket") or ""),
+            object_key=str(payload.get("object_key") or ""),
+            upload_status=str(payload.get("upload_status") or "uploaded"),  # type: ignore[arg-type]
+            manifest=manifest,
+        )
+        return DatasetRef(
+            id=str(payload.get("id") or f"cloud/{slug}"),
+            kind="cloud",
+            label=str(payload.get("label") or slug),
+            slug=slug,
+            source_dataset=str(payload.get("cloud_uri") or f"cloud/{slug}"),
+            stats=stats,
+            capabilities=DatasetCapabilities(can_pull=True, can_curate=True, can_train=True),
+            cloud=cloud,
         )
 
     def resolve_local_path(self, dataset_id: str) -> Path:
