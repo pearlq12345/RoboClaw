@@ -91,6 +91,15 @@ def test_normalize_capabilities_detects_rynnvla() -> None:
     assert params["builtinTrainingProfile"] == "roboclaw_lerobot_backend"
     assert params["launcherModule"] == "train"
     assert params["scriptPath"] == "train.py"
+    assert params["observationSchema"] == {
+        "exteroceptive": ["rgb"],
+        "proprioceptive": ["joint_pos"],
+    }
+    assert params["actionSchema"] == {
+        "arm_dof": 6,
+        "hand_dof": 0,
+        "control_mode": "position",
+    }
 
 
 def test_vla_rl_profiles_expose_policy_registry_capabilities(route_app):

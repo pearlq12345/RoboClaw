@@ -12,6 +12,10 @@ precision: bfloat16
 num_cameras: 2
 use_depth: false
 img_size: 384
+use_proprio: true
+proprio_dim: 6
+use_ft_sensor: false
+use_imu: false
 actionvae_path: "" # injected at runtime by EVO_Train workflow
 use_rel_action: true
 mean_std_norm: true

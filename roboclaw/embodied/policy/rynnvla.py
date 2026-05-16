@@ -20,6 +20,10 @@ class RynnVLAPolicyConfig(BasePolicyConfig):
     num_cameras: int = 2
     use_depth: bool = False
     img_size: int = 384
+    use_proprio: bool = True
+    proprio_dim: int = 6
+    use_ft_sensor: bool = False
+    use_imu: bool = False
     condition_frame_num: int = 1
     precision: str = "bfloat16"
 
@@ -44,6 +48,10 @@ class RynnVLAPolicyConfig(BasePolicyConfig):
             "num_cameras": self.num_cameras,
             "use_depth": self.use_depth,
             "img_size": self.img_size,
+            "use_proprio": self.use_proprio,
+            "proprio_dim": self.proprio_dim,
+            "use_ft_sensor": self.use_ft_sensor,
+            "use_imu": self.use_imu,
         }
         if self.actionvae_path:
             overrides["actionvae_path"] = self.actionvae_path

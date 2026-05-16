@@ -380,6 +380,21 @@ def normalize_capabilities(message: str, params: dict[str, Any]) -> dict[str, An
     if model_family == "rynnvla":
         enriched.setdefault("launcherModule", "train")
         enriched.setdefault("scriptPath", "train.py")
+        enriched.setdefault(
+            "observationSchema",
+            {
+                "exteroceptive": ["rgb"],
+                "proprioceptive": ["joint_pos"],
+            },
+        )
+        enriched.setdefault(
+            "actionSchema",
+            {
+                "arm_dof": 6,
+                "hand_dof": 0,
+                "control_mode": "position",
+            },
+        )
     if model_family in _DEFAULT_TRAINING_PROFILES:
         enriched.setdefault("builtinTrainingProfile", _DEFAULT_TRAINING_PROFILES[model_family])
     return enriched

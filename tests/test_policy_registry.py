@@ -48,6 +48,10 @@ def test_rynnvla_policy_registered() -> None:
     assert overrides["condition_frame_num"] == 1
     assert overrides["precision"] == "bfloat16"
     assert overrides["use_depth"] is False
+    assert overrides["use_proprio"] is True
+    assert overrides["proprio_dim"] == 6
+    assert overrides["use_ft_sensor"] is False
+    assert overrides["use_imu"] is False
     assert "actionvae_path" not in overrides
 
 
@@ -59,6 +63,8 @@ def test_rynnvla_policy_passes_optional_paths() -> None:
         num_cameras=3,
         use_depth=True,
         img_size=512,
+        use_ft_sensor=True,
+        use_imu=True,
     )
 
     args = config.extra_train_args()
@@ -71,6 +77,8 @@ def test_rynnvla_policy_passes_optional_paths() -> None:
     assert overrides["num_cameras"] == 3
     assert overrides["img_size"] == 512
     assert overrides["use_depth"] is True
+    assert overrides["use_ft_sensor"] is True
+    assert overrides["use_imu"] is True
 
 
 def test_policy_registry_raises_for_unknown_policy() -> None:
