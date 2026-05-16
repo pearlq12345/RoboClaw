@@ -148,7 +148,14 @@ Every backend must materialize the same run contract: model family, robot embodi
 
 The current concrete interface contracts cover RLinf, LeRobot, Dexbotic, and Custom. Other projects such as OpenPI, OpenVLA, RoboMimic, IsaacLab, or RL-library launchers should be added through the configurable backend-interface contract only when their preflight and artifact expectations are declared.
 
-RoboClaw also carries a minimal `roboclaw_vla.rl` adapter package so EVO_Train preflight can import the declared registry, launcher, and evaluator modules. The included launcher is intentionally a stub: it proves the module contract and writes diagnostic artifacts, but full RLinf actor/rollout/env worker orchestration must be implemented before this becomes a production RoboClaw-owned RLinf runner.
+RoboClaw also carries a `roboclaw_vla.rl` adapter package so EVO_Train preflight can import the declared registry, launcher, and evaluator modules. The launcher now follows the RLinf embodied runner shape: register RoboClaw models, load Hydra config, validate it, build `Cluster` and `HybridComponentPlacement`, launch actor/rollout/env worker groups, then run `EmbodiedRunner`. It remains experimental until validated in a full RLinf training image with real RoboClaw policy and environment loaders.
+
+The adapter package intentionally keeps project-specific model/env loading behind small extension points:
+
+- `roboclaw_vla.rl.registry` registers `roboclaw_pi0` with RLinf when `rlinf.models.register_model` is available;
+- `roboclaw_vla.rl.launcher` accepts `--config-name`, `--dataset_path`, `--checkpoint_path`, `--artifact_path`, and Hydra overrides;
+- `roboclaw_vla.rl.adapters` contains GRPO advantage/logprob helpers and a normalized env adapter;
+- `roboclaw_vla.rl.evaluate` runs an eval loop through configurable `module:function` policy/env loaders and writes `eval_info.json`.
 
 Administrators can add or override interface contracts without code changes through `ROBOCLAW_VLA_BACKEND_INTERFACES_JSON` or `ROBOCLAW_VLA_BACKEND_INTERFACES_FILE`. RoboClaw exposes the merged result from `/api/vla-rl/profiles`, and EVO_Train preserves a submitted `params.backendInterface` in the generated plan and remote `run_contract.json`. Direct EVO_Train clients can also configure interfaces through `EVO_TRAIN_VLA_BACKEND_INTERFACES_JSON` or `EVO_TRAIN_VLA_BACKEND_INTERFACES_FILE`.
 

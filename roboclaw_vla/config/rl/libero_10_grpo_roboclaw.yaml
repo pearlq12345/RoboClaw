@@ -34,6 +34,7 @@ algorithm:
   normalize_advantage: true
 
 actor:
+  group_name: actor
   enable_offload: true
   model:
     model_path: path/to/roboclaw_pi0_checkpoint
@@ -49,11 +50,15 @@ actor:
     clip_grad: 1.0
 
 rollout:
+  group_name: rollout
   enable_offload: true
   generation_backend: huggingface
   num_action_chunks: 5
+  model:
+    model_path: path/to/roboclaw_pi0_checkpoint
 
 env:
+  group_name: env
   train:
     benchmark: libero
     suite: libero_10

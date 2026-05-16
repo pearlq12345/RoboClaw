@@ -75,8 +75,8 @@ _BACKEND_INTERFACE_CATALOG = {
             "import envModule/rewardModule when provided",
         ],
         "launcherContract": {
-            "python_module": "python -m {launcherModule} --config-name {configName}",
-            "python_script": "python {scriptPath} --config-name {configName}",
+            "python_module": "python -m {launcherModule} --config-name {configName} --dataset_path {datasetPath} --checkpoint_path {checkpointPath} --artifact_path {artifactPath}",
+            "python_script": "python {scriptPath} --config-name {configName} --dataset_path {datasetPath} --checkpoint_path {checkpointPath} --artifact_path {artifactPath}",
             "deepspeed_script": "deepspeed {scriptPath}",
         },
         "algorithmToLauncherKind": {
@@ -234,7 +234,7 @@ _PROFILE_CATALOG = {
         "groupSize": 8,
         "placementStrategy": "single_node",
         "launchMode": "project_backend",
-        "status": "template",
+        "status": "experimental",
         "requiredParams": ["repoUrl", "workdir", "configName", "configPath", "launcherModule", "datasetPath", "checkpointPath"],
         "recommendedBackend": "rlinf",
     },
@@ -482,7 +482,7 @@ def vla_playground_spec() -> dict[str, Any]:
             "Do not start paid compute until runtime-match returns a compatible SKU/image pair and the user confirms cost.",
             "Prefer a smoke test when repo, dataset, image, or metric is uncertain.",
             "Treat backend names as supported only when a backendInterface contract declares launcher, preflight, and artifact behavior.",
-            "Treat RoboClaw-owned RLinf launcher as a contract stub until actor/rollout/env orchestration is implemented.",
+            "Treat RoboClaw-owned RLinf launcher as experimental until it has been validated inside a full RLinf training image.",
         ],
         "backendInterfaces": profiles["backendInterfaces"],
         "profiles": profiles["profiles"],
