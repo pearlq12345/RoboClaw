@@ -81,6 +81,24 @@ def test_dexhand_action_chunk_is_segmented() -> None:
     assert bridge.last_command.hand_control_mode == "force"
 
 
+def test_send_action_chunk_dexhand_sets_arm_and_hand_fields() -> None:
+    bridge = RynnRCPBridge(
+        RynnRCPSettings(arm_dof=6, hand_dof=6, action_chunk_size=2, lcm_channel="rcp"),
+        lcm_client=FakeLCM(),
+    )
+    actions = [[float(i) for i in range(12)]] * 2
+
+    bridge.send_action_chunk(actions)
+
+    cmd = bridge.last_command
+    assert cmd is not None
+    assert cmd.arm_actions == [[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]] * 2
+    assert cmd.hand_actions == [[6.0, 7.0, 8.0, 9.0, 10.0, 11.0]] * 2
+    assert cmd.hand_control_mode == "position"
+    assert cmd.actions == actions
+    assert cmd.action_dim == 12
+
+
 def test_send_action_chunk_shape_validation() -> None:
     bridge = RynnRCPBridge(RynnRCPSettings(action_chunk_size=2, arm_dof=3), lcm_client=FakeLCM())
 
