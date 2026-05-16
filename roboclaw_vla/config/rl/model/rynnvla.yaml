@@ -6,6 +6,10 @@ actionvae_path: path/to/actionvae.pth # injected at runtime by EVO_Train workflo
 precision: bfloat16
 action_chunk_size: 20
 action_dim: 6
+arm_dof: 6
+hand_dof: 0
+num_cameras: 2
+use_depth: false
 condition_frame_num: 1
 use_rel_action: true
 mean_std_norm: true
