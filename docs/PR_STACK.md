@@ -69,7 +69,7 @@ python -m pytest tests/test_evo_train_routes.py -q
 
 ## PR 3: Simplify Training Center UX
 
-Goal: make cloud training feel like a single AI task flow rather than a large
+Goal: make cloud training feel like a single guided task flow rather than a large
 form.
 
 Primary files:
@@ -126,7 +126,7 @@ Expected behavior:
 
 - `roboclaw dataset push ./dataset` can package/register a dataset.
 - Dataset UI no longer silently defaults new users to `pearl`.
-- Push-to-Hub uses inline inputs instead of `window.prompt`.
+- Push-to-Hub uses inline inputs instead of a browser modal dialog.
 - Status messages are accessible via `aria-live`.
 
 Verification:
@@ -136,7 +136,7 @@ python -m pytest tests/test_dataset_push_cli.py tests/test_dataset_upload_comple
 cd ui && npm run build
 ```
 
-## PR 5: AI Provider And Tool-Calling Robustness
+## PR 5: Model Provider And Tool-Calling Robustness
 
 Goal: make provider configuration and fallback behavior explicit enough for
 research users using custom/relay APIs.
@@ -155,7 +155,7 @@ Primary files:
 
 Expected behavior:
 
-- Provider errors surface as real errors instead of fake assistant messages.
+- Provider errors surface as real errors instead of fake chat messages.
 - Text-only fallback is explicit when a relay does not support tools.
 - Settings page explains model/provider choices without hiding invalid tokens,
   insufficient balance, or malformed tool payloads.
