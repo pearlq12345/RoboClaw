@@ -17,4 +17,3 @@ class GR00TPolicyConfig(BasePolicyConfig):
 
     def extra_train_args(self) -> list[str]:
         return []
-

@@ -16,7 +16,6 @@ class ActPolicyConfig(BasePolicyConfig):
     def extra_train_args(self) -> list[str]:
         return []
 
-
 @policy_registry.register
 @dataclass(frozen=True)
 class MultiTaskDiTPolicyConfig(BasePolicyConfig):
@@ -33,4 +32,3 @@ class VQBeTPolicyConfig(BasePolicyConfig):
 
     def extra_train_args(self) -> list[str]:
         return []
-

@@ -16,7 +16,6 @@ class DiffusionPolicyConfig(BasePolicyConfig):
     def extra_train_args(self) -> list[str]:
         return []
 
-
 @policy_registry.register
 @dataclass(frozen=True)
 class TDMPCPolicyConfig(BasePolicyConfig):
@@ -60,4 +59,3 @@ class WallXPolicyConfig(BasePolicyConfig):
 
     def extra_train_args(self) -> list[str]:
         return []
-
