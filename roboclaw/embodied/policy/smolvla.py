@@ -16,7 +16,6 @@ class SmolVLAConfig(BasePolicyConfig):
     def extra_train_args(self) -> list[str]:
         return []
 
-
 @policy_registry.register
 @dataclass(frozen=True)
 class XVLAPolicyConfig(BasePolicyConfig):
@@ -24,4 +23,3 @@ class XVLAPolicyConfig(BasePolicyConfig):
 
     def extra_train_args(self) -> list[str]:
         return []
-

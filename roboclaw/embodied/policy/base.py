@@ -15,4 +15,3 @@ class BasePolicyConfig(ABC):
     @abstractmethod
     def extra_train_args(self) -> list[str]:
         """Return policy-specific ``lerobot-train`` CLI args."""
-
